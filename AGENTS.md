@@ -1,12 +1,12 @@
 # AGENTS.md — Luna
 
-> Terminal emulator multiplataforma GPU-accelerated en Rust. Fases 0-1 completadas, en Fase 2.
+> Terminal emulator multiplataforma GPU-accelerated en Rust. Fases 0-6 completadas, en Fase 7.
 
 ## Fuentes de verdad
 
 - `proyecto.md` — arquitectura, stack, paleta de colores, estructuras de datos
 - `tasks.md` — 50 tareas atómicas en 11 fases, orden estricto
-- `documentacion/desarrollo/` — docs de fases completadas (fase-0-scaffolding.md, fase-1-ventana-y-wgpu.md)
+- `documentacion/desarrollo/` — docs de fases completadas (fase-0-scaffolding.md, fase-1-ventana-y-wgpu.md, ..., fase-5-tabs.md, fase-6-split.md)
 
 ## Datos clave que un agente erraría sin ayuda
 
@@ -15,7 +15,10 @@
 - **Workspace**: 5 crates bajo `crates/` — `Luna-app` (bin), `Luna-terminal`, `Luna-renderer`, `Luna-ui`, `Luna-config`
 - **Entry point**: `crates/Luna-app/src/main.rs` — winit event loop
 - **Renderer**: `crates/Luna-renderer/src/renderer.rs` — wgpu instance + surface + device + queue
-- **Código existente**: Fase 0–1 implementadas. Hay source real (`main.rs`, `renderer.rs`, `text.rs`, `atlas.rs`, `cell.rs`, `cell.wgsl`)
+- **Tab/Pane system**: `TabBar { tabs: Vec<Tab>, active: usize }`, cada `Tab` tiene `PaneTree` + `active_pane: PaneId`. Los `Pane` viven en `Vec<Pane>` separado, referenciados por ID.
+- **Single render pass**: `draw_frame(cells, ui_rects)` rasteriza glyphs y dibuja cells + UI rects en un solo `get_current_texture`/`present`.
+- **Mouse position**: `AppState.cursor_x/y` se actualiza en cada `CursorMoved` (÷ scale_factor). `MouseInput` lee estas coordenadas para detectar clicks en tab bar.
+- **Código existente**: Fase 0–5 implementadas. Hay source real (`main.rs`, `renderer.rs`, `text.rs`, `atlas.rs`, `cell.rs`, `cell.wgsl`, `ui.rs`, `ui.wgsl`, `pane.rs`, `splitter.rs`, `tab_bar.rs`, `layout.rs`, `theme.rs`)
 - **Nombres de crate con mayúscula** (ej. `Luna-app`) como consta en `proyecto.md`. El `[lib] name` usa snake_case (ej. `luna_renderer` para el crate `Luna-renderer`).
 
 ## Stack y versiones exactas

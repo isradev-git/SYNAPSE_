@@ -88,9 +88,9 @@ Luna/
 ├── crates/
 │   ├── Luna-app/             ← Binario principal
 │   │   └── src/
-│   │       ├── main.rs            ← Entry point: args, init, event loop
-│   │       ├── app.rs             ← Estado global de la aplicación
-│   │       └── event.rs           ← Gestión del event loop de winit
+│   │       ├── main.rs            ← Entry point: init, event loop con render + input
+│   │       ├── app.rs             ← AppState (modifiers, selection)
+│   │       └── input.rs           ← InputAction enum + mapeo key → acción
 │   │
 │   ├── Luna-terminal/        ← Lógica de terminal (PTY, VT parser, buffer)
 │   │   └── src/
