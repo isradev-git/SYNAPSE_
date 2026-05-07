@@ -1,0 +1,23 @@
+[package]
+name = "Luna-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "luna"
+path = "src/main.rs"
+
+[dependencies]
+Luna-terminal = { path = "../Luna-terminal" }
+Luna-renderer = { path = "../Luna-renderer" }
+Luna-ui = { path = "../Luna-ui" }
+Luna-config = { path = "../Luna-config" }
+
+winit = { workspace = true }
+wgpu = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }

@@ -1,0 +1,18 @@
+[package]
+name = "Luna-renderer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "luna_renderer"
+path = "src/lib.rs"
+
+[dependencies]
+wgpu = { workspace = true }
+winit = { workspace = true }
+cosmic-text = { workspace = true }
+tracing = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }
