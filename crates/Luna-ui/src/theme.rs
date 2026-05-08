@@ -13,6 +13,13 @@ pub const PANEL_ACTIVE_BORDER: [f32; 4] = [181.0 / 255.0, 48.0 / 255.0, 126.0 / 
 pub const PANEL_INACTIVE_BORDER: [f32; 4] = [63.0 / 255.0, 28.0 / 255.0, 109.0 / 255.0, 1.0]; // #3f1c6d
 pub const PANEL_DIVIDER: [f32; 4] = [106.0 / 255.0, 42.0 / 255.0, 152.0 / 255.0, 1.0]; // #6a2a98
 
+pub const SEARCH_BAR_HEIGHT: f32 = 28.0;
+pub const SEARCH_BAR_BG: [f32; 4] = [0.08, 0.08, 0.12, 0.97];
+pub const SEARCH_HIGHLIGHT: [f32; 4] = [1.0, 0.84, 0.0, 0.35];
+pub const SEARCH_CURRENT: [f32; 4] = [1.0, 0.45, 0.0, 0.55];
+pub const SEARCH_TEXT: [f32; 4] = [0.85, 0.85, 0.85, 1.0];
+pub const SEARCH_TEXT_DIM: [f32; 4] = [0.5, 0.5, 0.5, 1.0];
+
 pub struct Theme {}
 
 impl Theme {

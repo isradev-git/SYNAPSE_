@@ -206,8 +206,34 @@ impl Grid {
         self.scroll_offset = self.scrollback.len();
     }
 
+    pub fn set_scroll_offset(&mut self, offset: usize) {
+        self.scroll_offset = offset.min(self.scrollback.len());
+    }
+
     pub fn is_at_bottom(&self) -> bool {
         self.scroll_offset == 0
+    }
+
+    pub fn scrollback_len(&self) -> usize {
+        self.scrollback.len()
+    }
+
+    pub fn all_lines(&self) -> Vec<Vec<char>> {
+        let mut lines = Vec::new();
+        let sb_len = self.scrollback.len();
+        for i in 0..sb_len {
+            let line = self.scrollback.get_line(i);
+            lines.push(line.iter().map(|c| c.c).collect());
+        }
+        for row in 0..self.rows {
+            let start = row * self.cols;
+            let line: Vec<char> = self.cells[start..start + self.cols]
+                .iter()
+                .map(|c| c.c)
+                .collect();
+            lines.push(line);
+        }
+        lines
     }
 
     fn index(&self, col: usize, row: usize) -> usize {
@@ -271,7 +297,7 @@ impl Grid {
         self.cursor_col = 0;
         self.cursor_row += 1;
         if self.cursor_row >= self.rows {
-            self.scroll_up(1);
+            self.shift_up(1);
             self.cursor_row = self.rows - 1;
         }
     }

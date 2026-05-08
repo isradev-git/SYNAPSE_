@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(rm /mnt/c/Users/pc2/Documents/1_propio/luna/.git/index.lock)",
+      "Bash(cargo build *)",
+      "Bash(git rm *)",
+      "Bash(git commit *)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/verify.sh)",
+      "Bash(/tmp/verify.sh)",
+      "Bash(cargo check *)",
+      "Bash(cargo clippy *)",
+      "Bash(tee /tmp/build_output.txt)",
+      "Bash(cargo clean *)",
+      "Bash(cargo doc *)",
+      "Bash(grep -E \"\\\\.rs$\")",
+      "Bash(tee build_output.log)",
+      "Bash(git *)",
+      "Read(//tmp/**)",
+      "Bash(grep -c \"^$\" /mnt/c/Users/pc2/Documents/1_propio/luna/crates/Luna-app/src/main.rs)",
+      "Bash(sed '/^[[:space:]]*$/d; /^[[:space:]]*\\\\/\\\\//d' /mnt/c/Users/pc2/Documents/1_propio/luna/crates/Luna-app/src/main.rs)",
+      "Bash(cargo metadata *)",
+      "Bash(python3 -c \"import json,sys; m=json.load\\(sys.stdin\\); pkgs=[p for p in m['packages'] if p['name']=='winit']; print\\(pkgs[0]['version'] if pkgs else 'not found'\\)\")",
+      "Bash(cargo test *)"
+    ]
+  }
+}

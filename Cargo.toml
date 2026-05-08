@@ -14,6 +14,8 @@ edition = "2021"
 license = "MIT"
 authors = ["Luna Team"]
 repository = "https://github.com/Luna/Luna"
+homepage = "https://github.com/Luna/Luna"
+description = "A modern GPU-accelerated terminal emulator"
 
 [workspace.dependencies]
 winit = "0.30"
@@ -31,3 +33,8 @@ bitflags = "2"
 clap = { version = "4", features = ["derive"] }
 pollster = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
