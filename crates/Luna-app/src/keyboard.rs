@@ -3,18 +3,22 @@ use std::sync::Arc;
 use winit::{event::KeyEvent, window::Window};
 
 use luna_config::Action;
-use luna_renderer::renderer::Renderer;
 use luna_ui::{layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::TabBar};
 
 use crate::{
     input::InputAction,
     pane_ops::{
-        active_pane_mut, adjacent_pane, change_font_size,
+        active_pane_mut, adjacent_pane,
         create_pane, create_pane_with_cwd, find_pane,
     },
     search::{handle_history_search_input, handle_search_input, update_search_matches},
     state::AppState,
 };
+
+pub enum PostKeyAction {
+    None,
+    FontChange(f32),
+}
 
 fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &crate::state::Selection, cols: usize) -> String {
     let (start, end) = sel.normalized();
@@ -58,26 +62,25 @@ pub fn handle_keyboard(
     tab_bar: &mut TabBar,
     panes: &mut Vec<Pane>,
     layout: &Layout,
-    renderer: &mut Renderer,
     margin: f32,
-    cell_w: &mut f32,
-    cell_h: &mut f32,
+    cell_w: f32,
+    cell_h: f32,
     clipboard: &mut Option<arboard::Clipboard>,
     window: &Arc<Window>,
-) {
+) -> PostKeyAction {
     if event.state == winit::event::ElementState::Pressed && !event.repeat {
         let logical_key = &event.logical_key;
 
         // Search input handling (when active)
         if state.search.active {
             handle_search_input(logical_key, event, state, tab_bar, panes);
-            return;
+            return PostKeyAction::None;
         }
 
         // History search input handling (when active)
         if state.history_search.active {
             handle_history_search_input(logical_key, event, state, tab_bar, panes);
-            return;
+            return PostKeyAction::None;
         }
 
         // Keybind lookup
@@ -109,8 +112,8 @@ pub fn handle_keyboard(
             }
             Some(Action::NewTab) => {
                 let pane_area = layout.pane_area();
-                let new_cols = ((pane_area.2 - margin * 2.0) / *cell_w).max(1.0) as usize;
-                let new_rows = ((pane_area.3 - margin * 2.0) / *cell_h).max(1.0) as usize;
+                let new_cols = ((pane_area.2 - margin * 2.0) / cell_w).max(1.0) as usize;
+                let new_rows = ((pane_area.3 - margin * 2.0) / cell_h).max(1.0) as usize;
                 let (_, pane_id) = tab_bar.new_tab();
                 panes.push(create_pane(pane_id, new_cols, new_rows));
             }
@@ -203,16 +206,13 @@ pub fn handle_keyboard(
                 }
             }
             Some(Action::FontIncrease) => {
-                let new_size = (state.font_size + 1.0).min(32.0);
-                change_font_size(state, renderer, panes, tab_bar, layout, margin, cell_w, cell_h, new_size);
+                return PostKeyAction::FontChange((state.font_size + 1.0).min(32.0));
             }
             Some(Action::FontDecrease) => {
-                let new_size = (state.font_size - 1.0).max(6.0);
-                change_font_size(state, renderer, panes, tab_bar, layout, margin, cell_w, cell_h, new_size);
+                return PostKeyAction::FontChange((state.font_size - 1.0).max(6.0));
             }
             Some(Action::FontReset) => {
-                let default_size = state.config.font_size;
-                change_font_size(state, renderer, panes, tab_bar, layout, margin, cell_w, cell_h, default_size);
+                return PostKeyAction::FontChange(state.config.font_size);
             }
             Some(Action::Fullscreen) => {
                 state.fullscreen = !state.fullscreen;
@@ -244,15 +244,14 @@ pub fn handle_keyboard(
             }
             Some(Action::ReloadConfig) => {
                 state.config.reload();
-                let default_size = state.config.font_size;
-                change_font_size(state, renderer, panes, tab_bar, layout, margin, cell_w, cell_h, default_size);
+                return PostKeyAction::FontChange(state.config.font_size);
             }
             None => {
                 keybind_handled = false;
             }
         }
         if keybind_handled {
-            return;
+            return PostKeyAction::None;
         }
 
         let action = InputAction::from_key(event, state.modifiers);
@@ -304,6 +303,29 @@ pub fn handle_keyboard(
                 }
             }
             InputAction::Ignore => {}
+        }
+    }
+    PostKeyAction::None
+}
+
+use crate::app::App;
+
+impl App {
+    pub(crate) fn handle_keyboard(&mut self, event: winit::event::KeyEvent) {
+        let action = handle_keyboard(
+            &event,
+            &mut self.state,
+            &mut self.tab_bar,
+            &mut self.panes,
+            &self.layout,
+            self.margin,
+            self.cell_w,
+            self.cell_h,
+            &mut self.clipboard,
+            &self.window,
+        );
+        if let PostKeyAction::FontChange(size) = action {
+            self.change_font_size(size);
         }
     }
 }

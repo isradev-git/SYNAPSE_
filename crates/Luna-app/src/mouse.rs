@@ -165,3 +165,43 @@ pub fn handle_cursor_moved(
         }
     }
 }
+
+use crate::app::App;
+
+impl App {
+    pub(crate) fn handle_scroll(&mut self, delta: winit::event::MouseScrollDelta) {
+        handle_scroll(delta, &mut self.panes, &self.tab_bar, self.cell_h);
+    }
+
+    pub(crate) fn handle_mouse_button(
+        &mut self,
+        button_state: winit::event::ElementState,
+        button: winit::event::MouseButton,
+    ) {
+        handle_mouse_button(
+            button_state,
+            button,
+            &mut self.state,
+            &mut self.tab_bar,
+            &mut self.panes,
+            &self.layout,
+        );
+    }
+
+    pub(crate) fn handle_cursor_moved(
+        &mut self,
+        position: winit::dpi::PhysicalPosition<f64>,
+    ) {
+        handle_cursor_moved(
+            position,
+            self.window.scale_factor(),
+            &mut self.state,
+            &mut self.tab_bar,
+            &self.layout,
+            &self.window,
+            self.cell_w,
+            self.cell_h,
+            self.margin,
+        );
+    }
+}

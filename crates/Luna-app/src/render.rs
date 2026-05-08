@@ -390,3 +390,19 @@ pub fn render_frame(
 
     renderer.draw_frame(&cell_data, &ui_rects);
 }
+
+use crate::app::App;
+
+impl App {
+    pub(crate) fn render(&mut self) {
+        render_frame(
+            &mut self.renderer,
+            &self.layout,
+            &mut self.tab_bar,
+            &mut self.panes,
+            &self.state,
+            self.cell_w,
+            self.cell_h,
+        );
+    }
+}

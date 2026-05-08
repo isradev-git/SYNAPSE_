@@ -1,51 +1,9 @@
-use luna_renderer::renderer::Renderer;
 use luna_ui::{
-    layout::Layout,
     pane::{Pane, PaneId},
     splitter::PaneRect,
     tab_bar::TabBar,
     TAB_BAR_HEIGHT,
 };
-
-use crate::state::AppState;
-
-pub fn change_font_size(
-    state: &mut AppState,
-    renderer: &mut Renderer,
-    panes: &mut [Pane],
-    tab_bar: &TabBar,
-    layout: &Layout,
-    margin: f32,
-    cell_w: &mut f32,
-    cell_h: &mut f32,
-    new_size: f32,
-) {
-    state.font_size = new_size;
-    state.config.font_size = new_size;
-    let _ = state.config.save();
-
-    (*cell_w, *cell_h) = renderer.cell_metrics(new_size);
-
-    let pane_area = layout.pane_area();
-    let pane_rect = luna_ui::PaneRect {
-        x: pane_area.0,
-        y: pane_area.1,
-        w: pane_area.2,
-        h: pane_area.3,
-    };
-    let layouts = tab_bar.active_tab().pane_tree.get_layout(pane_rect);
-
-    for (pane_id, rect) in &layouts {
-        let new_cols = ((rect.w - margin * 2.0) / *cell_w).max(1.0) as usize;
-        let new_rows = ((rect.h - margin * 2.0) / *cell_h).max(1.0) as usize;
-        if let Some(pane) = panes.iter_mut().find(|p| p.id == *pane_id) {
-            pane.cols = new_cols;
-            pane.rows = new_rows;
-            pane.grid.borrow_mut().resize(new_cols, new_rows);
-            let _ = pane.pty_session.pty.resize(new_cols as u16, new_rows as u16);
-        }
-    }
-}
 
 pub fn create_pane(id: PaneId, cols: usize, rows: usize) -> Pane {
     create_pane_with_cwd(id, cols, rows, None)
@@ -155,4 +113,37 @@ pub fn find_hovered_divider<'a>(
         let h = info.hitbox;
         x >= h.x as f64 && x <= (h.x + h.w) as f64 && y >= h.y as f64 && y <= (h.y + h.h) as f64
     })
+}
+
+use crate::app::App;
+
+impl App {
+    pub(crate) fn change_font_size(&mut self, new_size: f32) {
+        self.state.font_size = new_size;
+        self.state.config.font_size = new_size;
+        let _ = self.state.config.save();
+
+        (self.cell_w, self.cell_h) = self.renderer.cell_metrics(new_size);
+
+        let pane_area = self.layout.pane_area();
+        let pane_rect = luna_ui::PaneRect {
+            x: pane_area.0,
+            y: pane_area.1,
+            w: pane_area.2,
+            h: pane_area.3,
+        };
+        let layouts = self.tab_bar.active_tab().pane_tree.get_layout(pane_rect);
+        let (margin, cell_w, cell_h) = (self.margin, self.cell_w, self.cell_h);
+
+        for (pane_id, rect) in &layouts {
+            let new_cols = ((rect.w - margin * 2.0) / cell_w).max(1.0) as usize;
+            let new_rows = ((rect.h - margin * 2.0) / cell_h).max(1.0) as usize;
+            if let Some(pane) = self.panes.iter_mut().find(|p| p.id == *pane_id) {
+                pane.cols = new_cols;
+                pane.rows = new_rows;
+                pane.grid.borrow_mut().resize(new_cols, new_rows);
+                let _ = pane.pty_session.pty.resize(new_cols as u16, new_rows as u16);
+            }
+        }
+    }
 }
