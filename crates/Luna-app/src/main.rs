@@ -3,10 +3,11 @@ mod input;
 mod pane_ops;
 mod search;
 mod render;
+mod mouse;
 use render::render_frame;
 use pane_ops::{
     active_pane_mut, adjacent_pane, change_font_size,
-    create_pane, create_pane_with_cwd, find_pane, handle_tab_click,
+    create_pane, create_pane_with_cwd, find_pane,
 };
 use search::{
     handle_history_search_input,
@@ -16,7 +17,7 @@ use search::{
 use std::sync::Arc;
 
 use winit::{
-    event::{ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowAttributes,
 };
@@ -29,7 +30,6 @@ use luna_ui::{
     pane::{Pane, PaneId},
     splitter::SplitDirection,
     tab_bar::{Tab, TabBar, TabId},
-    TAB_BAR_HEIGHT,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -112,134 +112,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let pane = active_pane_mut(&mut panes, &tab_bar);
-                let lines = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => (y.abs() as usize).max(1),
-                    MouseScrollDelta::PixelDelta(pos) => (pos.y.abs() / cell_h as f64) as usize,
-                };
-                let is_up = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y > 0.0,
-                    MouseScrollDelta::PixelDelta(pos) => pos.y > 0.0,
-                };
-                let mut grid_mut = pane.grid.borrow_mut();
-                if is_up {
-                    grid_mut.scroll_down(lines);
-                } else {
-                    grid_mut.scroll_up(lines);
-                }
+                mouse::handle_scroll(delta, &mut panes, &tab_bar, cell_h);
             }
 
             WindowEvent::MouseInput { state: button_state, button, .. } => {
-                if button == MouseButton::Left {
-                    match button_state {
-                        ElementState::Pressed => {
-                            let x = state.cursor_x;
-                            let y = state.cursor_y;
-                            if y < TAB_BAR_HEIGHT as f64 {
-                                handle_tab_click(
-                                    &mut tab_bar,
-                                    &mut panes,
-                                    x,
-                                    layout.window_width as f64,
-                                );
-                            } else if state.hover_divider {
-                                let pane_area = layout.pane_area();
-                                let pane_rect = luna_ui::PaneRect {
-                                    x: pane_area.0,
-                                    y: pane_area.1,
-                                    w: pane_area.2,
-                                    h: pane_area.3,
-                                };
-                                let dividers =
-                                    tab_bar.active_tab().pane_tree.get_dividers(pane_rect);
-                                if let Some(info) =
-                                    find_hovered_divider(&dividers, x, y)
-                                {
-                                    state.dragging_divider = Some(state::DividerDrag {
-                                        pane_id: info.pane_id,
-                                        direction: info.direction,
-                                        parent_rect: info.parent_rect,
-                                    });
-                                    state.selecting = false;
-                                }
-                            } else {
-                                state.selecting = true;
-                            }
-                        }
-                        ElementState::Released => {
-                            state.selecting = false;
-                            state.dragging_divider = None;
-                        }
-                    }
-                }
+                mouse::handle_mouse_button(button_state, button, &mut state, &mut tab_bar, &mut panes, &layout);
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                let sf = window.scale_factor();
-                state.cursor_x = position.x / sf;
-                state.cursor_y = position.y / sf;
-
-                if let Some(ref drag) = state.dragging_divider {
-                    let new_ratio = match drag.direction {
-                        SplitDirection::Horizontal => {
-                            ((state.cursor_y as f32 - drag.parent_rect.y) / drag.parent_rect.h)
-                                as f32
-                        }
-                        SplitDirection::Vertical => {
-                            ((state.cursor_x as f32 - drag.parent_rect.x) / drag.parent_rect.w)
-                                as f32
-                        }
-                    };
-                    tab_bar
-                        .active_tab_mut()
-                        .pane_tree
-                        .set_ratio(drag.pane_id, new_ratio);
-                    state.hover_divider = true;
-                } else if !state.selecting {
-                    let pane_area = layout.pane_area();
-                    let pane_rect = luna_ui::PaneRect {
-                        x: pane_area.0,
-                        y: pane_area.1,
-                        w: pane_area.2,
-                        h: pane_area.3,
-                    };
-                    let dividers = tab_bar.active_tab().pane_tree.get_dividers(pane_rect);
-                    if let Some(info) =
-                        find_hovered_divider(&dividers, state.cursor_x, state.cursor_y)
-                    {
-                        match info.direction {
-                            SplitDirection::Horizontal => {
-                                window.set_cursor_icon(winit::window::CursorIcon::NsResize);
-                            }
-                            SplitDirection::Vertical => {
-                                window.set_cursor_icon(winit::window::CursorIcon::EwResize);
-                            }
-                        }
-                        state.hover_divider = true;
-                    } else {
-                        if state.hover_divider {
-                            window.set_cursor_icon(winit::window::CursorIcon::Text);
-                        }
-                        state.hover_divider = false;
-                    }
-                }
-
-                if state.selecting {
-                    let x = state.cursor_x;
-                    let y = state.cursor_y;
-
-                    let pane_top = TAB_BAR_HEIGHT as f64;
-                    let col = ((x - margin as f64) / cell_w as f64).floor().max(0.0) as usize;
-                    let viewport_row = ((y - pane_top - margin as f64) / cell_h as f64)
-                        .floor()
-                        .max(0.0) as usize;
-
-                    if let Some(ref mut sel) = state.selection {
-                        sel.update_end(col, viewport_row);
-                    } else {
-                        state.selection = Some(state::Selection::new(col, viewport_row));
-                    }
-                }
+                mouse::handle_cursor_moved(
+                    position,
+                    window.scale_factor(),
+                    &mut state,
+                    &mut tab_bar,
+                    &layout,
+                    &window,
+                    cell_w,
+                    cell_h,
+                    margin,
+                );
             }
 
             WindowEvent::RedrawRequested => {
@@ -499,17 +390,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     Ok(())
-}
-
-fn find_hovered_divider<'a>(
-    dividers: &'a [luna_ui::DividerInfo],
-    x: f64,
-    y: f64,
-) -> Option<&'a luna_ui::DividerInfo> {
-    dividers.iter().find(|info| {
-        let h = info.hitbox;
-        x >= h.x as f64 && x <= (h.x + h.w) as f64 && y >= h.y as f64 && y <= (h.y + h.h) as f64
-    })
 }
 
 fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &state::Selection, cols: usize) -> String {
