@@ -1,6 +1,7 @@
-mod app;
+mod state;
 mod input;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use winit::{
@@ -10,8 +11,9 @@ use winit::{
     window::WindowAttributes,
 };
 
-use app::AppState;
+use state::AppState;
 use input::InputAction;
+use luna_config::Action;
 use luna_renderer::ui::UIRect;
 use luna_ui::{
     layout::Layout,
@@ -24,10 +26,16 @@ use luna_ui::{
 const TAB_FONT_SIZE: f32 = 12.0;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = luna_config::Config::load();
+    let keybinds = luna_config::Keybinds::new();
+
     let event_loop = EventLoop::new()?;
     let window_attrs = WindowAttributes::default()
         .with_title("Luna")
-        .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0))
+        .with_inner_size(winit::dpi::LogicalSize::new(
+            config.window_width as f64,
+            config.window_height as f64,
+        ))
         .with_resizable(true);
     let window = Arc::new(event_loop.create_window(window_attrs)?);
     let mut renderer = luna_renderer::renderer::Renderer::new(window.clone());
@@ -36,8 +44,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let size = renderer.size();
     layout.update(size.width as f32, size.height as f32);
 
-    let font_size = 14.0f32;
-    let (cell_w, cell_h) = renderer.cell_metrics(font_size);
+    let initial_font_size = config.font_size;
+    let (mut cell_w, mut cell_h) = renderer.cell_metrics(initial_font_size);
 
     let pane_area = layout.pane_area();
     let margin = layout.pane_margin();
@@ -54,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     panes.push(first_pane);
 
     let mut clipboard = arboard::Clipboard::new().ok();
-    let mut state = AppState::new();
+    let mut state = AppState::new(config, keybinds, initial_font_size);
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -140,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if let Some(info) =
                                     find_hovered_divider(&dividers, x, y)
                                 {
-                                    state.dragging_divider = Some(app::DividerDrag {
+                                    state.dragging_divider = Some(state::DividerDrag {
                                         pane_id: info.pane_id,
                                         direction: info.direction,
                                         parent_rect: info.parent_rect,
@@ -222,12 +230,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(ref mut sel) = state.selection {
                         sel.update_end(col, viewport_row);
                     } else {
-                        state.selection = Some(app::Selection::new(col, viewport_row));
+                        state.selection = Some(state::Selection::new(col, viewport_row));
                     }
                 }
             }
 
             WindowEvent::RedrawRequested => {
+                let font_size = state.font_size;
                 for pane in panes.iter_mut() {
                     while let Ok(data) = pane.pty_session.rx.try_recv() {
                         pane.processor.process(&data);
@@ -261,6 +270,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut cell_data: Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> = Vec::new();
                 let mut ui_rects: Vec<UIRect> = Vec::new();
 
+                let match_set: HashSet<(usize, usize)> = if state.search.active && !state.search.term.is_empty() {
+                    build_match_set(&state.search.matches, state.search.term.len())
+                } else {
+                    HashSet::new()
+                };
+
                 for &(pane_id, rect) in &layouts {
                     let pane = find_pane(&panes, pane_id);
                     if pane.is_none() {
@@ -279,7 +294,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let cursor_col = grid_ref.cursor_col();
                     let cursor_row = grid_ref.cursor_row();
-                    let scrolled = grid_ref.scroll_offset() > 0;
+                    let scrollback_len = grid_ref.scrollback_len();
+                    let scroll_offset = grid_ref.scroll_offset();
+                    let sb_visible = ((scroll_offset + pane_rows).min(scrollback_len)).saturating_sub(scroll_offset);
+                    let scrolled = scroll_offset > 0;
                     let is_active = pane_id == active_pane_id;
 
                     for (col, vrow, cell) in grid_ref.visible_cells() {
@@ -296,10 +314,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let x = content_x + col as f32 * cell_w;
                         let y = content_y + vrow as f32 * cell_h;
 
-                        let bg = if is_active
-                            && state.selection.as_ref().map_or(false, |s| s.contains(col, vrow))
-                        {
+                        let global_row = if vrow < sb_visible {
+                            scroll_offset + vrow
+                        } else {
+                            scrollback_len + vrow - sb_visible
+                        };
+                        let selection_bg = is_active
+                            && state.selection.as_ref().map_or(false, |s| s.contains(col, vrow));
+                        let match_is_current = state.search.active && !state.search.term.is_empty()
+                            && !state.search.matches.is_empty()
+                            && {
+                                let cm = &state.search.matches[state.search.current_match];
+                                cm.row == global_row && col >= cm.col && col < cm.col + state.search.term.len()
+                            };
+                        let match_is_in = match_set.contains(&(col, global_row));
+                        let bg = if selection_bg {
                             [1.0, 0.239, 0.58, 0.4]
+                        } else if match_is_current {
+                            theme::SEARCH_CURRENT
+                        } else if match_is_in {
+                            theme::SEARCH_HIGHLIGHT
                         } else {
                             cell.bg.bg_rgba()
                         };
@@ -360,6 +394,100 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     });
                 }
 
+                // Search bar overlay
+                if state.search.active {
+                    let pane_area = layout.pane_area();
+                    let bar_x = pane_area.0;
+                    let bar_y = pane_area.1;
+                    let bar_w = pane_area.2;
+                    let bar_h = theme::SEARCH_BAR_HEIGHT;
+
+                    ui_rects.push(UIRect {
+                        pos: [bar_x, bar_y],
+                        size: [bar_w, bar_h],
+                        color: theme::SEARCH_BAR_BG,
+                    });
+
+                    let search_fs = 12.0;
+                    let char_w = search_fs * 0.6;
+                    let text_y = bar_y + 7.0;
+                    let text_x = bar_x + 8.0;
+                    let prefix = "Search: ";
+                    let prefix_chars: Vec<char> = prefix.chars().collect();
+                    let term_chars: Vec<char> = state.search.term.chars().collect();
+                    let transparent = [0.0, 0.0, 0.0, 0.0];
+
+                    for (j, &c) in prefix_chars.iter().enumerate() {
+                        cell_data.push((c, text_x + j as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT_DIM, transparent));
+                    }
+                    for (j, &c) in term_chars.iter().enumerate() {
+                        cell_data.push((c, text_x + (prefix_chars.len() + j) as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT, transparent));
+                    }
+                    let cursor_col = prefix_chars.len() + state.search.cursor_pos;
+                    cell_data.push(('|', text_x + cursor_col as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT, transparent));
+
+                    let counter = if state.search.term.is_empty() {
+                        String::new()
+                    } else if state.search.matches.is_empty() {
+                        "0 matches".to_string()
+                    } else {
+                        format!("{}/{}", state.search.current_match + 1, state.search.matches.len())
+                    };
+                    if !counter.is_empty() {
+                        let counter_x = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
+                        for (j, c) in counter.chars().enumerate() {
+                            cell_data.push((c, counter_x + j as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT_DIM, transparent));
+                        }
+                    }
+                }
+
+                // History search bar overlay
+                if state.history_search.active {
+                    let pane_area = layout.pane_area();
+                    let bar_x = pane_area.0;
+                    let bar_y = pane_area.1 + pane_area.3 - theme::SEARCH_BAR_HEIGHT;
+                    let bar_w = pane_area.2;
+                    let bar_h = theme::SEARCH_BAR_HEIGHT;
+
+                    ui_rects.push(UIRect {
+                        pos: [bar_x, bar_y],
+                        size: [bar_w, bar_h],
+                        color: theme::SEARCH_BAR_BG,
+                    });
+
+                    let search_fs = 12.0;
+                    let char_w = search_fs * 0.6;
+                    let text_y = bar_y + 7.0;
+                    let text_x = bar_x + 8.0;
+                    let transparent = [0.0, 0.0, 0.0, 0.0];
+                    let max_chars = ((bar_w - 24.0) / char_w).max(20.0) as usize;
+
+                    let mut line = format!("(reverse-i-search)`{}': ", state.history_search.term);
+                    if let Some(mt) = state.history_search.current_text() {
+                        if mt.len() > max_chars.saturating_sub(line.len()) {
+                            line.push_str(&mt[..max_chars.saturating_sub(line.len()).max(1)]);
+                        } else {
+                            line.push_str(mt);
+                        }
+                    }
+
+                    for (j, c) in line.chars().enumerate() {
+                        if j >= max_chars {
+                            break;
+                        }
+                        cell_data.push((c, text_x + j as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT, transparent));
+                    }
+
+                    // Match counter
+                    if !state.history_search.matches.is_empty() {
+                        let counter = format!("{}/{}", state.history_search.current_match + 1, state.history_search.matches.len());
+                        let cx = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
+                        for (j, c) in counter.chars().enumerate() {
+                            cell_data.push((c, cx + j as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT_DIM, transparent));
+                        }
+                    }
+                }
+
                 let tab_ui = build_tab_bar_ui_rects(&layout, &tab_bar);
                 ui_rects.extend(tab_ui);
 
@@ -373,82 +501,191 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed && !event.repeat {
                     let logical_key = &event.logical_key;
-                    let ctrl = state.modifiers.control_key();
-                    let shift = state.modifiers.shift_key();
 
-                    // Split pane actions (Ctrl+Shift+...)
-                    if ctrl && shift {
-                        if let Some(action) = handle_split_keyboard(logical_key) {
-                            match action {
-                                SplitAction::NewPane(dir) => {
-                                    let active_id = tab_bar.active_tab().active_pane;
-                                    let new_pane_id = tab_bar.next_pane_id();
-                                    if tab_bar.active_tab_mut().pane_tree.split(active_id, new_pane_id, dir).is_ok() {
-                                        if let Some(pane) = find_pane(&panes, active_id) {
-                                            let cwd = pane.cwd();
-                                            let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
-                                            panes.push(create_pane_with_cwd(new_pane_id, pane.cols, pane.rows, cwd_opt));
-                                        }
-                                    }
-                                }
-                                SplitAction::ClosePane => {
-                                    let pane_count = tab_bar.active_tab().pane_tree.all_panes().len();
-                                    if pane_count <= 1 {
-                                        return;
-                                    }
-                                    let active_id = tab_bar.active_tab().active_pane;
-                                    if let Some(removed) = tab_bar.active_tab_mut().pane_tree.close(active_id) {
-                                        if let Some(pane) = panes.iter_mut().find(|p| p.id == removed) {
-                                            let _ = pane.pty_session.pty.kill();
-                                        }
-                                        panes.retain(|p| p.id != removed);
-                                        let remaining = tab_bar.active_tab().pane_tree.all_panes();
-                                        if !remaining.is_empty() {
-                                            tab_bar.active_tab_mut().active_pane = remaining[0];
-                                        }
-                                    }
-                                }
-                                SplitAction::Navigate(dir_name) => {
-                                    let pane_area = layout.pane_area();
-                                    let pane_rect = luna_ui::PaneRect {
-                                        x: pane_area.0,
-                                        y: pane_area.1,
-                                        w: pane_area.2,
-                                        h: pane_area.3,
-                                    };
-                                    let layouts = tab_bar.active_tab().pane_tree.get_layout(pane_rect);
-                                    let active_id = tab_bar.active_tab().active_pane;
-                                    if let Some(next) = adjacent_pane(&layouts, active_id, dir_name) {
-                                        tab_bar.active_tab_mut().active_pane = next;
-                                    }
-                                }
-                            }
-                            return;
-                        }
+                    // Search input handling (when active)
+                    if state.search.active {
+                        handle_search_input(logical_key, &event, &mut state, &tab_bar, &panes);
+                        return;
                     }
 
-                    if let Some(action) = handle_tab_keyboard(logical_key, state.modifiers, &mut tab_bar, &mut panes) {
-                        match action {
-                            TabAction::NewTab => {
-                                let pane_area = layout.pane_area();
-                                let new_cols = ((pane_area.2 - margin * 2.0) / cell_w).max(1.0) as usize;
-                                let new_rows = ((pane_area.3 - margin * 2.0) / cell_h).max(1.0) as usize;
-                                let (_, pane_id) = tab_bar.new_tab();
-                                panes.push(create_pane(pane_id, new_cols, new_rows));
+                    // History search input handling (when active)
+                    if state.history_search.active {
+                        handle_history_search_input(logical_key, &event, &mut state, &tab_bar, &mut panes);
+                        return;
+                    }
+
+                    // Keybind lookup
+                    let action_opt = state.keybinds.lookup(&logical_key, state.modifiers);
+                    let mut keybind_handled = true;
+                    match action_opt {
+                        Some(Action::Search) => {
+                            state.search.toggle();
+                            if state.search.active {
+                                update_search_matches(&mut state, &tab_bar, &panes);
                             }
-                            TabAction::CloseTab => {
-                                if let Some(closed) = tab_bar.close_tab(tab_bar.active) {
-                                    let closed_panes = closed.pane_tree.all_panes();
-                                    for pane in panes.iter_mut() {
-                                        if closed_panes.contains(&pane.id) {
-                                            let _ = pane.pty_session.pty.kill();
-                                        }
+                        }
+                        Some(Action::HistorySearch) => {
+                            state.history_search.activate();
+                            if let Some(pane) = find_pane(&panes, tab_bar.active_tab().active_pane) {
+                                let grid = pane.grid.borrow();
+                                let lines = grid.all_lines();
+                                state.history_search.build_history(&lines);
+                                state.history_search.update_filter();
+                            }
+                        }
+                        Some(Action::ClearScreen) => {
+                            let pane = active_pane_mut(&mut panes, &tab_bar);
+                            let mut grid = pane.grid.borrow_mut();
+                            let last_row = grid.rows() - 1;
+                            grid.clear_region(0, last_row);
+                            grid.set_cursor(0, 0);
+                            let _ = pane.pty_session.pty.write(b"\x0c");
+                        }
+                        Some(Action::NewTab) => {
+                            let pane_area = layout.pane_area();
+                            let new_cols = ((pane_area.2 - margin * 2.0) / cell_w).max(1.0) as usize;
+                            let new_rows = ((pane_area.3 - margin * 2.0) / cell_h).max(1.0) as usize;
+                            let (_, pane_id) = tab_bar.new_tab();
+                            panes.push(create_pane(pane_id, new_cols, new_rows));
+                        }
+                        Some(Action::CloseTab) => {
+                            if let Some(closed) = tab_bar.close_tab(tab_bar.active) {
+                                let closed_panes = closed.pane_tree.all_panes();
+                                for pane in panes.iter_mut() {
+                                    if closed_panes.contains(&pane.id) {
+                                        let _ = pane.pty_session.pty.kill();
                                     }
-                                    panes.retain(|p| !closed_panes.contains(&p.id));
+                                }
+                                panes.retain(|p| !closed_panes.contains(&p.id));
+                            }
+                        }
+                        Some(Action::NextTab) => {
+                            tab_bar.next_tab();
+                        }
+                        Some(Action::PrevTab) => {
+                            tab_bar.prev_tab();
+                        }
+                        Some(Action::TabSwitch1) => tab_bar.activate(0),
+                        Some(Action::TabSwitch2) => tab_bar.activate(1),
+                        Some(Action::TabSwitch3) => tab_bar.activate(2),
+                        Some(Action::TabSwitch4) => tab_bar.activate(3),
+                        Some(Action::TabSwitch5) => tab_bar.activate(4),
+                        Some(Action::TabSwitch6) => tab_bar.activate(5),
+                        Some(Action::TabSwitch7) => tab_bar.activate(6),
+                        Some(Action::TabSwitch8) => tab_bar.activate(7),
+                        Some(Action::TabSwitch9) => tab_bar.activate(8),
+                        Some(Action::SplitVertical) => {
+                            let active_id = tab_bar.active_tab().active_pane;
+                            let new_pane_id = tab_bar.next_pane_id();
+                            if tab_bar.active_tab_mut().pane_tree.split(active_id, new_pane_id, SplitDirection::Vertical).is_ok() {
+                                if let Some(pane) = find_pane(&panes, active_id) {
+                                    let cwd = pane.cwd();
+                                    let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
+                                    panes.push(create_pane_with_cwd(new_pane_id, pane.cols, pane.rows, cwd_opt));
                                 }
                             }
-                            TabAction::Ignore => {}
                         }
+                        Some(Action::SplitHorizontal) => {
+                            let active_id = tab_bar.active_tab().active_pane;
+                            let new_pane_id = tab_bar.next_pane_id();
+                            if tab_bar.active_tab_mut().pane_tree.split(active_id, new_pane_id, SplitDirection::Horizontal).is_ok() {
+                                if let Some(pane) = find_pane(&panes, active_id) {
+                                    let cwd = pane.cwd();
+                                    let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
+                                    panes.push(create_pane_with_cwd(new_pane_id, pane.cols, pane.rows, cwd_opt));
+                                }
+                            }
+                        }
+                        Some(Action::ClosePane) => {
+                            let pane_count = tab_bar.active_tab().pane_tree.all_panes().len();
+                            if pane_count <= 1 {
+                                keybind_handled = true;
+                            } else {
+                                let active_id = tab_bar.active_tab().active_pane;
+                                if let Some(removed) = tab_bar.active_tab_mut().pane_tree.close(active_id) {
+                                    if let Some(pane) = panes.iter_mut().find(|p| p.id == removed) {
+                                        let _ = pane.pty_session.pty.kill();
+                                    }
+                                    panes.retain(|p| p.id != removed);
+                                    let remaining = tab_bar.active_tab().pane_tree.all_panes();
+                                    if !remaining.is_empty() {
+                                        tab_bar.active_tab_mut().active_pane = remaining[0];
+                                    }
+                                }
+                            }
+                        }
+                        Some(Action::NavigateUp) | Some(Action::NavigateDown)
+                        | Some(Action::NavigateLeft) | Some(Action::NavigateRight) => {
+                            let dir = match action_opt {
+                                Some(Action::NavigateUp) => "up",
+                                Some(Action::NavigateDown) => "down",
+                                Some(Action::NavigateLeft) => "left",
+                                Some(Action::NavigateRight) => "right",
+                                _ => unreachable!(),
+                            };
+                            let pane_area = layout.pane_area();
+                            let pane_rect = luna_ui::PaneRect {
+                                x: pane_area.0,
+                                y: pane_area.1,
+                                w: pane_area.2,
+                                h: pane_area.3,
+                            };
+                            let layouts = tab_bar.active_tab().pane_tree.get_layout(pane_rect);
+                            let active_id = tab_bar.active_tab().active_pane;
+                            if let Some(next) = adjacent_pane(&layouts, active_id, dir) {
+                                tab_bar.active_tab_mut().active_pane = next;
+                            }
+                        }
+                        Some(Action::FontIncrease) => {
+                            let new_size = (state.font_size + 1.0).min(32.0);
+                            change_font_size(&mut state, &mut renderer, &mut panes, &tab_bar, &layout, margin, &mut cell_w, &mut cell_h, new_size);
+                        }
+                        Some(Action::FontDecrease) => {
+                            let new_size = (state.font_size - 1.0).max(6.0);
+                            change_font_size(&mut state, &mut renderer, &mut panes, &tab_bar, &layout, margin, &mut cell_w, &mut cell_h, new_size);
+                        }
+                        Some(Action::FontReset) => {
+                            let default_size = state.config.font_size;
+                            change_font_size(&mut state, &mut renderer, &mut panes, &tab_bar, &layout, margin, &mut cell_w, &mut cell_h, default_size);
+                        }
+                        Some(Action::Fullscreen) => {
+                            state.fullscreen = !state.fullscreen;
+                            if state.fullscreen {
+                                window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                            } else {
+                                window.set_fullscreen(None);
+                            }
+                        }
+                        Some(Action::Copy) => {
+                            let pane = active_pane_mut(&mut panes, &tab_bar);
+                            let grid_ref = pane.grid.borrow();
+                            if let Some(ref sel) = state.selection {
+                                let text = extract_selection(&grid_ref, sel, pane.cols);
+                                if let Some(ref mut clip) = clipboard {
+                                    let _ = clip.set_text(text);
+                                }
+                            }
+                        }
+                        Some(Action::Paste) => {
+                            if let Some(ref mut clip) = clipboard {
+                                if let Ok(text) = clip.get_text() {
+                                    let pane = active_pane_mut(&mut panes, &tab_bar);
+                                    let _ = pane.pty_session.pty.write(b"\x1b[200~");
+                                    let _ = pane.pty_session.pty.write(text.as_bytes());
+                                    let _ = pane.pty_session.pty.write(b"\x1b[201~");
+                                }
+                            }
+                        }
+                        Some(Action::ReloadConfig) => {
+                            state.config.reload();
+                            let default_size = state.config.font_size;
+                            change_font_size(&mut state, &mut renderer, &mut panes, &tab_bar, &layout, margin, &mut cell_w, &mut cell_h, default_size);
+                        }
+                        None => {
+                            keybind_handled = false;
+                        }
+                    }
+                    if keybind_handled {
                         return;
                     }
 
@@ -516,6 +753,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn change_font_size(
+    state: &mut AppState,
+    renderer: &mut luna_renderer::renderer::Renderer,
+    panes: &mut [Pane],
+    tab_bar: &TabBar,
+    layout: &Layout,
+    margin: f32,
+    cell_w: &mut f32,
+    cell_h: &mut f32,
+    new_size: f32,
+) {
+    state.font_size = new_size;
+    state.config.font_size = new_size;
+    let _ = state.config.save();
+
+    (*cell_w, *cell_h) = renderer.cell_metrics(new_size);
+
+    let pane_area = layout.pane_area();
+    let pane_rect = luna_ui::PaneRect {
+        x: pane_area.0,
+        y: pane_area.1,
+        w: pane_area.2,
+        h: pane_area.3,
+    };
+    let layouts = tab_bar.active_tab().pane_tree.get_layout(pane_rect);
+
+    for (pane_id, rect) in &layouts {
+        let new_cols = ((rect.w - margin * 2.0) / *cell_w).max(1.0) as usize;
+        let new_rows = ((rect.h - margin * 2.0) / *cell_h).max(1.0) as usize;
+        if let Some(pane) = panes.iter_mut().find(|p| p.id == *pane_id) {
+            pane.cols = new_cols;
+            pane.rows = new_rows;
+            pane.grid.borrow_mut().resize(new_cols, new_rows);
+            let _ = pane.pty_session.pty.resize(new_cols as u16, new_rows as u16);
+        }
+    }
+}
+
 fn create_pane(id: PaneId, cols: usize, rows: usize) -> Pane {
     create_pane_with_cwd(id, cols, rows, None)
 }
@@ -547,34 +822,6 @@ fn active_pane_mut<'a>(panes: &'a mut [Pane], tab_bar: &TabBar) -> &'a mut Pane 
         .iter_mut()
         .find(|p| p.id == active_id)
         .expect("Active pane not found")
-}
-
-enum TabAction {
-    NewTab,
-    CloseTab,
-    Ignore,
-}
-
-enum SplitAction<'a> {
-    NewPane(SplitDirection),
-    ClosePane,
-    Navigate(&'a str),
-}
-
-fn handle_split_keyboard<'a>(key: &'a Key) -> Option<SplitAction<'a>> {
-    match key {
-        Key::Character(c) => match c.as_str() {
-            "d" | "D" => Some(SplitAction::NewPane(SplitDirection::Vertical)),
-            "e" | "E" => Some(SplitAction::NewPane(SplitDirection::Horizontal)),
-            "w" | "W" => Some(SplitAction::ClosePane),
-            _ => None,
-        },
-        Key::Named(NamedKey::ArrowUp) => Some(SplitAction::Navigate("up")),
-        Key::Named(NamedKey::ArrowDown) => Some(SplitAction::Navigate("down")),
-        Key::Named(NamedKey::ArrowLeft) => Some(SplitAction::Navigate("left")),
-        Key::Named(NamedKey::ArrowRight) => Some(SplitAction::Navigate("right")),
-        _ => None,
-    }
 }
 
 fn adjacent_pane(layouts: &[(PaneId, PaneRect)], from: PaneId, direction: &str) -> Option<PaneId> {
@@ -613,53 +860,6 @@ fn adjacent_pane(layouts: &[(PaneId, PaneRect)], from: PaneId, direction: &str) 
                 && r.x + r.w > from_rect.x)
             .max_by(|(_, a), (_, b)| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(id, _)| *id),
-        _ => None,
-    }
-}
-
-fn handle_tab_keyboard(
-    key: &Key,
-    modifiers: winit::keyboard::ModifiersState,
-    tab_bar: &mut TabBar,
-    _panes: &[Pane],
-) -> Option<TabAction> {
-    let ctrl = modifiers.control_key();
-    let shift = modifiers.shift_key();
-    let alt = modifiers.alt_key();
-
-    if !ctrl {
-        return None;
-    }
-
-    match key {
-        Key::Named(NamedKey::Tab) => {
-            if alt {
-                return None;
-            }
-            if shift {
-                tab_bar.prev_tab();
-                Some(TabAction::Ignore)
-            } else {
-                tab_bar.next_tab();
-                Some(TabAction::Ignore)
-            }
-        }
-        Key::Character(c) => {
-            match c.as_str() {
-                "t" | "T" => Some(TabAction::NewTab),
-                "w" | "W" => Some(TabAction::CloseTab),
-                "1" => { tab_bar.activate(0); Some(TabAction::Ignore) }
-                "2" => { tab_bar.activate(1); Some(TabAction::Ignore) }
-                "3" => { tab_bar.activate(2); Some(TabAction::Ignore) }
-                "4" => { tab_bar.activate(3); Some(TabAction::Ignore) }
-                "5" => { tab_bar.activate(4); Some(TabAction::Ignore) }
-                "6" => { tab_bar.activate(5); Some(TabAction::Ignore) }
-                "7" => { tab_bar.activate(6); Some(TabAction::Ignore) }
-                "8" => { tab_bar.activate(7); Some(TabAction::Ignore) }
-                "9" => { tab_bar.activate(8); Some(TabAction::Ignore) }
-                _ => None,
-            }
-        }
         _ => None,
     }
 }
@@ -811,7 +1011,7 @@ fn find_hovered_divider<'a>(
     })
 }
 
-fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &app::Selection, cols: usize) -> String {
+fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &state::Selection, cols: usize) -> String {
     let (start, end) = sel.normalized();
     let mut result = String::new();
 
@@ -845,4 +1045,173 @@ fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &app::Selection, col
     }
 
     result
+}
+
+fn find_matches(grid: &luna_terminal::grid::Grid, term: &str) -> Vec<state::SearchMatch> {
+    let mut matches = Vec::new();
+    if term.is_empty() {
+        return matches;
+    }
+    let term_lower = term.to_lowercase();
+    let lines = grid.all_lines();
+    for (row, line) in lines.iter().enumerate() {
+        let line_str: String = line.iter().collect();
+        let line_lower = line_str.to_lowercase();
+        let mut start = 0;
+        while let Some(pos) = line_lower[start..].find(&term_lower) {
+            matches.push(state::SearchMatch {
+                col: start + pos,
+                row,
+            });
+            start += pos + 1;
+        }
+    }
+    matches
+}
+
+fn build_match_set(matches: &[state::SearchMatch], term_len: usize) -> HashSet<(usize, usize)> {
+    let mut set = HashSet::new();
+    for m in matches {
+        for i in 0..term_len {
+            set.insert((m.col + i, m.row));
+        }
+    }
+    set
+}
+
+fn update_search_matches(state: &mut AppState, tab_bar: &TabBar, panes: &[Pane]) {
+    let pane = panes.iter().find(|p| p.id == tab_bar.active_tab().active_pane).unwrap();
+    let grid = pane.grid.borrow();
+    state.search.matches = find_matches(&grid, &state.search.term);
+    if state.search.matches.is_empty() {
+        state.search.current_match = 0;
+    } else if state.search.current_match >= state.search.matches.len() {
+        state.search.current_match = 0;
+    }
+}
+
+fn scroll_to_current_match(state: &AppState, tab_bar: &TabBar, panes: &[Pane]) {
+    if state.search.matches.is_empty() {
+        return;
+    }
+    let current = &state.search.matches[state.search.current_match];
+    let pane = panes.iter().find(|p| p.id == tab_bar.active_tab().active_pane).unwrap();
+    let mut grid = pane.grid.borrow_mut();
+    let sb_len = grid.scrollback_len();
+    let grid_rows = grid.rows();
+
+    if current.row < sb_len {
+        let target = if current.row >= grid_rows / 2 {
+            current.row - grid_rows / 2
+        } else {
+            0
+        };
+        grid.set_scroll_offset(target);
+    } else {
+        grid.scroll_to_bottom();
+    }
+}
+
+fn handle_search_input(
+    key: &Key,
+    event: &winit::event::KeyEvent,
+    state: &mut AppState,
+    tab_bar: &TabBar,
+    panes: &[Pane],
+) {
+    match key {
+        Key::Named(NamedKey::Escape) => {
+            state.search.toggle();
+        }
+        Key::Named(NamedKey::Enter) => {
+            if state.modifiers.shift_key() {
+                state.search.prev_match();
+            } else {
+                state.search.next_match();
+            }
+            scroll_to_current_match(state, tab_bar, panes);
+        }
+        Key::Named(NamedKey::Backspace) => {
+            state.search.backspace();
+            update_search_matches(state, tab_bar, panes);
+        }
+        Key::Named(NamedKey::Delete) => {
+            state.search.delete_forward();
+            update_search_matches(state, tab_bar, panes);
+        }
+        Key::Named(NamedKey::ArrowLeft) => {
+            state.search.move_left();
+        }
+        Key::Named(NamedKey::ArrowRight) => {
+            state.search.move_right();
+        }
+        Key::Named(NamedKey::Home) => {
+            state.search.move_home();
+        }
+        Key::Named(NamedKey::End) => {
+            state.search.move_end();
+        }
+        _ => {
+            // Handle regular text input
+            if let Some(text) = &event.text {
+                if !text.is_empty() {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            state.search.insert_char(c);
+                        }
+                    }
+                    update_search_matches(state, tab_bar, panes);
+                }
+            }
+        }
+    }
+}
+
+fn handle_history_search_input(
+    key: &Key,
+    event: &winit::event::KeyEvent,
+    state: &mut AppState,
+    tab_bar: &TabBar,
+    panes: &mut [Pane],
+) {
+    let ctrl = state.modifiers.control_key();
+
+    match key {
+        Key::Named(NamedKey::Escape) => {
+            state.history_search.deactivate();
+        }
+        Key::Named(NamedKey::Enter) => {
+            if let Some(text) = state.history_search.current_text().map(|s| s.to_string()) {
+                let pane = active_pane_mut(panes, tab_bar);
+                let _ = pane.pty_session.pty.write(text.as_bytes());
+            }
+            state.history_search.deactivate();
+        }
+        Key::Named(NamedKey::Backspace) => {
+            state.history_search.backspace();
+            state.history_search.update_filter();
+        }
+        _ => {
+            if ctrl {
+                // Ctrl+R cycles to next older match
+                if let Key::Character(c) = key {
+                    if c.as_str() == "r" || c.as_str() == "R" {
+                        state.history_search.next_match();
+                        return;
+                    }
+                }
+            }
+
+            if let Some(text) = &event.text {
+                if !text.is_empty() {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            state.history_search.insert_char(c);
+                        }
+                    }
+                    state.history_search.update_filter();
+                }
+            }
+        }
+    }
 }
