@@ -9,7 +9,7 @@ use crate::{
     input::InputAction,
     pane_ops::{
         active_pane_mut, adjacent_pane,
-        create_pane, create_pane_with_cwd, find_pane,
+        create_pane, create_pane_full, create_pane_with_cwd, find_pane,
     },
     search::{handle_history_search_input, handle_search_input, update_search_matches},
     state::AppState,
@@ -115,7 +115,9 @@ pub fn handle_keyboard(
                 let new_cols = ((pane_area.2 - margin * 2.0) / cell_w).max(1.0) as usize;
                 let new_rows = ((pane_area.3 - margin * 2.0) / cell_h).max(1.0) as usize;
                 let (_, pane_id) = tab_bar.new_tab();
-                panes.push(create_pane(pane_id, new_cols, new_rows));
+                let shell = state.config.shell_program.as_str();
+                let args = &state.config.shell_args;
+                panes.push(create_pane_full(pane_id, new_cols, new_rows, None, Some(shell), args));
             }
             Some(Action::CloseTab) => {
                 if let Some(closed) = tab_bar.close_tab(tab_bar.active) {
@@ -150,7 +152,9 @@ pub fn handle_keyboard(
                     if let Some(pane) = find_pane(&panes, active_id) {
                         let cwd = pane.cwd();
                         let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
-                        panes.push(create_pane_with_cwd(new_pane_id, pane.cols, pane.rows, cwd_opt));
+                        let shell = state.config.shell_program.as_str();
+                        let args = &state.config.shell_args;
+                        panes.push(create_pane_full(new_pane_id, pane.cols, pane.rows, cwd_opt, Some(shell), args));
                     }
                 }
             }
@@ -161,7 +165,9 @@ pub fn handle_keyboard(
                     if let Some(pane) = find_pane(&panes, active_id) {
                         let cwd = pane.cwd();
                         let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
-                        panes.push(create_pane_with_cwd(new_pane_id, pane.cols, pane.rows, cwd_opt));
+                        let shell = state.config.shell_program.as_str();
+                        let args = &state.config.shell_args;
+                        panes.push(create_pane_full(new_pane_id, pane.cols, pane.rows, cwd_opt, Some(shell), args));
                     }
                 }
             }

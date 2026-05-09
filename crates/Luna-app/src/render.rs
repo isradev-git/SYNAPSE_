@@ -121,6 +121,15 @@ pub fn build_tab_bar_text(
                 bg,
             ));
         }
+
+        // × close button (only when more than 1 tab — enforced in click handler too)
+        let close_x = x + tab_w - 14.0;
+        let close_fg = if i == tab_bar.active {
+            [1.0, 1.0, 1.0, 0.7_f32]
+        } else {
+            [0.8, 0.8, 0.8, 0.5_f32]
+        };
+        result.push(('×', close_x, text_y, TAB_FONT_SIZE, close_fg, bg));
     }
 
     // + text
@@ -432,9 +441,14 @@ use crate::pane_ops::create_pane;
 
 impl App {
     pub(crate) fn render(&mut self) {
-        if self.last_blink.elapsed() >= std::time::Duration::from_millis(500) {
-            self.cursor_blink_on = !self.cursor_blink_on;
-            self.last_blink = std::time::Instant::now();
+        if self.state.config.cursor_blink {
+            let blink_ms = self.state.config.cursor_blink_ms;
+            if self.last_blink.elapsed() >= std::time::Duration::from_millis(blink_ms) {
+                self.cursor_blink_on = !self.cursor_blink_on;
+                self.last_blink = std::time::Instant::now();
+            }
+        } else {
+            self.cursor_blink_on = true;
         }
 
         let exited = render_frame(

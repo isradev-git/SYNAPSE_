@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use luna_config::{Config, Keybinds};
 use luna_ui::pane::PaneId;
 use luna_ui::splitter::{PaneRect, SplitDirection};
@@ -158,6 +160,8 @@ pub struct AppState {
     pub dragging_divider: Option<DividerDrag>,
     pub hover_divider: bool,
     pub hover_tab: Option<usize>,
+    pub last_click_time: Instant,
+    pub click_count: u8,
     pub search: SearchState,
     pub history_search: HistorySearchState,
     pub font_size: f32,
@@ -177,6 +181,8 @@ impl AppState {
             dragging_divider: None,
             hover_divider: false,
             hover_tab: None,
+            last_click_time: Instant::now(),
+            click_count: 0,
             search: SearchState::new(),
             history_search: HistorySearchState::new(),
             font_size,

@@ -162,13 +162,57 @@ pub fn handle_mouse_button(
             ElementState::Pressed => {
                 let x = state.cursor_x;
                 let y = state.cursor_y;
+
+                // Multi-click tracking
+                let now = std::time::Instant::now();
+                if now.duration_since(state.last_click_time) < std::time::Duration::from_millis(400) {
+                    state.click_count = state.click_count.saturating_add(1).min(3);
+                } else {
+                    state.click_count = 1;
+                }
+                state.last_click_time = now;
+                let click = state.click_count;
+
                 if y < TAB_BAR_HEIGHT as f64 {
-                    handle_tab_click(
-                        tab_bar,
-                        panes,
-                        x,
-                        layout.window_width as f64,
-                    );
+                    handle_tab_click(tab_bar, panes, x, layout);
+                } else if click >= 2 {
+                    // Double / triple click selection
+                    let col = ((x - margin as f64) / cell_w as f64).floor().max(0.0) as usize;
+                    let vrow = ((y - TAB_BAR_HEIGHT as f64 - margin as f64) / cell_h as f64)
+                        .floor().max(0.0) as usize;
+                    if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+                        let grid = pane.grid.borrow();
+                        let cols = grid.cols();
+                        let rows = grid.rows();
+                        if click == 3 {
+                            // Triple click → whole line
+                            let end_col = cols.saturating_sub(1);
+                            let mut sel = Selection::new(0, vrow);
+                            sel.update_end(end_col, vrow);
+                            state.selection = Some(sel);
+                        } else {
+                            // Double click → word
+                            let is_sep = |c: char| c == ' ' || c == '\t' || c == '\0'
+                                || "()[]{}\"'`/\\|;,.<>!@#$%^&*+-=~".contains(c);
+                            let char_at = |c: usize| grid
+                                .get_visible(c, vrow)
+                                .map(|cell| cell.c)
+                                .unwrap_or(' ');
+
+                            let mut start = col;
+                            while start > 0 && !is_sep(char_at(start - 1)) {
+                                start -= 1;
+                            }
+                            let mut end = col;
+                            while end + 1 < cols && end < rows && !is_sep(char_at(end + 1)) {
+                                end += 1;
+                            }
+                            let mut sel = Selection::new(start, vrow);
+                            sel.update_end(end, vrow);
+                            state.selection = Some(sel);
+                        }
+                    }
+                    state.selecting = false;
                 } else if state.hover_divider {
                     let pane_area = layout.pane_area();
                     let pane_rect = PaneRect {
@@ -187,6 +231,7 @@ pub fn handle_mouse_button(
                         state.selecting = false;
                     }
                 } else {
+                    state.selection = None;
                     state.selecting = true;
                 }
             }
