@@ -27,3 +27,9 @@ impl Theme {
         Self {}
     }
 }
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self::new()
+    }
+}

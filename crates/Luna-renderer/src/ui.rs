@@ -164,7 +164,7 @@ impl UIRenderer {
         instances: &'a [UIRect],
         queue: &Queue,
     ) {
-        let size = (instances.len() * std::mem::size_of::<UIRect>()) as u64;
+        let size = std::mem::size_of_val(instances) as u64;
         if size > self.instance_buffer.size() {
             return;
         }

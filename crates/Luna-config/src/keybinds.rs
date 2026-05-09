@@ -47,6 +47,7 @@ pub enum Action {
 }
 
 impl Action {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "search" => Some(Action::Search),
@@ -165,10 +166,12 @@ impl Keybinds {
         let alt = modifiers.alt_key();
 
         for entry in &self.entries {
-            if entry.ctrl == ctrl && entry.shift == shift && entry.alt == alt {
-                if key_matches(key, &entry.key) {
-                    return Action::from_str(&entry.action);
-                }
+            if entry.ctrl == ctrl
+                && entry.shift == shift
+                && entry.alt == alt
+                && key_matches(key, &entry.key)
+            {
+                return Action::from_str(&entry.action);
             }
         }
         None
@@ -176,6 +179,12 @@ impl Keybinds {
 
     pub fn entries(&self) -> &[KeyBindEntry] {
         &self.entries
+    }
+}
+
+impl Default for Keybinds {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -401,4 +410,185 @@ fn default_entries() -> Vec<KeyBindEntry> {
             action: "reload_config".into(),
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::{ModifiersState, NamedKey};
+
+    fn mods(ctrl: bool, shift: bool, alt: bool) -> ModifiersState {
+        let mut m = ModifiersState::empty();
+        if ctrl {
+            m |= ModifiersState::CONTROL;
+        }
+        if shift {
+            m |= ModifiersState::SHIFT;
+        }
+        if alt {
+            m |= ModifiersState::ALT;
+        }
+        m
+    }
+
+    #[test]
+    fn test_action_from_str_all_actions() {
+        let actions = [
+            "search",
+            "history_search",
+            "clear_screen",
+            "new_tab",
+            "close_tab",
+            "next_tab",
+            "prev_tab",
+            "tab_1",
+            "tab_2",
+            "tab_3",
+            "tab_4",
+            "tab_5",
+            "tab_6",
+            "tab_7",
+            "tab_8",
+            "tab_9",
+            "split_vertical",
+            "split_horizontal",
+            "close_pane",
+            "navigate_up",
+            "navigate_down",
+            "navigate_left",
+            "navigate_right",
+            "font_increase",
+            "font_decrease",
+            "font_reset",
+            "fullscreen",
+            "copy",
+            "paste",
+            "reload_config",
+        ];
+        for &action_str in &actions {
+            assert!(
+                Action::from_str(action_str).is_some(),
+                "Action::from_str({}) failed",
+                action_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_action_from_str_invalid() {
+        assert!(Action::from_str("nonexistent").is_none());
+        assert!(Action::from_str("").is_none());
+        assert!(Action::from_str("TAB_1").is_none());
+    }
+
+    #[test]
+    fn test_default_entries_count() {
+        let kb = Keybinds::new();
+        assert!(
+            kb.entries().len() >= 27,
+            "Expected at least 27 default bindings"
+        );
+    }
+
+    #[test]
+    fn test_lookup_new_tab() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Character("t".into()), mods(true, false, false));
+        assert_eq!(action, Some(Action::NewTab));
+    }
+
+    #[test]
+    fn test_lookup_close_tab() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Character("w".into()), mods(true, false, false));
+        assert_eq!(action, Some(Action::CloseTab));
+    }
+
+    #[test]
+    fn test_lookup_shift_variant() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Character("w".into()), mods(true, true, false));
+        assert_eq!(action, Some(Action::ClosePane));
+    }
+
+    #[test]
+    fn test_lookup_no_match() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Character("z".into()), mods(false, false, false));
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_lookup_named_key_tab() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Named(NamedKey::Tab), mods(true, false, false));
+        assert_eq!(action, Some(Action::NextTab));
+    }
+
+    #[test]
+    fn test_lookup_named_key_f11() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Named(NamedKey::F11), mods(false, false, false));
+        assert_eq!(action, Some(Action::Fullscreen));
+    }
+
+    #[test]
+    fn test_lookup_case_insensitive() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Character("T".into()), mods(true, false, false));
+        assert_eq!(action, Some(Action::NewTab));
+    }
+
+    #[test]
+    fn test_entry_to_combo_round_trip() {
+        let entry = KeyBindEntry {
+            key: "f".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "search".into(),
+        };
+        let combo = entry_to_combo(&entry).unwrap();
+        assert_eq!(combo.key, "f");
+        assert!(combo.ctrl);
+        assert!(combo.shift);
+        assert!(!combo.alt);
+    }
+
+    #[test]
+    fn test_from_config_overrides() {
+        let overrides = vec![KeyBindEntry {
+            key: "t".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "clear_screen".into(),
+        }];
+        let kb = Keybinds::from_config(&overrides);
+        let action = kb.lookup(&Key::Character("t".into()), mods(true, true, false));
+        assert_eq!(action, Some(Action::ClearScreen));
+        let action = kb.lookup(&Key::Character("t".into()), mods(true, false, false));
+        assert_eq!(action, Some(Action::NewTab));
+    }
+
+    #[test]
+    fn test_lookup_arrow_navigation() {
+        let kb = Keybinds::new();
+        assert_eq!(
+            kb.lookup(&Key::Named(NamedKey::ArrowUp), mods(true, true, false)),
+            Some(Action::NavigateUp)
+        );
+        assert_eq!(
+            kb.lookup(&Key::Named(NamedKey::ArrowDown), mods(true, true, false)),
+            Some(Action::NavigateDown)
+        );
+        assert_eq!(
+            kb.lookup(&Key::Named(NamedKey::ArrowLeft), mods(true, true, false)),
+            Some(Action::NavigateLeft)
+        );
+        assert_eq!(
+            kb.lookup(&Key::Named(NamedKey::ArrowRight), mods(true, true, false)),
+            Some(Action::NavigateRight)
+        );
+    }
 }

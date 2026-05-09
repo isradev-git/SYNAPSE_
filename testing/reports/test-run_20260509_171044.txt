@@ -1,0 +1,11 @@
+=========================================
+ Luna Test Suite — Run 20260509_171044
+ Project: /Users/glitchbane/Documents/proyectos/luna
+ Platform: Darwin arm64
+=========================================
+
+  FAIL  Rust toolchain
+  FAIL  cargo build --workspace
+  PASS  cargo test --workspace
+  FAIL  cargo fmt + clippy
+  FAIL  VT100 parser tests

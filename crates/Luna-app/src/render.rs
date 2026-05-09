@@ -82,6 +82,7 @@ pub fn build_tab_bar_ui_rects(
     rects
 }
 
+#[allow(clippy::type_complexity)]
 pub fn build_tab_bar_text(
     layout: &Layout,
     tab_bar: &TabBar,
@@ -148,6 +149,7 @@ pub fn build_tab_bar_text(
     result
 }
 
+#[allow(clippy::too_many_arguments, clippy::ptr_arg, clippy::type_complexity)]
 pub fn render_frame(
     renderer: &mut Renderer,
     layout: &Layout,
@@ -252,7 +254,7 @@ pub fn render_frame(
                 scrollback_len + vrow - sb_visible
             };
             let selection_bg = is_active
-                && state.selection.as_ref().map_or(false, |s| s.contains(col, vrow));
+                && state.selection.as_ref().is_some_and(|s| s.contains(col, vrow));
             let match_is_current = state.search.active && !state.search.term.is_empty()
                 && !state.search.matches.is_empty()
                 && {

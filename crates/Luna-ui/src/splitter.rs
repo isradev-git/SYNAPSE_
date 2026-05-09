@@ -60,6 +60,7 @@ impl PaneTree {
 
     /// Split a leaf pane into two panes, returning both IDs.
     /// Takes ownership via swap internally, avoiding borrow issues.
+    #[allow(clippy::result_unit_err)]
     pub fn split(
         &mut self,
         pane_id: PaneId,

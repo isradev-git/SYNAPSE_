@@ -57,21 +57,23 @@ sudo pacman -S libx11 libxkbcommon wayland
 | Categoría              | Estado | Notas                              |
 |------------------------|--------|-------------------------------------|
 | C0 Controls            | ✅     | LF, CR, BS, HT, FF, BEL            |
-| CSI Cursor Movement    | ✅     | CUU, CUD, CUF, CUB, CUP, CHA       |
-| CSI Erase              | ✅     | ED (0/1/2/3), EL (0/1/2)           |
+| CSI Cursor Movement    | ✅     | CUU/CUD/CUF/CUB, CUP, CHA, VPA, CNL, CPL |
+| CSI Erase              | ✅     | ED (0/1/2/3), EL (0/1/2), ECH      |
+| CSI Insert/Delete      | ✅     | ICH, DCH, IL, DL (scroll-region aware) |
 | SGR Colors             | ✅     | 8-color, bright, 256-color, true color |
 | SGR Attributes         | ✅     | Bold, Italic, Underline, Blink, Inverse, Invisible |
 | Save/Restore Cursor    | ✅     | ESC 7/8, CSI s/u                   |
-| RIS (Reset)            | ✅     | ESC c                              |
+| RIS (Reset)            | ✅     | ESC c (resets region + modes)      |
 | OSC Title              | ✅     | OSC 0, OSC 2                       |
 | OSC CWD                | ✅     | OSC 7                              |
-| Scroll Regions         | ⬜     | Pendiente (DECSTBM)                |
-| Double Height/Width    | ⬜     | Pendiente                          |
-| Line Drawing Chars     | ⬜     | Pendiente                          |
-| Mouse Reporting        | ⬜     | Pendiente                          |
+| Scroll Regions         | ✅     | DECSTBM (CSI r), SU (CSI S), SD (CSI T) |
+| Line Drawing Chars     | ✅     | DEC Special Graphics (ESC(0/B, SO/SI) |
+| Mouse Reporting        | ✅     | X10, button-motion, any-motion, SGR |
 | Bracketed Paste        | ✅     | `\e[200~` ... `\e[201~`            |
-| Focus Events           | ⬜     | Pendiente                          |
-| Kitty Keyboard Protocol| ⬜     | Pendiente                          |
+| Focus Events           | ✅     | `?1004h/l`                         |
+| Application Cursor     | ✅     | DECCKM (`?1h/l`), arrows send `\eOA`–`D` |
+| Double Height/Width    | ⬜     | Pendiente                          |
+| Kitty Keyboard Protocol| ⬜     | Pendiente (R-022)                  |
 
 ---
 

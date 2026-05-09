@@ -14,7 +14,7 @@ pub enum InputAction {
 }
 
 impl InputAction {
-    pub fn from_key(event: &KeyEvent, modifiers: ModifiersState) -> Self {
+    pub fn from_key(event: &KeyEvent, modifiers: ModifiersState, application_cursor: bool) -> Self {
         let text = event.text.as_deref();
 
         if let Some(text) = text {
@@ -22,12 +22,12 @@ impl InputAction {
             let (ctrl, shift) = (modifiers.control_key(), modifiers.shift_key());
 
             // Ctrl+Shift+C → copy
-            if bytes == &[3] && ctrl && shift {
+            if bytes == [3] && ctrl && shift {
                 return InputAction::Copy;
             }
 
             // Ctrl+Shift+V → paste
-            if bytes == &[22] && ctrl && shift {
+            if bytes == [22] && ctrl && shift {
                 return InputAction::Paste;
             }
 
@@ -38,10 +38,10 @@ impl InputAction {
         }
 
         let key_ref = event.logical_key.as_ref();
-        Self::from_named_key(&key_ref, modifiers)
+        Self::from_named_key(&key_ref, modifiers, application_cursor)
     }
 
-    fn from_named_key(key: &Key<&str>, modifiers: ModifiersState) -> Self {
+    fn from_named_key(key: &Key<&str>, modifiers: ModifiersState, application_cursor: bool) -> Self {
         use Key::Named;
         let named = match key {
             Named(n) => n,
@@ -90,6 +90,8 @@ impl InputAction {
                     InputAction::Write(b"\x1b[1;2A".to_vec())
                 } else if ctrl {
                     InputAction::Write(b"\x1b[1;5A".to_vec())
+                } else if application_cursor {
+                    InputAction::Write(b"\x1bOA".to_vec())
                 } else {
                     InputAction::Write(b"\x1b[A".to_vec())
                 }
@@ -99,6 +101,8 @@ impl InputAction {
                     InputAction::Write(b"\x1b[1;2B".to_vec())
                 } else if ctrl {
                     InputAction::Write(b"\x1b[1;5B".to_vec())
+                } else if application_cursor {
+                    InputAction::Write(b"\x1bOB".to_vec())
                 } else {
                     InputAction::Write(b"\x1b[B".to_vec())
                 }
@@ -108,6 +112,8 @@ impl InputAction {
                     InputAction::Write(b"\x1b[1;2C".to_vec())
                 } else if ctrl {
                     InputAction::Write(b"\x1b[1;5C".to_vec())
+                } else if application_cursor {
+                    InputAction::Write(b"\x1bOC".to_vec())
                 } else {
                     InputAction::Write(b"\x1b[C".to_vec())
                 }
@@ -117,6 +123,8 @@ impl InputAction {
                     InputAction::Write(b"\x1b[1;2D".to_vec())
                 } else if ctrl {
                     InputAction::Write(b"\x1b[1;5D".to_vec())
+                } else if application_cursor {
+                    InputAction::Write(b"\x1bOD".to_vec())
                 } else {
                     InputAction::Write(b"\x1b[D".to_vec())
                 }

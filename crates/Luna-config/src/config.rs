@@ -146,3 +146,138 @@ fn config_dir() -> Option<PathBuf> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_values() {
+        let cfg = Config::default();
+        assert_eq!(cfg.font_size, 14.0);
+        assert_eq!(cfg.font_family, "monospace");
+        assert!(!cfg.font_ligatures);
+        assert_eq!(cfg.window_width, 1280);
+        assert_eq!(cfg.window_height, 800);
+        assert_eq!(cfg.scrollback_lines, 100_000);
+        assert_eq!(cfg.shell_program, "");
+        assert!(cfg.shell_args.is_empty());
+        assert_eq!(cfg.cursor_style, CursorStyle::Block);
+        assert!(cfg.cursor_blink);
+        assert_eq!(cfg.cursor_blink_ms, 500);
+    }
+
+    #[test]
+    fn test_cursor_style_serde() {
+        // TOML doesn't serialize bare enums; test through Config round-trip
+        let config = Config {
+            cursor_style: CursorStyle::Block,
+            ..Config::default()
+        };
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.cursor_style, CursorStyle::Block);
+
+        let config = Config {
+            cursor_style: CursorStyle::Beam,
+            ..Config::default()
+        };
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.cursor_style, CursorStyle::Beam);
+
+        let config = Config {
+            cursor_style: CursorStyle::Underline,
+            ..Config::default()
+        };
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.cursor_style, CursorStyle::Underline);
+    }
+
+    #[test]
+    fn test_config_toml_round_trip() {
+        let config = Config::default();
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.font_size, config.font_size);
+        assert_eq!(parsed.font_family, config.font_family);
+        assert_eq!(parsed.scrollback_lines, config.scrollback_lines);
+        assert_eq!(parsed.cursor_style, config.cursor_style);
+        assert!(parsed.cursor_blink);
+    }
+
+    #[test]
+    fn test_config_partial_override() {
+        let toml_str = r#"
+font_size = 18.0
+cursor_style = "beam"
+scrollback_lines = 50000
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.font_size, 18.0);
+        assert_eq!(config.cursor_style, CursorStyle::Beam);
+        assert_eq!(config.scrollback_lines, 50000);
+        // Other fields use defaults
+        assert_eq!(config.font_family, "monospace");
+        assert_eq!(config.window_width, 1280);
+        assert!(config.cursor_blink);
+    }
+
+    #[test]
+    fn test_config_save_and_load_temp() {
+        let dir = std::env::temp_dir().join(format!("luna_config_test_{}", std::process::id()));
+        let path = dir.join("config.toml");
+
+        let config = Config {
+            font_size: 22.0,
+            ..Config::default()
+        };
+        config.save_to(&path).unwrap();
+        assert!(path.exists());
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let loaded: Config = toml::from_str(&content).unwrap();
+        assert_eq!(loaded.font_size, 22.0);
+        assert_eq!(loaded.cursor_style, CursorStyle::Block);
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_config_path_exists() {
+        let path = Config::config_path();
+        if let Some(p) = path {
+            // Path should point to the Luna config directory
+            let dir = p.parent().unwrap();
+            assert!(dir.ends_with("Luna"));
+        }
+    }
+
+    #[test]
+    fn test_shell_config_custom() {
+        let toml_str = r#"
+shell_program = "/usr/bin/fish"
+shell_args = ["-l"]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.shell_program, "/usr/bin/fish");
+        assert_eq!(config.shell_args, vec!["-l"]);
+    }
+
+    #[test]
+    fn test_window_config_coverage() {
+        let config = Config::default();
+        assert_eq!(config.window_width, 1280);
+        assert_eq!(config.window_height, 800);
+
+        let toml_str = r#"
+window_width = 1920
+window_height = 1080
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.window_width, 1920);
+        assert_eq!(config.window_height, 1080);
+    }
+}

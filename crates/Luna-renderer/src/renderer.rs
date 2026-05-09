@@ -118,8 +118,8 @@ impl Renderer {
 
         for c in text_str.chars() {
             if let Some((swash_image, cache_key)) = self.text.rasterize_glyph(c, font_size) {
-                let bitmap_width = swash_image.placement.width as u32;
-                let bitmap_height = swash_image.placement.height as u32;
+                let bitmap_width = swash_image.placement.width;
+                let bitmap_height = swash_image.placement.height;
 
                 if bitmap_width == 0 || bitmap_height == 0 {
                     x_offset += swash_image.placement.left as f32 + font_size * 0.6;
@@ -174,6 +174,7 @@ impl Renderer {
         self.render_instances(&instances, &[]);
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn draw_cells(
         &mut self,
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
@@ -201,8 +202,8 @@ impl Renderer {
                 }
             };
 
-            let bitmap_width = swash_image.placement.width as u32;
-            let bitmap_height = swash_image.placement.height as u32;
+            let bitmap_width = swash_image.placement.width;
+            let bitmap_height = swash_image.placement.height;
 
             if bitmap_width == 0 || bitmap_height == 0 {
                 continue;
@@ -255,6 +256,7 @@ impl Renderer {
         self.render_instances(&[], rects);
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn draw_frame(
         &mut self,
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
@@ -285,8 +287,8 @@ impl Renderer {
                 }
             };
 
-            let bitmap_width = swash_image.placement.width as u32;
-            let bitmap_height = swash_image.placement.height as u32;
+            let bitmap_width = swash_image.placement.width;
+            let bitmap_height = swash_image.placement.height;
 
             if bitmap_width == 0 || bitmap_height == 0 {
                 continue;

@@ -180,11 +180,11 @@ pub fn handle_tab_click(
     tab_bar.activate(actual_idx);
 }
 
-pub fn find_hovered_divider<'a>(
-    dividers: &'a [luna_ui::DividerInfo],
+pub fn find_hovered_divider(
+    dividers: &[luna_ui::DividerInfo],
     x: f64,
     y: f64,
-) -> Option<&'a luna_ui::DividerInfo> {
+) -> Option<&luna_ui::DividerInfo> {
     dividers.iter().find(|info| {
         let h = info.hitbox;
         x >= h.x as f64 && x <= (h.x + h.w) as f64 && y >= h.y as f64 && y <= (h.y + h.h) as f64

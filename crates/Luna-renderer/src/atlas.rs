@@ -271,8 +271,9 @@ mod tests {
             row_height = row_height.max(h);
             rects.push((u0, v0, u1, v1));
 
-            for j in 0..rects.len() - 1 {
-                let (pu0, pv0, pu1, pv1) = rects[j];
+            for (j, &prev) in rects.iter().enumerate().take(rects.len()) {
+                if i == j as u32 { continue; }
+                let (pu0, pv0, pu1, pv1) = prev;
                 let overlap = !(u0 >= pu1 || u1 <= pu0 || v0 >= pv1 || v1 <= pv0);
                 assert!(!overlap, "Overlap between glyph {} and {}", i, j);
             }

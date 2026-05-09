@@ -1,0 +1,8 @@
+=========================================
+ Luna Test Suite — Run 20260509_171438
+ Project: /Users/glitchbane/Documents/proyectos/luna
+ Platform: Darwin arm64
+=========================================
+
+  FAIL  Rust toolchain
+  SKIP  Phases 2-9 (no Rust toolchain)

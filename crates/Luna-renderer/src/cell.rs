@@ -90,7 +90,7 @@ impl CellRenderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Luna Cell PipelineLayout"),
-            bind_group_layouts: &[&atlas_bind_group_layout, &screen_bind_group_layout],
+            bind_group_layouts: &[atlas_bind_group_layout, &screen_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -172,7 +172,7 @@ impl CellRenderer {
         instances: &'a [CellInstance],
         queue: &Queue,
     ) {
-        let size = (instances.len() * std::mem::size_of::<CellInstance>()) as u64;
+        let size = std::mem::size_of_val(instances) as u64;
 
         if size > self.instance_buffer.size() {
             return;

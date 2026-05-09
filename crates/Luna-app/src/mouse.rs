@@ -48,13 +48,14 @@ fn encode_mouse_event(col: usize, row: usize, btn: u8, pressed: bool, sgr: bool)
         bytes.push(m);
         bytes
     } else {
-        let b = (btn + 32).min(255) as u8;
+        let b = btn + 32;
         let x = ((col as u16 + 32).min(255)) as u8;
         let y = ((row as u16 + 32).min(255)) as u8;
         vec![0x1b, b'[', b'M', b, x, y]
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_scroll(
     delta: MouseScrollDelta,
     panes: &mut [Pane],
@@ -110,6 +111,7 @@ pub fn handle_scroll(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_mouse_button(
     button_state: ElementState,
     button: MouseButton,
@@ -243,6 +245,7 @@ pub fn handle_mouse_button(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_cursor_moved(
     position: PhysicalPosition<f64>,
     scale_factor: f64,
@@ -285,12 +288,10 @@ pub fn handle_cursor_moved(
     if let Some(ref drag) = state.dragging_divider {
         let new_ratio = match drag.direction {
             SplitDirection::Horizontal => {
-                ((state.cursor_y as f32 - drag.parent_rect.y) / drag.parent_rect.h)
-                    as f32
+                (state.cursor_y as f32 - drag.parent_rect.y) / drag.parent_rect.h
             }
             SplitDirection::Vertical => {
-                ((state.cursor_x as f32 - drag.parent_rect.x) / drag.parent_rect.w)
-                    as f32
+                (state.cursor_x as f32 - drag.parent_rect.x) / drag.parent_rect.w
             }
         };
         tab_bar
@@ -312,16 +313,16 @@ pub fn handle_cursor_moved(
         {
             match info.direction {
                 SplitDirection::Horizontal => {
-                    window.set_cursor_icon(CursorIcon::NsResize);
+                    window.set_cursor(CursorIcon::NsResize);
                 }
                 SplitDirection::Vertical => {
-                    window.set_cursor_icon(CursorIcon::EwResize);
+                    window.set_cursor(CursorIcon::EwResize);
                 }
             }
             state.hover_divider = true;
         } else {
             if state.hover_divider {
-                window.set_cursor_icon(CursorIcon::Text);
+                window.set_cursor(CursorIcon::Text);
             }
             state.hover_divider = false;
         }

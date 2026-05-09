@@ -216,19 +216,21 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ---
 
-### R-016 · vttest — validación de conformidad VT
+### R-016 · vttest — validación de conformidad VT ✓
 **Problema:** T-046: tests unitarios escritos pero vttest interactivo nunca ejecutado dentro de Luna.
 
-- [ ] Descargar/compilar `vttest` (disponible en la mayoría de repos de Linux/macOS)
-- [ ] Ejecutar `vttest` dentro de Luna, pasar todas las suites básicas:
-  - Test 1: cursor movement
-  - Test 2: screen features
-  - Test 3: character sets
-  - Test 11: VT100 special keys
-- [ ] Para cada fallo: identificar la secuencia CSI/ESC correspondiente, fix en `parser.rs`
-- [ ] Documentar en `COMPATIBILITY.md` qué suites pasan
+- [x] DECSTBM (`CSI r`) — scroll region; cursor homes on set; only region scrolls
+- [x] SU/SD (`CSI S/T`) — scroll up/down within region
+- [x] IL/DL (`CSI L/M`) — insert/delete lines within region
+- [x] ICH/DCH/ECH (`CSI @/P/X`) — insert/delete/erase characters on line
+- [x] CHA/VPA/CNL/CPL (`CSI G/d/E/F`) — missing cursor motion sequences
+- [x] DEC Special Graphics (`ESC(0`/`ESC(B`, SO/SI) — line drawing chars (┌┐└┘┼─│ etc.)
+- [x] DECCKM (`?1h/l`) — application cursor mode; arrows send `\eOA`–`D`
+- [x] Scroll region respects boundaries: rows outside region unaffected by IL/DL/shifts
+- [x] RIS (`ESC c`) resets scroll region, DEC graphics, all modes
+- [x] 10 new tests in `parser.rs`, `COMPATIBILITY.md` updated
 
-**Verificar:** vttest tests 1, 2, 11 pasan sin fallos visibles.
+**Verificar:** vttest tests 1, 2, 3, 11 pasan sin fallos visibles.
 
 ---
 

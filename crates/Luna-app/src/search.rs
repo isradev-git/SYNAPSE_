@@ -48,9 +48,8 @@ pub fn update_search_matches(state: &mut AppState, tab_bar: &TabBar, panes: &[Pa
     let pane = panes.iter().find(|p| p.id == tab_bar.active_tab().active_pane).unwrap();
     let grid = pane.grid.borrow();
     state.search.matches = find_matches(&grid, &state.search.term);
-    if state.search.matches.is_empty() {
-        state.search.current_match = 0;
-    } else if state.search.current_match >= state.search.matches.len() {
+    state.search.current_match = 0;
+    if state.search.matches.is_empty() || state.search.current_match >= state.search.matches.len() {
         state.search.current_match = 0;
     }
 }
@@ -66,11 +65,7 @@ pub fn scroll_to_current_match(state: &AppState, tab_bar: &TabBar, panes: &[Pane
     let grid_rows = grid.rows();
 
     if current.row < sb_len {
-        let target = if current.row >= grid_rows / 2 {
-            current.row - grid_rows / 2
-        } else {
-            0
-        };
+        let target = current.row.saturating_sub(grid_rows / 2);
         grid.set_scroll_offset(target);
     } else {
         grid.scroll_to_bottom();

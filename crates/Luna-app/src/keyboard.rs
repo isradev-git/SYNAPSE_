@@ -9,7 +9,7 @@ use crate::{
     input::InputAction,
     pane_ops::{
         active_pane_mut, adjacent_pane,
-        create_pane, create_pane_full, create_pane_with_cwd, find_pane,
+        create_pane_full, find_pane,
     },
     search::{handle_history_search_input, handle_search_input, update_search_matches},
     state::AppState,
@@ -71,6 +71,7 @@ fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &crate::state::Selec
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_keyboard(
     event: &KeyEvent,
     state: &mut AppState,
@@ -99,7 +100,7 @@ pub fn handle_keyboard(
         }
 
         // Keybind lookup
-        let action_opt = state.keybinds.lookup(&logical_key, state.modifiers);
+        let action_opt = state.keybinds.lookup(logical_key, state.modifiers);
         let mut keybind_handled = true;
         match action_opt {
             Some(Action::Search) => {
@@ -110,7 +111,7 @@ pub fn handle_keyboard(
             }
             Some(Action::HistorySearch) => {
                 state.history_search.activate();
-                if let Some(pane) = find_pane(&panes, tab_bar.active_tab().active_pane) {
+                if let Some(pane) = find_pane(panes, tab_bar.active_tab().active_pane) {
                     let grid = pane.grid.borrow();
                     let lines = grid.all_lines();
                     state.history_search.build_history(&lines);
@@ -175,7 +176,7 @@ pub fn handle_keyboard(
                 let active_id = tab_bar.active_tab().active_pane;
                 let new_pane_id = tab_bar.next_pane_id();
                 if tab_bar.active_tab_mut().pane_tree.split(active_id, new_pane_id, SplitDirection::Vertical).is_ok() {
-                    if let Some(pane) = find_pane(&panes, active_id) {
+                            if let Some(pane) = find_pane(panes, active_id) {
                         let cwd = pane.cwd();
                         let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
                         let shell = state.config.shell_program.as_str();
@@ -188,7 +189,7 @@ pub fn handle_keyboard(
                 let active_id = tab_bar.active_tab().active_pane;
                 let new_pane_id = tab_bar.next_pane_id();
                 if tab_bar.active_tab_mut().pane_tree.split(active_id, new_pane_id, SplitDirection::Horizontal).is_ok() {
-                    if let Some(pane) = find_pane(&panes, active_id) {
+                            if let Some(pane) = find_pane(panes, active_id) {
                         let cwd = pane.cwd();
                         let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
                         let shell = state.config.shell_program.as_str();
@@ -291,7 +292,10 @@ pub fn handle_keyboard(
             return PostKeyAction::None;
         }
 
-        let action = InputAction::from_key(event, state.modifiers);
+        let app_cursor = find_pane(panes, tab_bar.active_tab().active_pane)
+            .map(|p| p.modes.borrow().application_cursor)
+            .unwrap_or(false);
+        let action = InputAction::from_key(event, state.modifiers, app_cursor);
         match action {
             InputAction::Write(bytes) => {
                 if bytes != b"\x1b[5~" && bytes != b"\x1b[6~" {

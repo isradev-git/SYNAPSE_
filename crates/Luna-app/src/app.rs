@@ -71,8 +71,7 @@ impl App {
         let first_tab = Tab::new(first_tab_id, first_pane_id);
         let tab_bar = TabBar::new(first_tab);
 
-        let mut panes = Vec::new();
-        panes.push(first_pane);
+        let panes = vec![first_pane];
 
         let clipboard = arboard::Clipboard::new().ok();
         let state = AppState::new(config, keybinds, initial_font_size);

@@ -109,3 +109,152 @@ impl TabBar {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pane::PaneId;
+
+    fn make_tab(id: u64, pane_id: u64) -> Tab {
+        Tab::new(TabId(id), PaneId(pane_id))
+    }
+
+    #[test]
+    fn test_tab_new() {
+        let tab = make_tab(0, 0);
+        assert_eq!(tab.id, TabId(0));
+        assert_eq!(tab.title, "");
+        assert_eq!(tab.cwd, "");
+    }
+
+    #[test]
+    fn test_tab_bar_new() {
+        let initial = make_tab(0, 0);
+        let bar = TabBar::new(initial);
+        assert_eq!(bar.tabs.len(), 1);
+        assert_eq!(bar.active, 0);
+    }
+
+    #[test]
+    fn test_new_tab() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        let (tab_id, pane_id) = bar.new_tab();
+        assert_eq!(tab_id, TabId(1));
+        assert_eq!(pane_id, PaneId(1));
+        assert_eq!(bar.tabs.len(), 2);
+        assert_eq!(bar.active, 1);
+    }
+
+    #[test]
+    fn test_close_tab_cannot_close_last() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        assert!(bar.close_tab(0).is_none());
+        assert_eq!(bar.tabs.len(), 1);
+    }
+
+    #[test]
+    fn test_close_tab_active_last() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.new_tab();
+        bar.new_tab();
+        assert_eq!(bar.tabs.len(), 3);
+        bar.active = 2;
+        let removed = bar.close_tab(2);
+        assert!(removed.is_some());
+        assert_eq!(bar.tabs.len(), 2);
+        assert_eq!(bar.active, 1); // shifted to last valid index
+    }
+
+    #[test]
+    fn test_close_tab_non_last() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.new_tab();
+        bar.new_tab();
+        bar.active = 0;
+        let removed = bar.close_tab(0);
+        assert!(removed.is_some());
+        assert_eq!(bar.tabs.len(), 2);
+        assert_eq!(bar.active, 0);
+    }
+
+    #[test]
+    fn test_activate_clamped() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.activate(99);
+        assert_eq!(bar.active, 0); // stays at 0
+        bar.activate(0);
+        assert_eq!(bar.active, 0);
+    }
+
+    #[test]
+    fn test_next_tab_circular() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.new_tab();
+        bar.new_tab();
+        bar.active = 0;
+        assert_eq!(bar.next_tab(), 1);
+        assert_eq!(bar.next_tab(), 2);
+        assert_eq!(bar.next_tab(), 0); // wraps around
+    }
+
+    #[test]
+    fn test_prev_tab_circular() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.new_tab();
+        bar.new_tab();
+        bar.active = 0;
+        assert_eq!(bar.prev_tab(), 2); // wraps around to last
+        assert_eq!(bar.prev_tab(), 1);
+        assert_eq!(bar.prev_tab(), 0);
+    }
+
+    #[test]
+    fn test_set_title_by_id() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.set_title(TabId(0), "Shell".into());
+        assert_eq!(bar.tabs[0].title, "Shell");
+    }
+
+    #[test]
+    fn test_set_title_nonexistent() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.set_title(TabId(99), "Ghost".into());
+        assert_eq!(bar.tabs[0].title, ""); // unchanged
+    }
+
+    #[test]
+    fn test_active_tab() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.new_tab();
+        bar.active = 1;
+        assert_eq!(bar.active_tab().id, TabId(1));
+    }
+
+    #[test]
+    fn test_active_tab_mut() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.active_tab_mut().title = "Modified".into();
+        assert_eq!(bar.tabs[0].title, "Modified");
+    }
+
+    #[test]
+    fn test_id_incrementation() {
+        let initial = make_tab(5, 10);
+        let mut bar = TabBar::new(initial);
+        assert_eq!(bar.next_tab_id(), TabId(6));
+        assert_eq!(bar.next_tab_id(), TabId(7));
+        assert_eq!(bar.next_pane_id(), PaneId(11));
+        assert_eq!(bar.next_pane_id(), PaneId(12));
+    }
+}

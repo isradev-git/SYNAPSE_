@@ -147,6 +147,8 @@ pub struct Grid {
     scroll_offset: usize,
     saved_cursor_col: usize,
     saved_cursor_row: usize,
+    scroll_top: usize,
+    scroll_bottom: usize,
 }
 
 impl Grid {
@@ -166,6 +168,8 @@ impl Grid {
             scroll_offset: 0,
             saved_cursor_col: 0,
             saved_cursor_row: 0,
+            scroll_top: 0,
+            scroll_bottom: rows.saturating_sub(1),
         }
     }
 
@@ -285,20 +289,20 @@ impl Grid {
         self.cursor_col += 1;
         if self.cursor_col >= self.cols {
             self.cursor_col = 0;
-            self.cursor_row += 1;
-            if self.cursor_row >= self.rows {
-                self.shift_up(1);
-                self.cursor_row = self.rows - 1;
+            if self.cursor_row == self.scroll_bottom {
+                self.shift_up_region(1);
+            } else {
+                self.cursor_row = (self.cursor_row + 1).min(self.rows - 1);
             }
         }
     }
 
     pub fn new_line(&mut self) {
         self.cursor_col = 0;
-        self.cursor_row += 1;
-        if self.cursor_row >= self.rows {
-            self.shift_up(1);
-            self.cursor_row = self.rows - 1;
+        if self.cursor_row == self.scroll_bottom {
+            self.shift_up_region(1);
+        } else {
+            self.cursor_row = (self.cursor_row + 1).min(self.rows - 1);
         }
     }
 
@@ -306,25 +310,156 @@ impl Grid {
         self.cursor_col = 0;
     }
 
-    fn shift_up(&mut self, n: usize) {
+    pub fn shift_up_region(&mut self, n: usize) {
         for _ in 0..n {
-            let line: Vec<CharCell> = self.cells[..self.cols].to_vec();
-            self.scrollback.push(line);
-
-            if self.scroll_offset > 0 {
-                self.scroll_offset = (self.scroll_offset + 1).min(self.scrollback.len());
-            }
-
             let row_size = self.cols;
-            let total = self.rows * row_size;
-            for i in 0..total - row_size {
-                self.cells[i] = self.cells[i + row_size].clone();
+
+            if self.scroll_top == 0 {
+                let line: Vec<CharCell> = self.cells[..row_size].to_vec();
+                self.scrollback.push(line);
+                if self.scroll_offset > 0 {
+                    self.scroll_offset = (self.scroll_offset + 1).min(self.scrollback.len());
+                }
             }
 
-            let last_row_start = (self.rows - 1) * row_size;
-            for i in last_row_start..self.rows * row_size {
+            for row in self.scroll_top..self.scroll_bottom {
+                let src = (row + 1) * row_size;
+                let dst = row * row_size;
+                for col in 0..row_size {
+                    self.cells[dst + col] = self.cells[src + col].clone();
+                }
+            }
+
+            let clear = self.scroll_bottom * row_size;
+            for i in clear..clear + row_size {
                 self.cells[i] = CharCell::default();
             }
+        }
+    }
+
+    pub fn shift_down_region(&mut self, n: usize) {
+        for _ in 0..n {
+            let row_size = self.cols;
+
+            for row in (self.scroll_top + 1..=self.scroll_bottom).rev() {
+                let src = (row - 1) * row_size;
+                let dst = row * row_size;
+                for col in 0..row_size {
+                    self.cells[dst + col] = self.cells[src + col].clone();
+                }
+            }
+
+            let clear = self.scroll_top * row_size;
+            for i in clear..clear + row_size {
+                self.cells[i] = CharCell::default();
+            }
+        }
+    }
+
+    pub fn set_scroll_region(&mut self, top: usize, bottom: usize) {
+        let max = self.rows.saturating_sub(1);
+        let top = top.min(max);
+        let bottom = bottom.min(max);
+        if top < bottom {
+            self.scroll_top = top;
+            self.scroll_bottom = bottom;
+        } else {
+            self.scroll_top = 0;
+            self.scroll_bottom = max;
+        }
+        self.cursor_col = 0;
+        self.cursor_row = 0;
+    }
+
+    pub fn insert_chars(&mut self, n: usize) {
+        let row = self.cursor_row;
+        let col = self.cursor_col;
+        let row_size = self.cols;
+        let row_start = row * row_size;
+        let shift = n.min(row_size - col);
+        let keep = row_size - col - shift;
+        for i in (col..col + keep).rev() {
+            self.cells[row_start + i + shift] = self.cells[row_start + i].clone();
+        }
+        for i in col..col + shift {
+            self.cells[row_start + i] = CharCell::default();
+        }
+    }
+
+    pub fn delete_chars(&mut self, n: usize) {
+        let row = self.cursor_row;
+        let col = self.cursor_col;
+        let row_size = self.cols;
+        let row_start = row * row_size;
+        let shift = n.min(row_size - col);
+        for i in col..row_size - shift {
+            self.cells[row_start + i] = self.cells[row_start + i + shift].clone();
+        }
+        for i in row_size - shift..row_size {
+            self.cells[row_start + i] = CharCell::default();
+        }
+    }
+
+    pub fn insert_lines(&mut self, n: usize) {
+        let row = self.cursor_row;
+        if row < self.scroll_top || row > self.scroll_bottom {
+            return;
+        }
+        let n = n.min(self.scroll_bottom - row + 1);
+        let row_size = self.cols;
+        let rows_to_move = (self.scroll_bottom + 1).saturating_sub(row + n);
+        for i in (0..rows_to_move).rev() {
+            let src = row + i;
+            let dst = row + n + i;
+            for col in 0..row_size {
+                let src_i = src * row_size + col;
+                let dst_i = dst * row_size + col;
+                self.cells[dst_i] = self.cells[src_i].clone();
+            }
+        }
+        for r in row..(row + n) {
+            let start = r * row_size;
+            for i in start..start + row_size {
+                self.cells[i] = CharCell::default();
+            }
+        }
+        self.cursor_col = 0;
+    }
+
+    pub fn delete_lines(&mut self, n: usize) {
+        let row = self.cursor_row;
+        if row < self.scroll_top || row > self.scroll_bottom {
+            return;
+        }
+        let n = n.min(self.scroll_bottom - row + 1);
+        let row_size = self.cols;
+        let move_count = self.scroll_bottom - row + 1 - n;
+        for i in 0..move_count {
+            let src = row + n + i;
+            let dst = row + i;
+            for col in 0..row_size {
+                let src_i = src * row_size + col;
+                let dst_i = dst * row_size + col;
+                self.cells[dst_i] = self.cells[src_i].clone();
+            }
+        }
+        let clear_start = self.scroll_bottom + 1 - n;
+        for r in clear_start..=self.scroll_bottom {
+            let start = r * row_size;
+            for i in start..start + row_size {
+                self.cells[i] = CharCell::default();
+            }
+        }
+        self.cursor_col = 0;
+    }
+
+    pub fn erase_chars(&mut self, n: usize) {
+        let col = self.cursor_col;
+        let row = self.cursor_row;
+        let end = (col + n).min(self.cols);
+        let row_start = row * self.cols;
+        for i in col..end {
+            self.cells[row_start + i] = CharCell::default();
         }
     }
 
@@ -376,6 +511,8 @@ impl Grid {
         self.cells = new_cells;
         self.cols = new_cols;
         self.rows = new_rows;
+        self.scroll_top = 0;
+        self.scroll_bottom = new_rows.saturating_sub(1);
 
         if self.cursor_col >= new_cols {
             self.cursor_col = new_cols.saturating_sub(1);
@@ -439,8 +576,8 @@ impl Grid {
 
         for i in 0..scrollback_lines {
             let line = self.scrollback.get_line(start + i);
-            for col in 0..max_cols.min(line.len()) {
-                result.push((col, i, &line[col]));
+            for (col, cell) in line.iter().enumerate().take(max_cols) {
+                result.push((col, i, cell));
             }
         }
 
@@ -570,11 +707,12 @@ mod tests {
     #[test]
     fn test_visible_cells_bounded_with_scrollback() {
         let mut grid = Grid::new(5, 3);
-        // Fill 3 rows to push one into scrollback
-        for _ in 0..5 {
-            grid.advance_cursor(); // advance past col 4 → wraps to next row
+        // Need to advance past cols many times to fill rows and trigger new_line
+        // 5 cols × 3 rows = 15 advances to wrap past last row and shift up
+        for _ in 0..20 {
+            grid.advance_cursor();
         }
-        // scroll back
+        // Now scroll back a bit
         grid.scroll_up(1);
         assert!(grid.scroll_offset() > 0);
 

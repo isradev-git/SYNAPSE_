@@ -18,6 +18,7 @@ pub struct TerminalModes {
     pub mouse_report: MouseReportMode,
     pub mouse_sgr: bool,
     pub focus_events: bool,
+    pub application_cursor: bool,
 }
 
 pub struct VteProcessor {
@@ -28,6 +29,7 @@ pub struct VteProcessor {
     title: Rc<RefCell<String>>,
     cwd: Rc<RefCell<String>>,
     modes: Rc<RefCell<TerminalModes>>,
+    use_dec_graphics: bool,
 }
 
 impl VteProcessor {
@@ -40,6 +42,7 @@ impl VteProcessor {
             title: Rc::new(RefCell::new(String::new())),
             cwd: Rc::new(RefCell::new(String::new())),
             modes: Rc::new(RefCell::new(TerminalModes::default())),
+            use_dec_graphics: false,
         }
     }
 
@@ -57,6 +60,7 @@ impl VteProcessor {
             title,
             cwd,
             modes,
+            use_dec_graphics: false,
         }
     }
 
@@ -78,6 +82,11 @@ impl VteProcessor {
 
 impl vte::Perform for VteProcessor {
     fn print(&mut self, c: char) {
+        let c = if self.use_dec_graphics && c.is_ascii() {
+            dec_graphics(c as u8)
+        } else {
+            c
+        };
         let mut grid = self.grid.borrow_mut();
         let col = grid.cursor_col();
         let row = grid.cursor_row();
@@ -99,6 +108,11 @@ impl vte::Perform for VteProcessor {
     }
 
     fn execute(&mut self, byte: u8) {
+        match byte {
+            b'\x0e' => { self.use_dec_graphics = true; return; }
+            b'\x0f' => { self.use_dec_graphics = false; return; }
+            _ => {}
+        }
         let mut grid = self.grid.borrow_mut();
         match byte {
             b'\n' => grid.new_line(),
@@ -148,11 +162,10 @@ impl vte::Perform for VteProcessor {
         let trimmed = param_str.trim();
 
         match code_str.as_ref() {
-            "0" | "2" => {
-                if !trimmed.is_empty() {
-                    *self.title.borrow_mut() = trimmed.to_string();
-                }
+            "0" | "2" if !trimmed.is_empty() => {
+                *self.title.borrow_mut() = trimmed.to_string();
             }
+            "0" | "2" => {}
             "7" => {
                 if let Some(path) = param_str.strip_prefix("file://") {
                     if let Some(slash_pos) = path.find('/') {
@@ -252,6 +265,61 @@ impl vte::Perform for VteProcessor {
                     _ => {}
                 }
             }
+            'G' => {
+                let col = (get_param(params, 0).max(1) as usize).saturating_sub(1);
+                let mut grid = self.grid.borrow_mut();
+                let max_col = grid.cols().saturating_sub(1);
+                let row = grid.cursor_row();
+                grid.set_cursor(col.min(max_col), row);
+            }
+            'd' => {
+                let row = (get_param(params, 0).max(1) as usize).saturating_sub(1);
+                let mut grid = self.grid.borrow_mut();
+                let max_row = grid.rows().saturating_sub(1);
+                let col = grid.cursor_col();
+                grid.set_cursor(col, row.min(max_row));
+            }
+            'E' => {
+                let mut grid = self.grid.borrow_mut();
+                let max_row = grid.rows().saturating_sub(1);
+                let new_row = (grid.cursor_row() + n).min(max_row);
+                grid.set_cursor(0, new_row);
+            }
+            'F' => {
+                let mut grid = self.grid.borrow_mut();
+                let new_row = grid.cursor_row().saturating_sub(n);
+                grid.set_cursor(0, new_row);
+            }
+            '@' => {
+                self.grid.borrow_mut().insert_chars(n);
+            }
+            'P' => {
+                self.grid.borrow_mut().delete_chars(n);
+            }
+            'L' => {
+                self.grid.borrow_mut().insert_lines(n);
+            }
+            'M' => {
+                self.grid.borrow_mut().delete_lines(n);
+            }
+            'S' => {
+                self.grid.borrow_mut().shift_up_region(n);
+            }
+            'T' => {
+                self.grid.borrow_mut().shift_down_region(n);
+            }
+            'X' => {
+                self.grid.borrow_mut().erase_chars(n);
+            }
+            'r' if intermediates.is_empty() => {
+                let p0 = get_param(params, 0);
+                let p1 = get_param(params, 1);
+                let mut grid = self.grid.borrow_mut();
+                let rows = grid.rows();
+                let top = if p0 <= 0 { 0 } else { (p0 as usize - 1).min(rows - 1) };
+                let bottom = if p1 <= 0 { rows - 1 } else { (p1 as usize - 1).min(rows - 1) };
+                grid.set_scroll_region(top, bottom);
+            }
             'm' => {
                 self.handle_sgr(params);
             }
@@ -261,6 +329,7 @@ impl vte::Perform for VteProcessor {
                     let mode_num = get_param(params, 0);
                     let mut modes = self.modes.borrow_mut();
                     match mode_num {
+                        1 => modes.application_cursor = enable,
                         1000 => modes.mouse_report = if enable { MouseReportMode::X10 } else { MouseReportMode::None },
                         1002 => modes.mouse_report = if enable { MouseReportMode::ButtonMotion } else { MouseReportMode::None },
                         1003 => modes.mouse_report = if enable { MouseReportMode::AnyMotion } else { MouseReportMode::None },
@@ -272,32 +341,46 @@ impl vte::Perform for VteProcessor {
                 }
             }
             's' => {
-                let mut grid = self.grid.borrow_mut();
-                grid.save_cursor();
+                self.grid.borrow_mut().save_cursor();
             }
             'u' => {
-                let mut grid = self.grid.borrow_mut();
-                grid.restore_cursor();
+                self.grid.borrow_mut().restore_cursor();
             }
             _ => {}
         }
     }
 
-    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, byte: u8) {
-        let mut grid = self.grid.borrow_mut();
-        match byte {
-            b'7' => grid.save_cursor(),
-            b'8' => grid.restore_cursor(),
-            b'c' => {
-                drop(grid);
+    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
+        match (intermediates.first().copied(), byte) {
+            (None, b'7') => { self.grid.borrow_mut().save_cursor(); }
+            (None, b'8') => { self.grid.borrow_mut().restore_cursor(); }
+            (None, b'c') => {
                 self.reset_state();
+                self.use_dec_graphics = false;
                 let mut g = self.grid.borrow_mut();
                 let last_row = g.rows() - 1;
                 g.clear_region(0, last_row);
                 g.set_cursor(0, 0);
+                g.set_scroll_region(0, last_row);
+                drop(g);
+                *self.modes.borrow_mut() = TerminalModes::default();
             }
+            (Some(b'('), b'0') => { self.use_dec_graphics = true; }
+            (Some(b'('), b'B') => { self.use_dec_graphics = false; }
             _ => {}
         }
+    }
+}
+
+fn dec_graphics(b: u8) -> char {
+    match b {
+        b'j' => '┘', b'k' => '┐', b'l' => '┌', b'm' => '└',
+        b'n' => '┼', b'q' => '─', b't' => '├', b'u' => '┤',
+        b'v' => '┴', b'w' => '┬', b'x' => '│',
+        b'`' => '◆', b'a' => '▒', b'f' => '°', b'g' => '±',
+        b'o' => '⎺', b'p' => '⎻', b'r' => '⎼', b's' => '⎽',
+        b'y' => '≤', b'z' => '≥', b'~' => '·',
+        _ => b as char,
     }
 }
 
@@ -380,21 +463,17 @@ impl VteProcessor {
                 38 => {
                     if i + 2 < flat.len() {
                         match flat[i + 1] {
-                            2 => {
-                                if i + 4 < flat.len() {
-                                    self.fg = Color::Rgb(
-                                        flat[i + 2] as u8,
-                                        flat[i + 3] as u8,
-                                        flat[i + 4] as u8,
-                                    );
-                                    i += 4;
-                                }
+                            2 if i + 4 < flat.len() => {
+                                self.fg = Color::Rgb(
+                                    flat[i + 2] as u8,
+                                    flat[i + 3] as u8,
+                                    flat[i + 4] as u8,
+                                );
+                                i += 4;
                             }
-                            5 => {
-                                if i + 2 < flat.len() {
-                                    self.fg = Color::Indexed(flat[i + 2] as u8);
-                                    i += 2;
-                                }
+                            5 if i + 2 < flat.len() => {
+                                self.fg = Color::Indexed(flat[i + 2] as u8);
+                                i += 2;
                             }
                             _ => {}
                         }
@@ -409,21 +488,17 @@ impl VteProcessor {
                 48 => {
                     if i + 2 < flat.len() {
                         match flat[i + 1] {
-                            2 => {
-                                if i + 4 < flat.len() {
-                                    self.bg = Color::Rgb(
-                                        flat[i + 2] as u8,
-                                        flat[i + 3] as u8,
-                                        flat[i + 4] as u8,
-                                    );
-                                    i += 4;
-                                }
+                            2 if i + 4 < flat.len() => {
+                                self.bg = Color::Rgb(
+                                    flat[i + 2] as u8,
+                                    flat[i + 3] as u8,
+                                    flat[i + 4] as u8,
+                                );
+                                i += 4;
                             }
-                            5 => {
-                                if i + 2 < flat.len() {
-                                    self.bg = Color::Indexed(flat[i + 2] as u8);
-                                    i += 2;
-                                }
+                            5 if i + 2 < flat.len() => {
+                                self.bg = Color::Indexed(flat[i + 2] as u8);
+                                i += 2;
                             }
                             _ => {}
                         }
@@ -1026,5 +1101,184 @@ mod tests {
         proc.process(b"\x1b[200C");
         let g = grid.borrow();
         assert_eq!(g.cursor_col(), 79);
+    }
+
+    // ── R-016 vttest conformance tests ──────────────────────────────────
+
+    #[test]
+    fn test_cha_cursor_horizontal_absolute() {
+        let grid = make_grid(80, 24);
+        let mut proc = VteProcessor::new(grid.clone());
+        proc.process(b"HELLO\x1b[3G");
+        let g = grid.borrow();
+        assert_eq!(g.cursor_col(), 2);
+    }
+
+    #[test]
+    fn test_vpa_vertical_position_absolute() {
+        let grid = make_grid(80, 24);
+        let mut proc = VteProcessor::new(grid.clone());
+        proc.process(b"\x1b[5d");
+        let g = grid.borrow();
+        assert_eq!(g.cursor_row(), 4);
+    }
+
+    #[test]
+    fn test_cnl_cursor_next_line() {
+        let grid = make_grid(80, 24);
+        let mut proc = VteProcessor::new(grid.clone());
+        proc.process(b"\x1b[5;5H\x1b[2E");
+        let g = grid.borrow();
+        assert_eq!(g.cursor_col(), 0);
+        assert_eq!(g.cursor_row(), 6);
+    }
+
+    #[test]
+    fn test_cpl_cursor_prev_line() {
+        let grid = make_grid(80, 24);
+        let mut proc = VteProcessor::new(grid.clone());
+        proc.process(b"\x1b[5;5H\x1b[2F");
+        let g = grid.borrow();
+        assert_eq!(g.cursor_col(), 0);
+        assert_eq!(g.cursor_row(), 2);
+    }
+
+    #[test]
+    fn test_ich_insert_chars() {
+        let grid = make_grid(10, 5);
+        let mut proc = VteProcessor::new(grid.clone());
+        proc.process(b"ABCDE\x1b[1;3H\x1b[2@");
+        let g = grid.borrow();
+        assert_eq!(g.get(0, 0).c, 'A');
+        assert_eq!(g.get(1, 0).c, 'B');
+        assert_eq!(g.get(2, 0).c, ' ');
+        assert_eq!(g.get(3, 0).c, ' ');
+        assert_eq!(g.get(4, 0).c, 'C');
+    }
+
+    #[test]
+    fn test_dch_delete_chars() {
+        let grid = make_grid(10, 5);
+        let mut proc = VteProcessor::new(grid.clone());
+        proc.process(b"ABCDE\x1b[1;2H\x1b[2P");
+        let g = grid.borrow();
+        assert_eq!(g.get(0, 0).c, 'A');
+        assert_eq!(g.get(1, 0).c, 'D');
+        assert_eq!(g.get(2, 0).c, 'E');
+        assert_eq!(g.get(3, 0).c, ' ');
+    }
+
+    #[test]
+    fn test_ech_erase_chars() {
+        let grid = make_grid(10, 5);
+        let mut proc = VteProcessor::new(grid.clone());
+        proc.process(b"ABCDE\x1b[1;2H\x1b[3X");
+        let g = grid.borrow();
+        assert_eq!(g.get(0, 0).c, 'A');
+        assert_eq!(g.get(1, 0).c, ' ');
+        assert_eq!(g.get(2, 0).c, ' ');
+        assert_eq!(g.get(3, 0).c, ' ');
+        assert_eq!(g.get(4, 0).c, 'E');
+    }
+
+    #[test]
+    fn test_decstbm_scroll_region() {
+        let grid = make_grid(10, 5);
+        let mut proc = VteProcessor::new(grid.clone());
+        // Set scroll region rows 2-4 (1-based), fill some content
+        proc.process(b"\x1b[1;1H"); // cursor home
+        proc.process(b"AAAAA");
+        proc.process(b"\x1b[2;1H");
+        proc.process(b"BBBBB");
+        proc.process(b"\x1b[3;1H");
+        proc.process(b"CCCCC");
+        proc.process(b"\x1b[4;1H");
+        proc.process(b"DDDDD");
+        proc.process(b"\x1b[5;1H");
+        proc.process(b"EEEEE");
+
+        // Set scroll region to rows 3-5 (0-indexed 2-4)
+        proc.process(b"\x1b[3;5r");
+        // Cursor should be at home after DECSTBM
+        {
+            let g = grid.borrow();
+            assert_eq!(g.cursor_row(), 0);
+        }
+        // Scroll up within region: row 3 → row 2, row 4 → row 3, row 2 (new) → blank
+        proc.process(b"\x1b[5;1H"); // go to row 5 (bottom of region)
+        proc.process(b"\n");         // LF at bottom of region triggers scroll
+
+        let g = grid.borrow();
+        // Row 0 (A) and row 1 (B) should be unaffected
+        assert_eq!(g.get(0, 0).c, 'A');
+        assert_eq!(g.get(0, 1).c, 'B');
+        // Within region: D scrolled to row 2, E scrolled to row 3, row 4 blank
+        assert_eq!(g.get(0, 2).c, 'D');
+        assert_eq!(g.get(0, 3).c, 'E');
+        assert_eq!(g.get(0, 4).c, ' ');
+    }
+
+    #[test]
+    fn test_il_insert_lines() {
+        let grid = make_grid(10, 5);
+        let mut proc = VteProcessor::new(grid.clone());
+        for (i, row_str) in [b"AAAAA" as &[u8], b"BBBBB", b"CCCCC"].iter().enumerate() {
+            proc.process(format!("\x1b[{};1H", i + 1).as_bytes());
+            proc.process(row_str);
+        }
+        // Insert 1 line at row 2 (1-based)
+        proc.process(b"\x1b[2;1H\x1b[1L");
+        let g = grid.borrow();
+        assert_eq!(g.get(0, 0).c, 'A');
+        assert_eq!(g.get(0, 1).c, ' '); // newly inserted blank
+        assert_eq!(g.get(0, 2).c, 'B');
+        assert_eq!(g.get(0, 3).c, 'C');
+    }
+
+    #[test]
+    fn test_dl_delete_lines() {
+        let grid = make_grid(10, 5);
+        let mut proc = VteProcessor::new(grid.clone());
+        for (i, row_str) in [b"AAAAA" as &[u8], b"BBBBB", b"CCCCC", b"DDDDD"].iter().enumerate() {
+            proc.process(format!("\x1b[{};1H", i + 1).as_bytes());
+            proc.process(row_str);
+        }
+        // Delete 1 line at row 2 (1-based)
+        proc.process(b"\x1b[2;1H\x1b[1M");
+        let g = grid.borrow();
+        assert_eq!(g.get(0, 0).c, 'A');
+        assert_eq!(g.get(0, 1).c, 'C'); // B deleted, C shifted up
+        assert_eq!(g.get(0, 2).c, 'D');
+        assert_eq!(g.get(0, 3).c, ' '); // blank
+    }
+
+    #[test]
+    fn test_dec_graphics_line_drawing() {
+        let grid = make_grid(80, 24);
+        let mut proc = VteProcessor::new(grid.clone());
+        // ESC(0 switches to DEC Special Graphics
+        proc.process(b"\x1b(0jklmnqx\x1b(B");
+        let g = grid.borrow();
+        assert_eq!(g.get(0, 0).c, '┘');
+        assert_eq!(g.get(1, 0).c, '┐');
+        assert_eq!(g.get(2, 0).c, '┌');
+        assert_eq!(g.get(3, 0).c, '└');
+        assert_eq!(g.get(4, 0).c, '┼');
+        assert_eq!(g.get(5, 0).c, '─');
+        assert_eq!(g.get(6, 0).c, '│');
+    }
+
+    #[test]
+    fn test_decckm_application_cursor() {
+        let grid = make_grid(80, 24);
+        let title = Rc::new(RefCell::new(String::new()));
+        let cwd = Rc::new(RefCell::new(String::new()));
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title, cwd, modes.clone());
+        assert!(!modes.borrow().application_cursor);
+        proc.process(b"\x1b[?1h");
+        assert!(modes.borrow().application_cursor);
+        proc.process(b"\x1b[?1l");
+        assert!(!modes.borrow().application_cursor);
     }
 }
