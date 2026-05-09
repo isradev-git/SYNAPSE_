@@ -260,6 +260,8 @@ impl Renderer {
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
         ui_rects: &[UIRect],
     ) {
+        self.atlas.begin_frame();
+
         let mut instances: Vec<CellInstance> = Vec::with_capacity(cells.len());
         let mut seen: HashMap<(char, u32), (cosmic_text::SwashImage, cosmic_text::CacheKey)> =
             HashMap::new();

@@ -12,14 +12,22 @@ pub struct UvRect {
     pub v1: f32,
 }
 
+struct AtlasEntry {
+    uv: UvRect,
+    last_frame: u64,
+}
+
 pub struct TextureAtlas {
     pub texture: wgpu::Texture,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
-    cache: HashMap<CacheKey, UvRect>,
+    cache: HashMap<CacheKey, AtlasEntry>,
     x_offset: u32,
     y_offset: u32,
     row_height: u32,
+    frame: u64,
+    needs_reset: bool,
+    warned_90: bool,
 }
 
 impl TextureAtlas {
@@ -102,21 +110,67 @@ impl TextureAtlas {
             x_offset: 0,
             y_offset: 0,
             row_height: 0,
+            frame: 0,
+            needs_reset: false,
+            warned_90: false,
         }
     }
 
+    /// Must be called once per frame before any `get_or_insert` calls.
+    /// Handles deferred atlas reset and logs capacity warnings.
+    pub fn begin_frame(&mut self) {
+        self.frame += 1;
+
+        if self.needs_reset {
+            let evicted = self.cache.len();
+            self.cache.clear();
+            self.x_offset = 0;
+            self.y_offset = 0;
+            self.row_height = 0;
+            self.needs_reset = false;
+            self.warned_90 = false;
+            tracing::warn!(
+                "glyph atlas reset — evicted {} cached entries (frame {})",
+                evicted,
+                self.frame,
+            );
+        }
+
+        if !self.warned_90 {
+            let fill = self.fill_fraction();
+            if fill >= 0.9 {
+                tracing::warn!(
+                    "glyph atlas at {:.0}% capacity ({}/{} rows) — will reset next frame",
+                    fill * 100.0,
+                    self.y_offset + self.row_height,
+                    ATLAS_SIZE,
+                );
+                self.warned_90 = true;
+                self.needs_reset = true;
+            }
+        }
+    }
+
+    /// Fraction of atlas rows consumed, in [0, 1].
+    fn fill_fraction(&self) -> f32 {
+        (self.y_offset + self.row_height) as f32 / ATLAS_SIZE as f32
+    }
+
+    /// Returns the cached UV rect, updating LRU timestamp. If not cached,
+    /// allocates a new slot and returns it (caller must call `upload_glyph`).
     pub fn get_or_insert(
         &mut self,
         key: CacheKey,
         bitmap_width: u32,
         bitmap_height: u32,
     ) -> Option<UvRect> {
-        if let Some(uv) = self.cache.get(&key) {
-            return Some(*uv);
+        if let Some(entry) = self.cache.get_mut(&key) {
+            entry.last_frame = self.frame;
+            return Some(entry.uv);
         }
 
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.cache.insert(key, rect);
+        self.cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
         Some(rect)
     }
 
@@ -132,6 +186,7 @@ impl TextureAtlas {
         }
 
         if self.y_offset + height > ATLAS_SIZE {
+            self.needs_reset = true;
             return None;
         }
 
@@ -185,9 +240,6 @@ mod tests {
 
     #[test]
     fn test_allocate_no_overlap() {
-        struct FakeDevice;
-        // We can't test with a real wgpu device without a window.
-        // Test the allocator logic directly via a mock.
         let atlas_size = ATLAS_SIZE;
 
         let mut x_offset: u32 = 0;
@@ -199,7 +251,6 @@ mod tests {
             let w = (i % 5 + 1) * 8;  // widths 8..40
             let h = (i % 3 + 1) * 12; // heights 12..36
 
-            // Simulate allocate
             if x_offset + w > atlas_size {
                 x_offset = 0;
                 y_offset += row_height;
@@ -220,7 +271,6 @@ mod tests {
             row_height = row_height.max(h);
             rects.push((u0, v0, u1, v1));
 
-            // Verify no overlap with previous rects
             for j in 0..rects.len() - 1 {
                 let (pu0, pv0, pu1, pv1) = rects[j];
                 let overlap = !(u0 >= pu1 || u1 <= pu0 || v0 >= pv1 || v1 <= pv0);
@@ -229,5 +279,29 @@ mod tests {
         }
 
         assert!(rects.len() == 100);
+    }
+
+    #[test]
+    fn test_fill_fraction_increases() {
+        let atlas_size = ATLAS_SIZE;
+        let mut x_offset: u32 = 0;
+        let mut y_offset: u32 = 0;
+        let mut row_height: u32 = 0;
+
+        // Fill one full row of 16px-wide, 20px-tall glyphs
+        let count = atlas_size / 16;
+        for _ in 0..count {
+            if x_offset + 16 > atlas_size {
+                x_offset = 0;
+                y_offset += row_height;
+                row_height = 0;
+            }
+            x_offset += 16;
+            row_height = row_height.max(20);
+        }
+
+        let fill = (y_offset + row_height) as f32 / atlas_size as f32;
+        assert!(fill > 0.0, "fill fraction should be > 0 after allocations");
+        assert!(fill <= 1.0, "fill fraction should never exceed 1.0");
     }
 }

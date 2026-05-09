@@ -188,13 +188,16 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ## BLOQUE 3 — Rendimiento y Corrección
 
-### R-014 · Atlas de glifos: LRU eviction
+### R-014 · Atlas de glifos: LRU eviction ✓
 **Problema:** atlas 2048×2048 fijo. Si se llena, `get_or_insert` falla silenciosamente.
 
-- [ ] En `atlas.rs`: trackear últimos accesos con un contador de frame por glifo
-- [ ] Al necesitar insertar y no haber espacio: evict el glifo menos recientemente usado
-- [ ] O bien: implementar resize dinámico del atlas (duplicar a 4096×4096 si se necesita)
-- [ ] Loggear con `tracing::warn!` cuando el atlas esté al 90% de capacidad
+- [x] `AtlasEntry { uv: UvRect, last_frame: u64 }` — LRU timestamp per glyph
+- [x] `TextureAtlas.frame: u64` — counter incremented in `begin_frame()`
+- [x] `get_or_insert` actualiza `entry.last_frame = self.frame` en cache hit
+- [x] `allocate` sets `needs_reset = true` cuando `y_offset + height > ATLAS_SIZE`
+- [x] `begin_frame()` llamado al inicio de `draw_frame()`: si `needs_reset`, limpia cache + reset allocator; logs evicted count
+- [x] `tracing::warn!` cuando `fill_fraction() >= 0.9` — una vez por ciclo de llenado
+- [x] Reset deferred al frame siguiente (no mid-frame) — evita corrupción de instancias ya construidas
 
 **Verificar:** ejecutar `cat` de un archivo con muchos caracteres Unicode distintos sin panic ni corrupción visual.
 
