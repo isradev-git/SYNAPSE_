@@ -213,6 +213,16 @@ pub fn handle_cursor_moved(
     state.cursor_x = position.x / sf;
     state.cursor_y = position.y / sf;
 
+    // Tab hover detection
+    if state.cursor_y < TAB_BAR_HEIGHT as f64 {
+        let tab_count = tab_bar.tabs.len();
+        let tab_w = layout.tab_width(tab_count) as f64;
+        let idx = (state.cursor_x / tab_w).floor() as usize;
+        state.hover_tab = if idx < tab_count { Some(idx) } else { None };
+    } else {
+        state.hover_tab = None;
+    }
+
     if let Some(ref drag) = state.dragging_divider {
         let new_ratio = match drag.direction {
             SplitDirection::Horizontal => {

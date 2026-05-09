@@ -7,6 +7,7 @@ pub struct TabId(pub u64);
 pub struct Tab {
     pub id: TabId,
     pub title: String,
+    pub cwd: String,
     pub pane_tree: PaneTree,
     pub active_pane: PaneId,
 }
@@ -15,7 +16,8 @@ impl Tab {
     pub fn new(id: TabId, pane_id: PaneId) -> Self {
         Self {
             id,
-            title: String::from("Luna"),
+            title: String::new(),
+            cwd: String::new(),
             pane_tree: PaneTree::leaf(pane_id),
             active_pane: pane_id,
         }

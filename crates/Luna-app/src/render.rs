@@ -11,7 +11,7 @@ use crate::{
 
 const TAB_FONT_SIZE: f32 = 12.0;
 
-pub fn build_tab_bar_ui_rects(layout: &Layout, tab_bar: &TabBar) -> Vec<UIRect> {
+pub fn build_tab_bar_ui_rects(layout: &Layout, tab_bar: &TabBar, hover_tab: Option<usize>) -> Vec<UIRect> {
     let mut rects = Vec::new();
 
     // Tab bar background
@@ -37,6 +37,15 @@ pub fn build_tab_bar_ui_rects(layout: &Layout, tab_bar: &TabBar) -> Vec<UIRect> 
             size: [tab_w, layout.tab_bar_height],
             color,
         });
+
+        // Hover overlay for inactive tabs
+        if hover_tab == Some(i) && i != tab_bar.active {
+            rects.push(UIRect {
+                pos: [x, 0.0],
+                size: [tab_w, layout.tab_bar_height],
+                color: theme::TAB_HOVER_BG,
+            });
+        }
 
         // Separator between tabs
         if i > 0 {
@@ -83,15 +92,22 @@ pub fn build_tab_bar_text(
             theme::TAB_INACTIVE_BG
         };
 
-        let title: String = if tab.title.is_empty() {
-            format!("Tab {}", i + 1)
+        let raw_title: String = if !tab.title.is_empty() {
+            tab.title.clone()
+        } else if !tab.cwd.is_empty() {
+            std::path::Path::new(&tab.cwd)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&tab.cwd)
+                .to_string()
         } else {
-            let max_chars = ((tab_w - 24.0) / char_w) as usize;
-            if tab.title.chars().count() > max_chars.max(1) {
-                tab.title.chars().take(max_chars.saturating_sub(1)).collect::<String>() + "…"
-            } else {
-                tab.title.clone()
-            }
+            format!("Tab {}", i + 1)
+        };
+        let max_chars = ((tab_w - 24.0) / char_w).max(1.0) as usize;
+        let title: String = if raw_title.chars().count() > max_chars {
+            raw_title.chars().take(max_chars.saturating_sub(1)).collect::<String>() + "…"
+        } else {
+            raw_title
         };
 
         let text_x = x + 8.0;
@@ -152,6 +168,10 @@ pub fn render_frame(
             let t = p.title();
             if !t.is_empty() && t != tab.title {
                 tab.title = t;
+            }
+            let c = p.cwd();
+            if !c.is_empty() && c != tab.cwd {
+                tab.cwd = c;
             }
         }
     }
@@ -391,7 +411,7 @@ pub fn render_frame(
         }
     }
 
-    let tab_ui = build_tab_bar_ui_rects(layout, tab_bar);
+    let tab_ui = build_tab_bar_ui_rects(layout, tab_bar, state.hover_tab);
     ui_rects.extend(tab_ui);
 
     for tab_cell in build_tab_bar_text(layout, tab_bar, 1.0) {

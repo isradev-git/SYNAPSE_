@@ -113,7 +113,18 @@ impl App {
             WindowEvent::CursorMoved { position, .. }                           => self.handle_cursor_moved(position),
             WindowEvent::RedrawRequested                                        => self.render(),
             WindowEvent::KeyboardInput { event, .. }                            => self.handle_keyboard(event),
+            WindowEvent::Focused(focused)                                       => self.handle_focus(focused),
             _ => {}
+        }
+    }
+
+    fn handle_focus(&mut self, focused: bool) {
+        let active_id = self.tab_bar.active_tab().active_pane;
+        if let Some(pane) = self.panes.iter_mut().find(|p| p.id == active_id) {
+            if pane.modes.borrow().focus_events {
+                let seq: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
+                let _ = pane.pty_session.pty.write(seq);
+            }
         }
     }
 
