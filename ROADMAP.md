@@ -13,10 +13,12 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 - [x] Implementar parpadeo a 500ms (toggle `cursor_blink_on` en `App`)
 - [x] Solo renderizar cursor para pane activo y cuando no scrolled out
 - [x] Color: `#ff3d94` cursor bg, dark fg
-- [ ] Soportar 3 estilos: `block` (relleno), `beam` (1px vertical), `underline` (1px horizontal)
-- [ ] Activar shader `cursor.wgsl` en el pipeline de render (pendiente refactor renderer)
+- [x] Soportar 3 estilos: `block` (relleno), `beam` (1.5px vertical UIRect), `underline` (2px horizontal UIRect)
+- [x] Configurable via `cursor_style` en `config.toml` — block|beam|underline
+- [x] `cursor_blink` y `cursor_blink_ms` leídos de config en vez de constante hardcodeada
+- [ ] Activar shader `cursor.wgsl` en el pipeline de render (requiere refactor renderer — diferido)
 
-**Verificar:** cursor parpadea, posición correcta tras scroll y split.
+**Verificar:** cursor parpadea, posición correcta tras scroll y split. `cursor_style = "beam"` muestra cursor vertical.
 
 ---
 
@@ -24,7 +26,8 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 **Problema:** `clear_dirty()` nunca se llama. Todas las celdas se re-suben al GPU cada frame.
 
 - [x] Llamar `grid.clear_dirty()` al final de cada frame de render (en `render.rs`)
-- [ ] En `render.rs`: solo construir instancias para celdas con `dirty == true` (optimización pendiente)
+- [ ] En `render.rs`: solo construir instancias para celdas con `dirty == true` — requiere buffer
+      persistente en renderer + merge parcial. Diferido a R-014 (renderer refactor).
 - [ ] Verificar que resize marca todo dirty
 
 **Verificar:** `cargo flamegraph` o htop muestra CPU reducida en idle.
@@ -71,83 +74,68 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ## BLOQUE 2 — UX Básica (Importante)
 
-### R-006 · Focus events
+### R-006 · Focus events ✓
 **Problema:** vim, neovim y otros editores usan `FocusIn`/`FocusOut` para cambiar comportamiento del cursor y estado.
 
-- [ ] En `AppState`: añadir `focus_events_enabled: bool`
-- [ ] En `parser.rs`: manejar `\e[?1004h/l` (activar/desactivar focus events)
-- [ ] En `app.rs`: manejar `WindowEvent::Focused(true/false)` de winit
-- [ ] Al recibir foco: enviar `\e[I` al PTY activo (si `focus_events_enabled`)
-- [ ] Al perder foco: enviar `\e[O` al PTY activo
+- [x] `focus_events` en `TerminalModes` struct (shared via Rc<RefCell<>>)
+- [x] En `parser.rs`: `?1004h/l` activa/desactiva `modes.focus_events`
+- [x] En `app.rs`: `WindowEvent::Focused(bool)` → `handle_focus()` → envía `\e[I`/`\e[O` al PTY activo
+- [x] Solo envía si el pane tiene `focus_events == true` (no contaminación si app no lo pidió)
 
 **Verificar:** neovim cambia el estilo del cursor al enfocar/desenfocar ventana.
 
 ---
 
-### R-007 · Cerrar tab con botón ×
+### R-007 · Cerrar tab con botón × ✓
 **Problema:** click en `×` no implementado. T-027 pendiente. Solo se puede cerrar con `Ctrl+W`.
 
-- [ ] En `render.rs` / `build_tab_bar_ui_rects`: renderizar botón `×` en cada tab (últimos 16px del ancho)
-- [ ] Renderizar texto `×` sobre el rect del botón
-- [ ] En `mouse.rs` / `handle_tab_click`: detectar click en zona `×` de cada tab
-- [ ] Al detectar: llamar lógica de cierre equivalente a `Ctrl+W` para esa tab específica (no solo la activa)
-- [ ] Matar PTY de todos los panes de la tab cerrada
+- [x] `build_tab_bar_text` renderiza `×` en los últimos 14px de cada tab (color semitransparente)
+- [x] `handle_tab_click` refactorizado para tomar `&Layout` en vez de `window_width: f64`
+- [x] Click en zona `close_start..tab_end` → cierra esa tab específica (no la activa)
+- [x] Mata PTY de todos los panes de la tab cerrada (`panes.retain`)
+- [x] Solo funciona con >1 tab (no se puede cerrar la última)
+- [x] Botón `+` ahora usa `layout.tab_x` y `layout.window_height` para pane dims correctos
 
 **Verificar:** click en `×` cierra tab correcta, no la activa.
 
 ---
 
-### R-008 · Selección doble y triple click
+### R-008 · Selección doble y triple click ✓
 **Problema:** T-023 pendiente. Sin selección por palabra o línea completa.
 
-- [ ] En `AppState`: añadir `last_click_time: Instant` y `click_count: u8`
-- [ ] En `mouse.rs` / `handle_mouse_button`: detectar doble/triple click (< 400ms entre clicks)
-- [ ] Doble click: calcular bounds de palabra en la celda clickeada (split en whitespace/símbolos)
-  - Expandir izquierda y derecha desde la posición hasta encontrar separador
-  - Actualizar `state.selection` con start/end de la palabra
-- [ ] Triple click: seleccionar línea completa (col 0 → cols-1 de la fila clickeada)
-- [ ] Auto-copiar al clipboard en selección por doble/triple click (comportamiento Unix estándar)
+- [x] `AppState` tiene `last_click_time: Instant` y `click_count: u8`
+- [x] `handle_mouse_button`: detecta doble/triple click (< 400ms entre presses)
+- [x] Doble click: expande desde posición clickeada izq/der hasta separador (whitespace + símbolos)
+- [x] Triple click: selecciona col 0 → cols-1 de la fila
+- [x] Click simple limpia selección previa
+- [ ] Auto-copiar al clipboard en selección por doble/triple click (Unix behavior — pendiente)
 
 **Verificar:** doble click selecciona palabra, triple click selecciona línea.
 
 ---
 
-### R-009 · Título de tab: truncado y CWD
+### R-009 · Título de tab: truncado y CWD ✓
 **Problema:** títulos largos desbordan. Sin fallback a CWD cuando no hay OSC.
 
-- [ ] En `render.rs` al renderizar texto de tab: calcular max chars según ancho de tab
-- [ ] Si `title.len() > max_chars`: truncar a `max_chars - 1` y añadir `…`
-- [ ] En `tab_bar.rs` / título visible: si `title.is_empty()`, usar último componente de `pane.cwd()`
-  - `Path::new(cwd).file_name()` → string de directorio
-  - Fallback final: `"Tab N"`
-- [ ] Actualizar en cada frame o solo cuando cambia OSC/CWD
+- [x] `Tab` struct tiene campo `cwd: String` (sincroniado en `render_frame` junto con `title`)
+- [x] Prioridad: OSC title → `Path::file_name(tab.cwd)` → `"Tab N"`
+- [x] Truncación con `…` aplicada uniforme a todas las fuentes de título
+- [x] Tab default title vacío (antes era "Luna") para activar el fallback correctamente
 
 **Verificar:** tab con título largo muestra `…`. Nueva tab muestra nombre del directorio actual.
 
 ---
 
-### R-010 · Config struct completa
+### R-010 · Config struct completa ✓
 **Problema:** `Config` tiene 4 campos. `proyecto.md` especifica secciones `[font]`, `[shell]`, `[window]`, `[cursor]`, `[theme]` inexistentes.
 
-- [ ] Expandir `Config` en `config.rs`:
-  ```toml
-  font_size = 14.0          # ya existe
-  font_family = "JetBrains Mono"
-  font_ligatures = false
-  window_width = 1280       # ya existe
-  window_height = 800       # ya existe
-  window_opacity = 1.0
-  scrollback_lines = 100000 # ya existe
-  shell_program = ""        # vacío = autodetectar
-  shell_args = []
-  cursor_style = "block"    # block | beam | underline
-  cursor_blink = true
-  cursor_blink_ms = 500
-  ```
-- [ ] Mantener compatibilidad: todos los campos con `#[serde(default)]`
-- [ ] En `pane_ops.rs` / `create_pane`: usar `config.shell_program` si no está vacío (override `detect_shell()`)
-- [ ] En `app.rs`: pasar `cursor_style`/`cursor_blink` a `AppState` para que R-001 los lea
-- [ ] En `renderer.rs`: leer `window_opacity` para futura transparencia
+- [x] Config expandido con: `font_family`, `font_ligatures`, `shell_program`, `shell_args`, `cursor_style`, `cursor_blink`, `cursor_blink_ms`
+- [x] Todos los campos con `#[serde(default)]` — retrocompatible con configs anteriores
+- [x] `CursorStyle` enum (Block/Beam/Underline) exportado de `luna_config`
+- [x] `shell_program` / `shell_args` usados en `create_pane_full` → NewTab, SplitVertical, SplitHorizontal
+- [x] `cursor_blink` y `cursor_blink_ms` leídos en `render()` — reemplaza constante hardcodeada
+- [x] `cursor_style` leído en render loop para decidir block/beam/underline
+- [ ] `window_opacity` (futura transparencia) — diferido hasta soporte wgpu surface alpha
 
 **Verificar:** `config.toml` con `shell_program = "/usr/bin/fish"` lanza fish al abrir nueva tab.
 
@@ -170,13 +158,13 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ---
 
-### R-012 · Tab hover effect
+### R-012 · Tab hover effect ✓
 **Problema:** T-026: color `#ff3d9422` en hover especificado pero nunca aplicado.
 
-- [ ] En `AppState`: añadir `hover_tab: Option<usize>` (índice de tab bajo cursor)
-- [ ] En `mouse.rs` / `handle_cursor_moved`: calcular qué tab está bajo el cursor (si el cursor está en la tab bar)
-- [ ] En `render.rs` / `build_tab_bar_ui_rects`: aplicar color `#ff3d9422` como overlay en la tab con hover
-- [ ] Limpiar `hover_tab` cuando el cursor sale de la tab bar
+- [x] `AppState.hover_tab: Option<usize>` — índice de tab bajo cursor
+- [x] `handle_cursor_moved`: calcula tab hovered via `layout.tab_width` cuando `cursor_y < TAB_BAR_HEIGHT`
+- [x] `build_tab_bar_ui_rects`: overlay `TAB_HOVER_BG` (#ff3d9422) en tab con hover (solo tabs inactivas)
+- [x] `hover_tab = None` cuando cursor sale de tab bar
 
 **Verificar:** mover el ratón sobre tabs cambia el color de fondo sutilmente.
 

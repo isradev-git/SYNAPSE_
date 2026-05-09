@@ -275,12 +275,30 @@ pub fn render_frame(
         }
 
         if is_active && !scrolled && cursor_col < pane_cols && cursor_row < pane_rows && cursor_blink_on {
-            let cell = grid_ref.get(cursor_col, cursor_row);
             let cx = content_x + cursor_col as f32 * cell_w;
             let cy = content_y + cursor_row as f32 * cell_h;
-            let cursor_fg = [0.13, 0.04, 0.29, 1.0];
-            let cursor_bg = [1.0, 0.239, 0.58, 1.0];
-            cell_data.push((cell.c, cx, cy, font_size, cursor_fg, cursor_bg));
+            let cursor_color = [1.0_f32, 0.239, 0.58, 1.0];
+            match state.config.cursor_style {
+                luna_config::CursorStyle::Block => {
+                    let cell = grid_ref.get(cursor_col, cursor_row);
+                    let cursor_fg = [0.13, 0.04, 0.29, 1.0];
+                    cell_data.push((cell.c, cx, cy, font_size, cursor_fg, cursor_color));
+                }
+                luna_config::CursorStyle::Beam => {
+                    ui_rects.push(UIRect {
+                        pos: [cx, cy],
+                        size: [1.5, cell_h],
+                        color: cursor_color,
+                    });
+                }
+                luna_config::CursorStyle::Underline => {
+                    ui_rects.push(UIRect {
+                        pos: [cx, cy + cell_h - 2.0],
+                        size: [cell_w, 2.0],
+                        color: cursor_color,
+                    });
+                }
+            }
         }
         drop(grid_ref);
 
