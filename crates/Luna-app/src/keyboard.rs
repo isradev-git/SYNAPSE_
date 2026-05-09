@@ -20,6 +20,21 @@ pub enum PostKeyAction {
     FontChange(f32),
 }
 
+fn ensure_tab_visible(
+    active_idx: usize,
+    tab_count: usize,
+    layout: &luna_ui::layout::Layout,
+    offset: &mut usize,
+) {
+    let (start, end, _, _) = layout.tab_visible_range(tab_count, *offset);
+    if active_idx < start {
+        *offset = active_idx;
+    } else if active_idx >= end && end > start {
+        let vis = end - start;
+        *offset = active_idx.saturating_sub(vis.saturating_sub(1));
+    }
+}
+
 fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &crate::state::Selection, cols: usize) -> String {
     let (start, end) = sel.normalized();
     let mut result = String::new();
@@ -118,6 +133,8 @@ pub fn handle_keyboard(
                 let shell = state.config.shell_program.as_str();
                 let args = &state.config.shell_args;
                 panes.push(create_pane_full(pane_id, new_cols, new_rows, None, Some(shell), args));
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
             }
             Some(Action::CloseTab) => {
                 if let Some(closed) = tab_bar.close_tab(tab_bar.active) {
@@ -129,22 +146,31 @@ pub fn handle_keyboard(
                     }
                     panes.retain(|p| !closed_panes.contains(&p.id));
                 }
+                let n = tab_bar.tabs.len();
+                if state.tab_scroll_offset >= n && n > 0 {
+                    state.tab_scroll_offset = n - 1;
+                }
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
             }
             Some(Action::NextTab) => {
                 tab_bar.next_tab();
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
             }
             Some(Action::PrevTab) => {
                 tab_bar.prev_tab();
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
             }
-            Some(Action::TabSwitch1) => tab_bar.activate(0),
-            Some(Action::TabSwitch2) => tab_bar.activate(1),
-            Some(Action::TabSwitch3) => tab_bar.activate(2),
-            Some(Action::TabSwitch4) => tab_bar.activate(3),
-            Some(Action::TabSwitch5) => tab_bar.activate(4),
-            Some(Action::TabSwitch6) => tab_bar.activate(5),
-            Some(Action::TabSwitch7) => tab_bar.activate(6),
-            Some(Action::TabSwitch8) => tab_bar.activate(7),
-            Some(Action::TabSwitch9) => tab_bar.activate(8),
+            Some(Action::TabSwitch1) => { tab_bar.activate(0); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch2) => { tab_bar.activate(1); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch3) => { tab_bar.activate(2); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch4) => { tab_bar.activate(3); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch5) => { tab_bar.activate(4); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch6) => { tab_bar.activate(5); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch7) => { tab_bar.activate(6); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch8) => { tab_bar.activate(7); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch9) => { tab_bar.activate(8); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
             Some(Action::SplitVertical) => {
                 let active_id = tab_bar.active_tab().active_pane;
                 let new_pane_id = tab_bar.next_pane_id();

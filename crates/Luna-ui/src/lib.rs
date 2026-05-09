@@ -13,5 +13,6 @@ pub use splitter::SplitDirection;
 pub use tab_bar::Tab;
 pub use tab_bar::TabBar;
 pub use tab_bar::TabId;
+pub use layout::SCROLL_BTN_W;
 pub use theme::SEARCH_BAR_HEIGHT;
 pub use theme::TAB_BAR_HEIGHT;

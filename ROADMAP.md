@@ -170,16 +170,19 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ---
 
-### R-013 · Scroll horizontal de tab bar
+### R-013 · Scroll horizontal de tab bar ✓
 **Problema:** con muchas tabs el contenido desborda sin scroll.
 
-- [ ] En `Layout`: calcular si las tabs exceden el ancho de ventana
-- [ ] En `AppState`: añadir `tab_scroll_offset: usize` (primer tab visible)
-- [ ] En `render.rs`: solo renderizar tabs desde `tab_scroll_offset` hasta que llenen el ancho
-- [ ] En `mouse.rs`: botones `<` y `>` en los extremos de la tab bar para scrollear
-- [ ] Ctrl+Tab / Ctrl+Shift+Tab: auto-scroll si la tab activa queda fuera de vista
+- [x] En `Layout`: `tab_visible_range(tab_count, offset)` → `(start, end, show_left, show_right)`
+- [x] En `Layout`: `scrolled_tab_width(vis_count, show_left, show_right)` y `pub const SCROLL_BTN_W = 20.0`
+- [x] En `AppState`: `tab_scroll_offset: usize` (primer tab visible)
+- [x] En `render.rs`: `build_tab_bar_ui_rects` y `build_tab_bar_text` solo renderizan tabs `[start, end)`
+- [x] En `render.rs`: botones `<` y `>` (20px cada uno) aparecen solo cuando hay overflow
+- [x] En `pane_ops.rs`: `handle_tab_click` detecta clicks en `<`/`>` y ajusta `scroll_offset`
+- [x] En `mouse.rs`: hover detection ajustado para tabs con offset
+- [x] NextTab / PrevTab / TabSwitch1-9 / NewTab / CloseTab: llaman `ensure_tab_visible` para auto-scroll
 
-**Verificar:** con 15 tabs, se pueden navegar todas con los botones o con Ctrl+Tab.
+**Verificar:** con 15 tabs, se pueden navegar todas con los botones `<`/`>` o con Ctrl+Tab.
 
 ---
 

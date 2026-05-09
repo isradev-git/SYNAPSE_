@@ -166,6 +166,7 @@ pub struct AppState {
     pub history_search: HistorySearchState,
     pub font_size: f32,
     pub fullscreen: bool,
+    pub tab_scroll_offset: usize,
 }
 
 impl AppState {
@@ -187,6 +188,7 @@ impl AppState {
             history_search: HistorySearchState::new(),
             font_size,
             fullscreen: false,
+            tab_scroll_offset: 0,
         }
     }
 }

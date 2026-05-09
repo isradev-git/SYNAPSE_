@@ -7,7 +7,7 @@ use winit::{
 };
 
 use luna_terminal::MouseReportMode;
-use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection, TAB_BAR_HEIGHT};
+use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SCROLL_BTN_W, SplitDirection, TAB_BAR_HEIGHT};
 
 use crate::{
     pane_ops::{active_pane_mut, find_hovered_divider, handle_tab_click},
@@ -174,7 +174,7 @@ pub fn handle_mouse_button(
                 let click = state.click_count;
 
                 if y < TAB_BAR_HEIGHT as f64 {
-                    handle_tab_click(tab_bar, panes, x, layout);
+                    handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset);
                 } else if click >= 2 {
                     // Double / triple click selection
                     let col = ((x - margin as f64) / cell_w as f64).floor().max(0.0) as usize;
@@ -261,9 +261,23 @@ pub fn handle_cursor_moved(
     // Tab hover detection
     if state.cursor_y < TAB_BAR_HEIGHT as f64 {
         let tab_count = tab_bar.tabs.len();
-        let tab_w = layout.tab_width(tab_count) as f64;
-        let idx = (state.cursor_x / tab_w).floor() as usize;
-        state.hover_tab = if idx < tab_count { Some(idx) } else { None };
+        let (start, end, show_left, show_right) =
+            layout.tab_visible_range(tab_count, state.tab_scroll_offset);
+        let vis_count = end - start;
+        let x_start = if show_left { SCROLL_BTN_W as f64 } else { 0.0 };
+        if vis_count > 0 {
+            let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right) as f64;
+            let rel = state.cursor_x - x_start;
+            if rel >= 0.0 {
+                let vis_idx = (rel / tab_w).floor() as usize;
+                let actual = start + vis_idx;
+                state.hover_tab = if actual < end { Some(actual) } else { None };
+            } else {
+                state.hover_tab = None;
+            }
+        } else {
+            state.hover_tab = None;
+        }
     } else {
         state.hover_tab = None;
     }

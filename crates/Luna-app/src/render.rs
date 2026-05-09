@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use luna_renderer::{renderer::Renderer, ui::UIRect};
-use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId};
+use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
 
 use crate::{
     pane_ops::find_pane,
@@ -11,10 +11,14 @@ use crate::{
 
 const TAB_FONT_SIZE: f32 = 12.0;
 
-pub fn build_tab_bar_ui_rects(layout: &Layout, tab_bar: &TabBar, hover_tab: Option<usize>) -> Vec<UIRect> {
+pub fn build_tab_bar_ui_rects(
+    layout: &Layout,
+    tab_bar: &TabBar,
+    hover_tab: Option<usize>,
+    scroll_offset: usize,
+) -> Vec<UIRect> {
     let mut rects = Vec::new();
 
-    // Tab bar background
     rects.push(UIRect {
         pos: [0.0, 0.0],
         size: [layout.window_width, layout.tab_bar_height],
@@ -22,23 +26,25 @@ pub fn build_tab_bar_ui_rects(layout: &Layout, tab_bar: &TabBar, hover_tab: Opti
     });
 
     let tab_count = tab_bar.tabs.len();
-    let tab_w = layout.tab_width(tab_count);
+    let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, scroll_offset);
+    let vis_count = end - start;
+    let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right);
+    let x_start = if show_left { SCROLL_BTN_W } else { 0.0 };
 
-    for (i, _tab) in tab_bar.tabs.iter().enumerate() {
-        let x = layout.tab_x(i, tab_count);
-        let color = if i == tab_bar.active {
-            theme::TAB_ACTIVE_BG
-        } else {
-            theme::TAB_INACTIVE_BG
-        };
-
+    // < scroll button
+    if show_left {
         rects.push(UIRect {
-            pos: [x, 0.0],
-            size: [tab_w, layout.tab_bar_height],
-            color,
+            pos: [0.0, 0.0],
+            size: [SCROLL_BTN_W, layout.tab_bar_height],
+            color: theme::TAB_BAR_BG,
         });
+    }
 
-        // Hover overlay for inactive tabs
+    for (vis_i, i) in (start..end).enumerate() {
+        let x = x_start + vis_i as f32 * tab_w;
+        let color = if i == tab_bar.active { theme::TAB_ACTIVE_BG } else { theme::TAB_INACTIVE_BG };
+        rects.push(UIRect { pos: [x, 0.0], size: [tab_w, layout.tab_bar_height], color });
+
         if hover_tab == Some(i) && i != tab_bar.active {
             rects.push(UIRect {
                 pos: [x, 0.0],
@@ -47,8 +53,7 @@ pub fn build_tab_bar_ui_rects(layout: &Layout, tab_bar: &TabBar, hover_tab: Opti
             });
         }
 
-        // Separator between tabs
-        if i > 0 {
+        if vis_i > 0 {
             rects.push(UIRect {
                 pos: [x, 4.0],
                 size: [1.0, layout.tab_bar_height - 8.0],
@@ -58,12 +63,21 @@ pub fn build_tab_bar_ui_rects(layout: &Layout, tab_bar: &TabBar, hover_tab: Opti
     }
 
     // + button
-    let plus_x = layout.tab_x(tab_count, tab_count);
+    let plus_x = x_start + vis_count as f32 * tab_w;
     rects.push(UIRect {
         pos: [plus_x, 0.0],
         size: [32.0, layout.tab_bar_height],
         color: theme::TAB_BAR_BG,
     });
+
+    // > scroll button
+    if show_right {
+        rects.push(UIRect {
+            pos: [plus_x + 32.0, 0.0],
+            size: [SCROLL_BTN_W, layout.tab_bar_height],
+            color: theme::TAB_BAR_BG,
+        });
+    }
 
     rects
 }
@@ -72,25 +86,27 @@ pub fn build_tab_bar_text(
     layout: &Layout,
     tab_bar: &TabBar,
     _scale_factor: f64,
+    scroll_offset: usize,
 ) -> Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> {
     let mut result = Vec::new();
     let tab_count = tab_bar.tabs.len();
-    let tab_w = layout.tab_width(tab_count);
+    let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, scroll_offset);
+    let vis_count = end - start;
+    let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right);
+    let x_start = if show_left { SCROLL_BTN_W } else { 0.0 };
     let char_w = TAB_FONT_SIZE * 0.6;
     let text_y = 8.0;
 
-    for (i, tab) in tab_bar.tabs.iter().enumerate() {
-        let x = layout.tab_x(i, tab_count);
-        let fg = if i == tab_bar.active {
-            theme::TAB_TEXT
-        } else {
-            theme::TAB_TEXT_INACTIVE
-        };
-        let bg = if i == tab_bar.active {
-            theme::TAB_ACTIVE_BG
-        } else {
-            theme::TAB_INACTIVE_BG
-        };
+    // < button text
+    if show_left {
+        result.push(('<', 4.0, text_y, TAB_FONT_SIZE, theme::TAB_BUTTON_TEXT, theme::TAB_BAR_BG));
+    }
+
+    for (vis_i, i) in (start..end).enumerate() {
+        let tab = &tab_bar.tabs[i];
+        let x = x_start + vis_i as f32 * tab_w;
+        let fg = if i == tab_bar.active { theme::TAB_TEXT } else { theme::TAB_TEXT_INACTIVE };
+        let bg = if i == tab_bar.active { theme::TAB_ACTIVE_BG } else { theme::TAB_INACTIVE_BG };
 
         let raw_title: String = if !tab.title.is_empty() {
             tab.title.clone()
@@ -112,36 +128,22 @@ pub fn build_tab_bar_text(
 
         let text_x = x + 8.0;
         for (j, c) in title.chars().enumerate() {
-            result.push((
-                c,
-                text_x + j as f32 * char_w,
-                text_y,
-                TAB_FONT_SIZE,
-                fg,
-                bg,
-            ));
+            result.push((c, text_x + j as f32 * char_w, text_y, TAB_FONT_SIZE, fg, bg));
         }
 
-        // × close button (only when more than 1 tab — enforced in click handler too)
         let close_x = x + tab_w - 14.0;
-        let close_fg = if i == tab_bar.active {
-            [1.0, 1.0, 1.0, 0.7_f32]
-        } else {
-            [0.8, 0.8, 0.8, 0.5_f32]
-        };
+        let close_fg = if i == tab_bar.active { [1.0, 1.0, 1.0, 0.7_f32] } else { [0.8, 0.8, 0.8, 0.5_f32] };
         result.push(('×', close_x, text_y, TAB_FONT_SIZE, close_fg, bg));
     }
 
-    // + text
-    let plus_x = layout.tab_x(tab_count, tab_count);
-    result.push((
-        '+',
-        plus_x + 8.0,
-        text_y,
-        TAB_FONT_SIZE,
-        theme::TAB_BUTTON_TEXT,
-        theme::TAB_BAR_BG,
-    ));
+    // + button
+    let plus_x = x_start + vis_count as f32 * tab_w;
+    result.push(('+', plus_x + 8.0, text_y, TAB_FONT_SIZE, theme::TAB_BUTTON_TEXT, theme::TAB_BAR_BG));
+
+    // > button text
+    if show_right {
+        result.push(('>', plus_x + 32.0 + 4.0, text_y, TAB_FONT_SIZE, theme::TAB_BUTTON_TEXT, theme::TAB_BAR_BG));
+    }
 
     result
 }
@@ -438,10 +440,10 @@ pub fn render_frame(
         }
     }
 
-    let tab_ui = build_tab_bar_ui_rects(layout, tab_bar, state.hover_tab);
+    let tab_ui = build_tab_bar_ui_rects(layout, tab_bar, state.hover_tab, state.tab_scroll_offset);
     ui_rects.extend(tab_ui);
 
-    for tab_cell in build_tab_bar_text(layout, tab_bar, 1.0) {
+    for tab_cell in build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset) {
         cell_data.push(tab_cell);
     }
 

@@ -3,7 +3,7 @@ use luna_ui::{
     pane::{Pane, PaneId},
     splitter::PaneRect,
     tab_bar::TabBar,
-    TAB_BAR_HEIGHT,
+    SCROLL_BTN_W, TAB_BAR_HEIGHT,
 };
 
 const CLOSE_BTN_W: f32 = 16.0;
@@ -98,13 +98,28 @@ pub fn adjacent_pane(layouts: &[(PaneId, PaneRect)], from: PaneId, direction: &s
     }
 }
 
-pub fn handle_tab_click(tab_bar: &mut TabBar, panes: &mut Vec<Pane>, x: f64, layout: &Layout) {
+pub fn handle_tab_click(
+    tab_bar: &mut TabBar,
+    panes: &mut Vec<Pane>,
+    x: f64,
+    layout: &Layout,
+    scroll_offset: &mut usize,
+) {
     let tab_count = tab_bar.tabs.len();
-    let tab_w = layout.tab_width(tab_count) as f64;
-    let close_w = CLOSE_BTN_W as f64;
+    let (start, end, show_left, show_right) =
+        layout.tab_visible_range(tab_count, *scroll_offset);
+    let vis_count = end - start;
+    let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right) as f64;
+    let x_start = if show_left { SCROLL_BTN_W as f64 } else { 0.0 };
+
+    // < scroll button
+    if show_left && x < SCROLL_BTN_W as f64 {
+        *scroll_offset = scroll_offset.saturating_sub(1);
+        return;
+    }
 
     // + button area
-    let plus_x = layout.tab_x(tab_count, tab_count) as f64;
+    let plus_x = x_start + vis_count as f64 * tab_w;
     if x >= plus_x && x < plus_x + 32.0 {
         let margin = 4.0;
         let cell_w = 8.4;
@@ -114,19 +129,39 @@ pub fn handle_tab_click(tab_bar: &mut TabBar, panes: &mut Vec<Pane>, x: f64, lay
         let new_rows = (pane_height / cell_h).max(1.0) as usize;
         let (_, pane_id) = tab_bar.new_tab();
         panes.push(create_pane(pane_id, new_cols, new_rows));
+        // Scroll so the new active tab is visible
+        let new_count = tab_bar.tabs.len();
+        let (new_start, new_end, _, _) =
+            layout.tab_visible_range(new_count, *scroll_offset);
+        if tab_bar.active >= new_end {
+            let vis = new_end.saturating_sub(new_start).max(1);
+            *scroll_offset = tab_bar.active.saturating_sub(vis.saturating_sub(1));
+        }
         return;
     }
 
-    let clicked = (x / tab_w) as usize;
-    if clicked >= tab_count {
+    // > scroll button
+    if show_right && x >= plus_x + 32.0 {
+        *scroll_offset = (*scroll_offset + 1).min(tab_count.saturating_sub(1));
+        return;
+    }
+
+    // Tab area
+    let rel_x = x - x_start;
+    if rel_x < 0.0 {
+        return;
+    }
+    let vis_idx = (rel_x / tab_w).floor() as usize;
+    let actual_idx = start + vis_idx;
+    if actual_idx >= end {
         return;
     }
 
     // × close button zone (rightmost CLOSE_BTN_W px of each tab)
-    let tab_start = layout.tab_x(clicked, tab_count) as f64;
-    let close_start = tab_start + tab_w - close_w;
+    let tab_start_x = x_start + vis_idx as f64 * tab_w;
+    let close_start = tab_start_x + tab_w - CLOSE_BTN_W as f64;
     if x >= close_start && tab_count > 1 {
-        if let Some(closed) = tab_bar.close_tab(clicked) {
+        if let Some(closed) = tab_bar.close_tab(actual_idx) {
             let closed_panes = closed.pane_tree.all_panes();
             for pane in panes.iter_mut() {
                 if closed_panes.contains(&pane.id) {
@@ -135,10 +170,14 @@ pub fn handle_tab_click(tab_bar: &mut TabBar, panes: &mut Vec<Pane>, x: f64, lay
             }
             panes.retain(|p| !closed_panes.contains(&p.id));
         }
+        let new_count = tab_bar.tabs.len();
+        if *scroll_offset >= new_count && new_count > 0 {
+            *scroll_offset = new_count - 1;
+        }
         return;
     }
 
-    tab_bar.activate(clicked);
+    tab_bar.activate(actual_idx);
 }
 
 pub fn find_hovered_divider<'a>(
