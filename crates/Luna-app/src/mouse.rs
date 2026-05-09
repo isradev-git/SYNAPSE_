@@ -6,28 +6,102 @@ use winit::{
     window::{CursorIcon, Window},
 };
 
-use luna_ui::{layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::TabBar, TAB_BAR_HEIGHT};
+use luna_terminal::MouseReportMode;
+use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection, TAB_BAR_HEIGHT};
 
 use crate::{
     pane_ops::{active_pane_mut, find_hovered_divider, handle_tab_click},
     state::{AppState, DividerDrag, Selection},
 };
 
+fn cursor_to_pane_cell(
+    cursor_x: f64,
+    cursor_y: f64,
+    tab_bar: &TabBar,
+    layout: &Layout,
+    cell_w: f32,
+    cell_h: f32,
+    margin: f32,
+) -> Option<(usize, usize)> {
+    let active_id = tab_bar.active_tab().active_pane;
+    let pane_area = layout.pane_area();
+    let pane_rect = PaneRect { x: pane_area.0, y: pane_area.1, w: pane_area.2, h: pane_area.3 };
+    let layouts = tab_bar.active_tab().pane_tree.get_layout(pane_rect);
+    let rect = layouts.iter().find(|(id, _)| *id == active_id)?.1;
+
+    let content_x = (rect.x + margin) as f64;
+    let content_y = (rect.y + margin) as f64;
+
+    if cursor_x < content_x || cursor_y < content_y {
+        return None;
+    }
+
+    let col = ((cursor_x - content_x) / cell_w as f64).floor() as usize + 1;
+    let row = ((cursor_y - content_y) / cell_h as f64).floor() as usize + 1;
+    Some((col, row))
+}
+
+fn encode_mouse_event(col: usize, row: usize, btn: u8, pressed: bool, sgr: bool) -> Vec<u8> {
+    if sgr {
+        let m = if pressed { b'M' } else { b'm' };
+        let mut bytes = format!("\x1b[<{};{};{}", btn, col, row).into_bytes();
+        bytes.push(m);
+        bytes
+    } else {
+        let b = (btn + 32).min(255) as u8;
+        let x = ((col as u16 + 32).min(255)) as u8;
+        let y = ((row as u16 + 32).min(255)) as u8;
+        vec![0x1b, b'[', b'M', b, x, y]
+    }
+}
+
 pub fn handle_scroll(
     delta: MouseScrollDelta,
     panes: &mut [Pane],
     tab_bar: &TabBar,
+    state: &AppState,
+    layout: &Layout,
+    cell_w: f32,
     cell_h: f32,
+    margin: f32,
 ) {
-    let pane = active_pane_mut(panes, tab_bar);
     let lines = match delta {
         MouseScrollDelta::LineDelta(_, y) => (y.abs() as usize).max(1),
-        MouseScrollDelta::PixelDelta(pos) => (pos.y.abs() / cell_h as f64) as usize,
+        MouseScrollDelta::PixelDelta(pos) => (pos.y.abs() / cell_h as f64).max(1.0) as usize,
     };
     let is_up = match delta {
         MouseScrollDelta::LineDelta(_, y) => y > 0.0,
         MouseScrollDelta::PixelDelta(pos) => pos.y > 0.0,
     };
+
+    let active_id = tab_bar.active_tab().active_pane;
+    let mode;
+    let sgr;
+    if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+        let modes = pane.modes.borrow();
+        mode = modes.mouse_report;
+        sgr = modes.mouse_sgr;
+    } else {
+        mode = MouseReportMode::None;
+        sgr = false;
+    }
+
+    if mode != MouseReportMode::None && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
+        if let Some((col, row)) = cursor_to_pane_cell(
+            state.cursor_x, state.cursor_y, tab_bar, layout, cell_w, cell_h, margin,
+        ) {
+            let btn = if is_up { 64u8 } else { 65u8 };
+            for _ in 0..lines {
+                let bytes = encode_mouse_event(col, row, btn, true, sgr);
+                if let Some(pane) = panes.iter_mut().find(|p| p.id == active_id) {
+                    let _ = pane.pty_session.pty.write(&bytes);
+                }
+            }
+        }
+        return;
+    }
+
+    let pane = active_pane_mut(panes, tab_bar);
     let mut grid_mut = pane.grid.borrow_mut();
     if is_up {
         grid_mut.scroll_down(lines);
@@ -43,7 +117,46 @@ pub fn handle_mouse_button(
     tab_bar: &mut TabBar,
     panes: &mut Vec<Pane>,
     layout: &Layout,
+    cell_w: f32,
+    cell_h: f32,
+    margin: f32,
 ) {
+    let active_id = tab_bar.active_tab().active_pane;
+    let shift_held = state.modifiers.shift_key();
+
+    // Mouse reporting: intercept clicks for apps like vim/htop when Shift not held
+    {
+        let mode;
+        let sgr;
+        if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+            let modes = pane.modes.borrow();
+            mode = modes.mouse_report;
+            sgr = modes.mouse_sgr;
+        } else {
+            mode = MouseReportMode::None;
+            sgr = false;
+        }
+
+        if mode != MouseReportMode::None && !shift_held && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
+            if let Some((col, row)) = cursor_to_pane_cell(
+                state.cursor_x, state.cursor_y, tab_bar, layout, cell_w, cell_h, margin,
+            ) {
+                let btn = match button {
+                    MouseButton::Left => 0u8,
+                    MouseButton::Middle => 1,
+                    MouseButton::Right => 2,
+                    _ => return,
+                };
+                let pressed = button_state == ElementState::Pressed;
+                let bytes = encode_mouse_event(col, row, btn, pressed, sgr);
+                if let Some(pane) = panes.iter_mut().find(|p| p.id == active_id) {
+                    let _ = pane.pty_session.pty.write(&bytes);
+                }
+            }
+            return;
+        }
+    }
+
     if button == MouseButton::Left {
         match button_state {
             ElementState::Pressed => {
@@ -58,17 +171,14 @@ pub fn handle_mouse_button(
                     );
                 } else if state.hover_divider {
                     let pane_area = layout.pane_area();
-                    let pane_rect = luna_ui::PaneRect {
+                    let pane_rect = PaneRect {
                         x: pane_area.0,
                         y: pane_area.1,
                         w: pane_area.2,
                         h: pane_area.3,
                     };
-                    let dividers =
-                        tab_bar.active_tab().pane_tree.get_dividers(pane_rect);
-                    if let Some(info) =
-                        find_hovered_divider(&dividers, x, y)
-                    {
+                    let dividers = tab_bar.active_tab().pane_tree.get_dividers(pane_rect);
+                    if let Some(info) = find_hovered_divider(&dividers, x, y) {
                         state.dragging_divider = Some(DividerDrag {
                             pane_id: info.pane_id,
                             direction: info.direction,
@@ -170,7 +280,16 @@ use crate::app::App;
 
 impl App {
     pub(crate) fn handle_scroll(&mut self, delta: winit::event::MouseScrollDelta) {
-        handle_scroll(delta, &mut self.panes, &self.tab_bar, self.cell_h);
+        handle_scroll(
+            delta,
+            &mut self.panes,
+            &self.tab_bar,
+            &self.state,
+            &self.layout,
+            self.cell_w,
+            self.cell_h,
+            self.margin,
+        );
     }
 
     pub(crate) fn handle_mouse_button(
@@ -185,6 +304,9 @@ impl App {
             &mut self.tab_bar,
             &mut self.panes,
             &self.layout,
+            self.cell_w,
+            self.cell_h,
+            self.margin,
         );
     }
 

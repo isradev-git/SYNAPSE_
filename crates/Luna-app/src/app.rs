@@ -20,16 +20,18 @@ use crate::{
 };
 
 pub struct App {
-    pub window:    Arc<Window>,
-    pub renderer:  Renderer,
-    pub layout:    Layout,
-    pub tab_bar:   TabBar,
-    pub panes:     Vec<Pane>,
-    pub clipboard: Option<arboard::Clipboard>,
-    pub state:     AppState,
-    pub cell_w:    f32,
-    pub cell_h:    f32,
-    pub margin:    f32,
+    pub window:          Arc<Window>,
+    pub renderer:        Renderer,
+    pub layout:          Layout,
+    pub tab_bar:         TabBar,
+    pub panes:           Vec<Pane>,
+    pub clipboard:       Option<arboard::Clipboard>,
+    pub state:           AppState,
+    pub cell_w:          f32,
+    pub cell_h:          f32,
+    pub margin:          f32,
+    pub cursor_blink_on: bool,
+    pub last_blink:      std::time::Instant,
 }
 
 impl App {
@@ -76,7 +78,12 @@ impl App {
         let state = AppState::new(config, keybinds, initial_font_size);
 
         Ok((
-            App { window, renderer, layout, tab_bar, panes, clipboard, state, cell_w, cell_h, margin },
+            App {
+                window, renderer, layout, tab_bar, panes, clipboard, state,
+                cell_w, cell_h, margin,
+                cursor_blink_on: true,
+                last_blink: std::time::Instant::now(),
+            },
             event_loop,
         ))
     }

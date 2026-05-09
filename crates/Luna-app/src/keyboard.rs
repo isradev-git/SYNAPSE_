@@ -236,9 +236,14 @@ pub fn handle_keyboard(
                 if let Some(ref mut clip) = clipboard {
                     if let Ok(text) = clip.get_text() {
                         let pane = active_pane_mut(panes, tab_bar);
-                        let _ = pane.pty_session.pty.write(b"\x1b[200~");
+                        let bracketed = pane.modes.borrow().bracketed_paste;
+                        if bracketed {
+                            let _ = pane.pty_session.pty.write(b"\x1b[200~");
+                        }
                         let _ = pane.pty_session.pty.write(text.as_bytes());
-                        let _ = pane.pty_session.pty.write(b"\x1b[201~");
+                        if bracketed {
+                            let _ = pane.pty_session.pty.write(b"\x1b[201~");
+                        }
                     }
                 }
             }
@@ -296,9 +301,14 @@ pub fn handle_keyboard(
                 if let Some(ref mut clip) = clipboard {
                     if let Ok(text) = clip.get_text() {
                         let pane = active_pane_mut(panes, tab_bar);
-                        let _ = pane.pty_session.pty.write(b"\x1b[200~");
+                        let bracketed = pane.modes.borrow().bracketed_paste;
+                        if bracketed {
+                            let _ = pane.pty_session.pty.write(b"\x1b[200~");
+                        }
                         let _ = pane.pty_session.pty.write(text.as_bytes());
-                        let _ = pane.pty_session.pty.write(b"\x1b[201~");
+                        if bracketed {
+                            let _ = pane.pty_session.pty.write(b"\x1b[201~");
+                        }
                     }
                 }
             }

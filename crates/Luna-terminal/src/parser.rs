@@ -3,6 +3,23 @@ use std::rc::Rc;
 
 use crate::grid::{CellFlags, CharCell, Color, Grid};
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum MouseReportMode {
+    #[default]
+    None,
+    X10,
+    ButtonMotion,
+    AnyMotion,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TerminalModes {
+    pub bracketed_paste: bool,
+    pub mouse_report: MouseReportMode,
+    pub mouse_sgr: bool,
+    pub focus_events: bool,
+}
+
 pub struct VteProcessor {
     grid: Rc<RefCell<Grid>>,
     fg: Color,
@@ -10,6 +27,7 @@ pub struct VteProcessor {
     flags: CellFlags,
     title: Rc<RefCell<String>>,
     cwd: Rc<RefCell<String>>,
+    modes: Rc<RefCell<TerminalModes>>,
 }
 
 impl VteProcessor {
@@ -21,10 +39,16 @@ impl VteProcessor {
             flags: CellFlags::empty(),
             title: Rc::new(RefCell::new(String::new())),
             cwd: Rc::new(RefCell::new(String::new())),
+            modes: Rc::new(RefCell::new(TerminalModes::default())),
         }
     }
 
-    pub fn new_with_title(grid: Rc<RefCell<Grid>>, title: Rc<RefCell<String>>, cwd: Rc<RefCell<String>>) -> Self {
+    pub fn new_with_title(
+        grid: Rc<RefCell<Grid>>,
+        title: Rc<RefCell<String>>,
+        cwd: Rc<RefCell<String>>,
+        modes: Rc<RefCell<TerminalModes>>,
+    ) -> Self {
         Self {
             grid,
             fg: Color::Default,
@@ -32,6 +56,7 @@ impl VteProcessor {
             flags: CellFlags::empty(),
             title,
             cwd,
+            modes,
         }
     }
 
@@ -145,7 +170,7 @@ impl vte::Perform for VteProcessor {
     fn csi_dispatch(
         &mut self,
         params: &vte::Params,
-        _intermediates: &[u8],
+        intermediates: &[u8],
         _ignore: bool,
         action: char,
     ) {
@@ -230,7 +255,22 @@ impl vte::Perform for VteProcessor {
             'm' => {
                 self.handle_sgr(params);
             }
-            'h' | 'l' => {}
+            'h' | 'l' => {
+                let enable = action == 'h';
+                if intermediates.contains(&b'?') {
+                    let mode_num = get_param(params, 0);
+                    let mut modes = self.modes.borrow_mut();
+                    match mode_num {
+                        1000 => modes.mouse_report = if enable { MouseReportMode::X10 } else { MouseReportMode::None },
+                        1002 => modes.mouse_report = if enable { MouseReportMode::ButtonMotion } else { MouseReportMode::None },
+                        1003 => modes.mouse_report = if enable { MouseReportMode::AnyMotion } else { MouseReportMode::None },
+                        1004 => modes.focus_events = enable,
+                        1006 => modes.mouse_sgr = enable,
+                        2004 => modes.bracketed_paste = enable,
+                        _ => {}
+                    }
+                }
+            }
             's' => {
                 let mut grid = self.grid.borrow_mut();
                 grid.save_cursor();
@@ -912,7 +952,8 @@ mod tests {
         let grid = make_grid(80, 24);
         let title = Rc::new(RefCell::new(String::new()));
         let cwd = Rc::new(RefCell::new(String::new()));
-        let mut proc = VteProcessor::new_with_title(grid, title.clone(), cwd);
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title.clone(), cwd, modes);
         proc.process(b"\x1b]0;MyTitle\x07");
         assert_eq!(&*title.borrow(), "MyTitle");
     }
@@ -922,7 +963,8 @@ mod tests {
         let grid = make_grid(80, 24);
         let title = Rc::new(RefCell::new(String::new()));
         let cwd = Rc::new(RefCell::new(String::new()));
-        let mut proc = VteProcessor::new_with_title(grid, title.clone(), cwd);
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title.clone(), cwd, modes);
         proc.process(b"\x1b]2;Another Title\x07");
         assert_eq!(&*title.borrow(), "Another Title");
     }
@@ -932,7 +974,8 @@ mod tests {
         let grid = make_grid(80, 24);
         let title = Rc::new(RefCell::new(String::new()));
         let cwd = Rc::new(RefCell::new(String::new()));
-        let mut proc = VteProcessor::new_with_title(grid, title, cwd.clone());
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title, cwd.clone(), modes);
         proc.process(b"\x1b]7;file://hostname/home/user\x07");
         assert_eq!(&*cwd.borrow(), "/home/user");
     }

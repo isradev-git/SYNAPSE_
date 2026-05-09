@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use luna_renderer::{renderer::Renderer, ui::UIRect};
-use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme};
+use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId};
 
 use crate::{
     pane_ops::find_pane,
@@ -125,15 +125,25 @@ pub fn render_frame(
     renderer: &mut Renderer,
     layout: &Layout,
     tab_bar: &mut TabBar,
-    panes: &mut [Pane],
+    panes: &mut Vec<Pane>,
     state: &AppState,
     cell_w: f32,
     cell_h: f32,
-) {
+    cursor_blink_on: bool,
+) -> Vec<PaneId> {
     let font_size = state.font_size;
+    let mut exited_panes: Vec<PaneId> = Vec::new();
+
     for pane in panes.iter_mut() {
-        while let Ok(data) = pane.pty_session.rx.try_recv() {
-            pane.processor.process(&data);
+        loop {
+            match pane.pty_session.rx.try_recv() {
+                Ok(Some(data)) => pane.processor.process(&data),
+                Ok(None) => {
+                    exited_panes.push(pane.id);
+                    break;
+                }
+                Err(_) => break,
+            }
         }
     }
 
@@ -235,12 +245,12 @@ pub fn render_frame(
             cell_data.push((cell.c, x, y, font_size, cell.fg.fg_rgba(), bg));
         }
 
-        if !scrolled && cursor_col < pane_cols && cursor_row < pane_rows {
+        if is_active && !scrolled && cursor_col < pane_cols && cursor_row < pane_rows && cursor_blink_on {
             let cell = grid_ref.get(cursor_col, cursor_row);
             let cx = content_x + cursor_col as f32 * cell_w;
             let cy = content_y + cursor_row as f32 * cell_h;
-            let cursor_fg = [1.0, 0.239, 0.58, 1.0];
-            let cursor_bg = [1.0, 1.0, 1.0, 0.15];
+            let cursor_fg = [0.13, 0.04, 0.29, 1.0];
+            let cursor_bg = [1.0, 0.239, 0.58, 1.0];
             cell_data.push((cell.c, cx, cy, font_size, cursor_fg, cursor_bg));
         }
         drop(grid_ref);
@@ -389,13 +399,25 @@ pub fn render_frame(
     }
 
     renderer.draw_frame(&cell_data, &ui_rects);
+
+    for pane in panes.iter_mut() {
+        pane.grid.borrow_mut().clear_dirty();
+    }
+
+    exited_panes
 }
 
 use crate::app::App;
+use crate::pane_ops::create_pane;
 
 impl App {
     pub(crate) fn render(&mut self) {
-        render_frame(
+        if self.last_blink.elapsed() >= std::time::Duration::from_millis(500) {
+            self.cursor_blink_on = !self.cursor_blink_on;
+            self.last_blink = std::time::Instant::now();
+        }
+
+        let exited = render_frame(
             &mut self.renderer,
             &self.layout,
             &mut self.tab_bar,
@@ -403,6 +425,45 @@ impl App {
             &self.state,
             self.cell_w,
             self.cell_h,
+            self.cursor_blink_on,
         );
+
+        for pane_id in exited {
+            self.handle_pane_exit(pane_id);
+        }
+    }
+
+    fn handle_pane_exit(&mut self, pane_id: luna_ui::PaneId) {
+        if let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) {
+            let _ = pane.pty_session.pty.kill();
+        }
+
+        let tab_idx = self.tab_bar.tabs.iter().position(|t| t.pane_tree.all_panes().contains(&pane_id));
+
+        if let Some(idx) = tab_idx {
+            let pane_count = self.tab_bar.tabs[idx].pane_tree.all_panes().len();
+
+            if pane_count == 1 {
+                if self.tab_bar.tabs.len() == 1 {
+                    let pane_area = self.layout.pane_area();
+                    let new_cols = ((pane_area.2 - self.margin * 2.0) / self.cell_w).max(1.0) as usize;
+                    let new_rows = ((pane_area.3 - self.margin * 2.0) / self.cell_h).max(1.0) as usize;
+                    let new_pane_id = self.tab_bar.next_pane_id();
+                    self.tab_bar.tabs[0].pane_tree = luna_ui::PaneTree::leaf(new_pane_id);
+                    self.tab_bar.tabs[0].active_pane = new_pane_id;
+                    self.panes.push(create_pane(new_pane_id, new_cols, new_rows));
+                } else {
+                    self.tab_bar.close_tab(idx);
+                }
+            } else {
+                self.tab_bar.tabs[idx].pane_tree.close(pane_id);
+                if self.tab_bar.tabs[idx].active_pane == pane_id {
+                    let first = self.tab_bar.tabs[idx].pane_tree.all_panes()[0];
+                    self.tab_bar.tabs[idx].active_pane = first;
+                }
+            }
+        }
+
+        self.panes.retain(|p| p.id != pane_id);
     }
 }

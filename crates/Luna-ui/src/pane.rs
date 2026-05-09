@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use luna_terminal::grid::Grid;
-use luna_terminal::parser::VteProcessor;
+use luna_terminal::parser::{TerminalModes, VteProcessor};
 use luna_terminal::pty::PtySession;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -15,6 +15,7 @@ pub struct Pane {
     pub processor: VteProcessor,
     pub cols: usize,
     pub rows: usize,
+    pub modes: Rc<RefCell<TerminalModes>>,
     title: Rc<RefCell<String>>,
     cwd: Rc<RefCell<String>>,
 }
@@ -29,7 +30,11 @@ impl Pane {
     ) -> Self {
         let title = Rc::new(RefCell::new(String::new()));
         let cwd = Rc::new(RefCell::new(String::new()));
-        let processor = VteProcessor::new_with_title(grid.clone(), title.clone(), cwd.clone());
+        let modes = Rc::new(RefCell::new(TerminalModes {
+            bracketed_paste: true,
+            ..Default::default()
+        }));
+        let processor = VteProcessor::new_with_title(grid.clone(), title.clone(), cwd.clone(), modes.clone());
         Self {
             id,
             pty_session,
@@ -37,6 +42,7 @@ impl Pane {
             processor,
             cols,
             rows,
+            modes,
             title,
             cwd,
         }

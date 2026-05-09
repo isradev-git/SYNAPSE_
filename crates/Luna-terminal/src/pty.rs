@@ -13,7 +13,7 @@ pub struct PtyHandle {
 
 pub struct PtySession {
     pub pty: PtyHandle,
-    pub rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    pub rx: mpsc::UnboundedReceiver<Option<Vec<u8>>>,
 }
 
 impl PtyHandle {
@@ -101,16 +101,19 @@ impl PtyHandle {
         } = pty;
 
         if let Some(mut reader) = reader {
-            let (tx, rx) = mpsc::unbounded_channel();
+            let (tx, rx) = mpsc::unbounded_channel::<Option<Vec<u8>>>();
 
             std::thread::spawn(move || {
                 let mut buf = [0u8; 4096];
                 loop {
                     match std::io::Read::read(&mut reader, &mut buf) {
-                        Ok(0) => break,
+                        Ok(0) => {
+                            let _ = tx.send(None);
+                            break;
+                        }
                         Ok(n) => {
                             let data = buf[..n].to_vec();
-                            if tx.send(data).is_err() {
+                            if tx.send(Some(data)).is_err() {
                                 break;
                             }
                         }
@@ -119,6 +122,7 @@ impl PtyHandle {
                                 std::thread::sleep(std::time::Duration::from_millis(1));
                                 continue;
                             }
+                            let _ = tx.send(None);
                             break;
                         }
                     }
@@ -135,7 +139,7 @@ impl PtyHandle {
                 rx,
             }
         } else {
-            let (_tx, rx) = mpsc::unbounded_channel();
+            let (_tx, rx) = mpsc::unbounded_channel::<Option<Vec<u8>>>();
             PtySession {
                 pty: PtyHandle {
                     master,

@@ -3,3 +3,5 @@ pub mod grid;
 pub mod parser;
 pub mod pty;
 pub mod shell;
+
+pub use parser::{MouseReportMode, TerminalModes};
