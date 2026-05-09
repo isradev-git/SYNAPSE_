@@ -235,10 +235,7 @@ pub fn render_frame(
         let scrolled = scroll_offset > 0;
         let is_active = pane_id == active_pane_id;
 
-        for (col, vrow, cell) in grid_ref.visible_cells() {
-            if col >= pane_cols || vrow >= pane_rows {
-                continue;
-            }
+        for (col, vrow, cell) in grid_ref.visible_cells_bounded(pane_rows, pane_cols) {
             if !scrolled && col == cursor_col && vrow == cursor_row {
                 continue;
             }

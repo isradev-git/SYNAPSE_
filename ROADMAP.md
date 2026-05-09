@@ -203,12 +203,14 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ---
 
-### R-015 · Viewport culling en render
+### R-015 · Viewport culling en render ✓
 **Problema:** celdas fuera del viewport visible se envían al GPU. Con scrollback activo, hay trabajo innecesario.
 
-- [ ] En `render.rs`: al iterar celdas, solo incluir filas visibles en pantalla
-- [ ] Calcular `visible_start_row` y `visible_end_row` según `scroll_offset` y alto del pane
-- [ ] No instanciar celdas fuera de ese rango
+- [x] `Grid::visible_cells_bounded(max_rows, max_cols)` — pre-alloca Vec con capacidad exacta, itera solo filas/columnas dentro del viewport del pane
+- [x] `Grid::visible_cells()` delega a `visible_cells_bounded(rows, cols)` — sin cambio de API externa
+- [x] En `render.rs`: sustituida llamada a `visible_cells()` por `visible_cells_bounded(pane_rows, pane_cols)`
+- [x] Eliminado el check `col >= pane_cols || vrow >= pane_rows` (ya innecesario)
+- [x] 3 tests nuevos en `grid.rs`: `bounded_no_scroll`, `bounded_with_scrollback`, `bounded_count`
 
 **Verificar:** con 100k líneas de scrollback, FPS no degrada al hacer scroll.
 

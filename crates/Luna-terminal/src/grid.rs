@@ -424,29 +424,43 @@ impl Grid {
         }
     }
 
-    pub fn visible_cells(&self) -> impl Iterator<Item = (usize, usize, &CharCell)> {
+    /// Yields only cells within [0, max_cols) × [0, max_rows) in viewport coordinates.
+    /// Pre-allocates to the exact bound, avoiding over-iteration when grid > pane.
+    pub fn visible_cells_bounded(
+        &self,
+        max_rows: usize,
+        max_cols: usize,
+    ) -> Vec<(usize, usize, &CharCell)> {
         let start = self.scroll_offset;
-        let end = (start + self.rows).min(self.scrollback.len());
-        let scrollback_lines = end - start;
+        let sb_end = (start + max_rows).min(self.scrollback.len());
+        let scrollback_lines = sb_end - start;
 
-        // Scrollback lines first
-        let sb_iter = (0..scrollback_lines).flat_map(move |i| {
+        let mut result = Vec::with_capacity(max_rows * max_cols);
+
+        for i in 0..scrollback_lines {
             let line = self.scrollback.get_line(start + i);
-            line.iter().enumerate().map(move |(col, cell)| (col, i, cell))
-        });
+            for col in 0..max_cols.min(line.len()) {
+                result.push((col, i, &line[col]));
+            }
+        }
 
-        // Then visible grid
-        let grid_start = scrollback_lines;
-        let grid_iter = (grid_start..self.rows).flat_map(move |row| {
-            let grid_row = row - grid_start;
-            let row_start = self.index(0, grid_row);
-            self.cells[row_start..row_start + self.cols]
-                .iter()
-                .enumerate()
-                .map(move |(col, cell)| (col, row, cell))
-        });
+        let grid_rows = max_rows.saturating_sub(scrollback_lines);
+        for rel_row in 0..grid_rows {
+            if rel_row >= self.rows {
+                break;
+            }
+            let vrow = scrollback_lines + rel_row;
+            let row_start = self.index(0, rel_row);
+            for col in 0..max_cols.min(self.cols) {
+                result.push((col, vrow, &self.cells[row_start + col]));
+            }
+        }
 
-        sb_iter.chain(grid_iter).collect::<Vec<_>>().into_iter()
+        result
+    }
+
+    pub fn visible_cells(&self) -> impl Iterator<Item = (usize, usize, &CharCell)> {
+        self.visible_cells_bounded(self.rows, self.cols).into_iter()
     }
 }
 
@@ -536,5 +550,51 @@ mod tests {
         assert_eq!(grid.cols(), 40);
         assert_eq!(grid.rows(), 12);
         assert_eq!(grid.get(0, 0).c, 'X');
+    }
+
+    #[test]
+    fn test_visible_cells_bounded_no_scroll() {
+        let mut grid = Grid::new(10, 5);
+        grid.set(3, 2, CharCell { c: 'Z', ..CharCell::default() });
+
+        let cells = grid.visible_cells_bounded(5, 10);
+        let found = cells.iter().find(|(col, row, cell)| *col == 3 && *row == 2 && cell.c == 'Z');
+        assert!(found.is_some(), "bounded should include cell at (3,2)");
+
+        // Bounds: only pane_rows=3, pane_cols=5
+        let cells_small = grid.visible_cells_bounded(3, 5);
+        let out_of_bounds = cells_small.iter().any(|(col, row, _)| *row >= 3 || *col >= 5);
+        assert!(!out_of_bounds, "bounded must not exceed max_rows/max_cols");
+    }
+
+    #[test]
+    fn test_visible_cells_bounded_with_scrollback() {
+        let mut grid = Grid::new(5, 3);
+        // Fill 3 rows to push one into scrollback
+        for _ in 0..5 {
+            grid.advance_cursor(); // advance past col 4 → wraps to next row
+        }
+        // scroll back
+        grid.scroll_up(1);
+        assert!(grid.scroll_offset() > 0);
+
+        // With pane_rows=3, pane_cols=5: must not return more than 3 rows of data
+        let cells = grid.visible_cells_bounded(3, 5);
+        let max_vrow = cells.iter().map(|(_, row, _)| *row).max().unwrap_or(0);
+        assert!(max_vrow < 3, "bounded rows must be < max_rows=3, got {}", max_vrow);
+    }
+
+    #[test]
+    fn test_visible_cells_bounded_count() {
+        let mut grid = Grid::new(80, 24);
+        // Set a non-default cell so it's included
+        for col in 0..10 {
+            grid.set(col, 0, CharCell { c: 'A', ..CharCell::default() });
+        }
+
+        // With max 5 cols, only 5 of those 10 cells in row 0 should appear
+        let cells = grid.visible_cells_bounded(1, 5);
+        let row0: Vec<_> = cells.iter().filter(|(_, row, _)| *row == 0).collect();
+        assert_eq!(row0.len(), 5, "should get exactly 5 cols for row 0");
     }
 }
