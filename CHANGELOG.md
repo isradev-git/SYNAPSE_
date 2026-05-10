@@ -2,7 +2,23 @@
 
 Los cambios significativos se documentan aquí siguiendo el formato [Keep a Changelog](https://keepachangelog.com).
 
-## [0.1.0] — Sin publicar
+## [0.1.0] — 2026-05-10
+
+### R-021 · Ligaduras de fuente
+- `TextShaping::shape_run(text, font_size)` — shapea cadenas completas con `Shaping::Advanced`; devuelve un `ShapedGlyph` por glifo con su rango de bytes fuente
+- Un glifo cuyo rango cubre >1 char es una ligadura (detectado vía `glyph.start..glyph.end` de cosmic-text)
+- `Renderer::build_ligature_instances` agrupa celdas no-espacio consecutivas por fila+estilo+paso `cell_w`, llama `shape_run` por grupo, mapea glifos de vuelta a posiciones de celda por índice de char
+- Single-char runs usan el camino rápido `rasterize_glyph` con caché `seen`
+- Desactivado por defecto (`font_ligatures = false`); activar con `font_ligatures = true` en `config.toml`
+- JetBrains Mono soporta: `->` `=>` `!=` `<=` `>=` `//` `/*` `*/` `===` `!==` entre otros
+
+### R-017 · GitHub + CI/CD + release de binarios
+- Repositorio: https://github.com/isradev-git/luna
+- CI verde en `ubuntu-22.04` y `macos-14` (build + test + clippy + rustfmt)
+- `release.yml` con cargo-dist 0.31.0 produce binarios para `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`
+- `dist-workspace.toml` con `allow-dirty = ["ci"]` para steps custom de Linux (X11/wayland/mold)
+- `mold` linker instalado en todos los runners Linux (requerido por `.cargo/config.toml`)
+- v0.1.0 publicado en GitHub Releases con los tres binarios
 
 ### R-023 · Sistema de temas
 - `Theme` struct en `Luna-config/src/themes.rs` con 21 campos de color como `[f32; 4]`

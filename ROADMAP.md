@@ -236,18 +236,18 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ## BLOQUE 4 — Distribución
 
-### R-017 · Repositorio GitHub real + CI activo ✅ (parcial)
+### R-017 · Repositorio GitHub real + CI activo ✓
 **Repo:** https://github.com/isradev-git/luna
 
 > **Scope:** macOS + Linux. Windows runner diferido.
 
 - [x] Workflows configurados: ci.yml (ubuntu+macos), release.yml (3 targets: aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu)
-- [x] `[workspace.metadata.dist]` en Cargo.toml — cargo-dist 0.31.0
+- [x] `dist-workspace.toml` con `[dist]` (cargo-dist 0.31.0) y `allow-dirty = ["ci"]`
 - [x] URLs de repo actualizadas
-- [ ] Crear repositorio en GitHub y hacer push inicial
-- [ ] Verificar que `ci.yml` pasa en runners ubuntu + macos
-- [ ] Crear primer tag `v0.1.0` y verificar que `release.yml` produce binarios
-- [ ] Subir binarios a GitHub Releases
+- [x] Repositorio creado en GitHub y push inicial realizado
+- [x] `ci.yml` pasa en runners ubuntu-22.04 y macos-14
+- [x] Tag `v0.1.0` creado; `release.yml` produce binarios
+- [x] Binarios subidos a GitHub Releases
 
 **Verificar:** GitHub Actions verde en ubuntu y macos. Release con binarios macOS + Linux descargables.
 
@@ -303,12 +303,13 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ## BLOQUE 5 — Polish y Diferenciación
 
-### R-021 · Ligaduras de fuente
+### R-021 · Ligaduras de fuente ✓
 **Problema:** `proyecto.md` especifica `ligatures = true`. JetBrains Mono tiene ligaduras (`->`, `=>`, `!=`, etc.). No implementado.
 
-- [ ] En `config.rs`: añadir `font_ligatures: bool` (default `false`) — ya cubierto en R-010
-- [ ] En `text.rs` / shaping: configurar `cosmic-text` para activar/desactivar ligaduras según config
-- [ ] Verificar que `->` renderiza como ligadura cuando está activo
+- [x] En `config.rs`: `font_ligatures: bool` (default `false`) — cubierto en R-010
+- [x] En `text.rs`: `TextShaping::shape_run` shapea cadenas completas; glifos con `src_start..src_end` > 1 char = ligadura
+- [x] En `renderer.rs`: `build_ligature_instances` agrupa celdas por fila+estilo, llama `shape_run`, mapea glifos a posiciones de celda
+- [x] Activado vía `font_ligatures = true` en `config.toml`; documentado en `CONFIGURATION.md`
 
 **Verificar:** con `font_ligatures = true`, `=>` aparece como símbolo único en el código.
 
