@@ -5,7 +5,7 @@ use winit::window::Window;
 
 use crate::atlas::TextureAtlas;
 use crate::cell::{CellInstance, CellRenderer};
-use crate::text::TextShaping;
+use crate::text::{ShapedGlyph, TextShaping};
 use crate::ui::{UIRect, UIRenderer};
 
 pub struct Renderer {
@@ -19,6 +19,8 @@ pub struct Renderer {
     ui_renderer: UIRenderer,
     text: TextShaping,
     clear_color: wgpu::Color,
+    font_ligatures: bool,
+    cell_w: f32,
 }
 
 impl Renderer {
@@ -93,7 +95,13 @@ impl Renderer {
             cell_renderer,
             ui_renderer,
             text,
+            font_ligatures: false,
+            cell_w: 0.0,
         }
+    }
+
+    pub fn set_font_ligatures(&mut self, enabled: bool) {
+        self.font_ligatures = enabled;
     }
 
     pub fn size(&self) -> winit::dpi::PhysicalSize<u32> {
@@ -110,7 +118,9 @@ impl Renderer {
     }
 
     pub fn cell_metrics(&mut self, font_size: f32) -> (f32, f32) {
-        self.text.cell_metrics(font_size)
+        let metrics = self.text.cell_metrics(font_size);
+        self.cell_w = metrics.0;
+        metrics
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -136,50 +146,17 @@ impl Renderer {
 
         for c in text_str.chars() {
             if let Some((swash_image, cache_key)) = self.text.rasterize_glyph(c, font_size) {
-                let bitmap_width = swash_image.placement.width;
-                let bitmap_height = swash_image.placement.height;
-
-                if bitmap_width == 0 || bitmap_height == 0 {
-                    x_offset += swash_image.placement.left as f32 + font_size * 0.6;
-                    continue;
-                }
-
-                let uv = self
-                    .atlas
-                    .get_or_insert(cache_key, bitmap_width, bitmap_height);
-
-                if let Some(uv) = uv {
-                    let pixels: Vec<u8> = match &swash_image.content {
-                        cosmic_text::SwashContent::Mask => {
-                            let mut rgba = vec![0u8; (bitmap_width * bitmap_height * 4) as usize];
-                            for i in 0..swash_image.data.len() {
-                                rgba[i * 4] = 255;
-                                rgba[i * 4 + 1] = 255;
-                                rgba[i * 4 + 2] = 255;
-                                rgba[i * 4 + 3] = swash_image.data[i];
-                            }
-                            rgba
-                        }
-                        cosmic_text::SwashContent::SubpixelMask => swash_image.data.clone(),
-                        cosmic_text::SwashContent::Color => swash_image.data.clone(),
-                    };
-
-                    self.atlas
-                        .upload_glyph(&self.queue, uv, &pixels, bitmap_width, bitmap_height);
-
-                    let glyph_x = x_offset + swash_image.placement.left as f32;
-                    let glyph_y = y - swash_image.placement.top as f32;
-
-                    instances.push(CellInstance {
-                        cell_pos: [glyph_x, glyph_y],
-                        cell_size: [bitmap_width as f32, bitmap_height as f32],
-                        uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
-                        fg_color: fg,
-                        bg_color: bg,
-                    });
-                }
-
-                x_offset += swash_image.placement.left as f32 + font_size * 0.6;
+                let advance = swash_image.placement.left as f32 + font_size * 0.6;
+                self.push_glyph_instance(
+                    &mut instances,
+                    &swash_image,
+                    cache_key,
+                    x_offset,
+                    y,
+                    fg,
+                    bg,
+                );
+                x_offset += advance;
             } else {
                 x_offset += font_size * 0.6;
             }
@@ -190,77 +167,129 @@ impl Renderer {
 
     #[allow(clippy::type_complexity)]
     pub fn draw_cells(&mut self, cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])]) {
-        let mut instances: Vec<CellInstance> = Vec::with_capacity(cells.len());
-        let mut seen: HashMap<(char, u32), (cosmic_text::SwashImage, cosmic_text::CacheKey)> =
-            HashMap::new();
-
-        for &(c, x, y, font_size, fg, bg) in cells {
-            if c == ' ' {
-                continue;
-            }
-
-            let key = (c, font_size.to_bits());
-
-            let (swash_image, cache_key) = if let Some(cached) = seen.get(&key) {
-                (cached.0.clone(), cached.1)
-            } else {
-                match self.text.rasterize_glyph(c, font_size) {
-                    Some(result) => {
-                        seen.insert(key, (result.0.clone(), result.1));
-                        result
-                    }
-                    None => continue,
-                }
-            };
-
-            let bitmap_width = swash_image.placement.width;
-            let bitmap_height = swash_image.placement.height;
-
-            if bitmap_width == 0 || bitmap_height == 0 {
-                continue;
-            }
-
-            let uv = self
-                .atlas
-                .get_or_insert(cache_key, bitmap_width, bitmap_height);
-
-            if let Some(uv) = uv {
-                let pixels: Vec<u8> = match &swash_image.content {
-                    cosmic_text::SwashContent::Mask => {
-                        let mut rgba = vec![0u8; (bitmap_width * bitmap_height * 4) as usize];
-                        for i in 0..swash_image.data.len() {
-                            rgba[i * 4] = 255;
-                            rgba[i * 4 + 1] = 255;
-                            rgba[i * 4 + 2] = 255;
-                            rgba[i * 4 + 3] = swash_image.data[i];
-                        }
-                        rgba
-                    }
-                    cosmic_text::SwashContent::SubpixelMask => swash_image.data.clone(),
-                    cosmic_text::SwashContent::Color => swash_image.data.clone(),
-                };
-
-                self.atlas
-                    .upload_glyph(&self.queue, uv, &pixels, bitmap_width, bitmap_height);
-
-                let glyph_x = x + swash_image.placement.left as f32;
-                let glyph_y = y - swash_image.placement.top as f32;
-
-                instances.push(CellInstance {
-                    cell_pos: [glyph_x, glyph_y],
-                    cell_size: [bitmap_width as f32, bitmap_height as f32],
-                    uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
-                    fg_color: fg,
-                    bg_color: bg,
-                });
-            }
-        }
-
+        let instances = self.build_simple_instances(cells);
         self.render_instances(&instances, &[]);
     }
 
     pub fn draw_ui_rects(&mut self, rects: &[UIRect]) {
         self.render_instances(&[], rects);
+    }
+
+    fn swash_to_rgba(image: &cosmic_text::SwashImage) -> Vec<u8> {
+        match &image.content {
+            cosmic_text::SwashContent::Mask => {
+                let mut rgba =
+                    vec![0u8; (image.placement.width * image.placement.height * 4) as usize];
+                for (i, &alpha) in image.data.iter().enumerate() {
+                    rgba[i * 4] = 255;
+                    rgba[i * 4 + 1] = 255;
+                    rgba[i * 4 + 2] = 255;
+                    rgba[i * 4 + 3] = alpha;
+                }
+                rgba
+            }
+            _ => image.data.clone(),
+        }
+    }
+
+    fn push_glyph_instance(
+        &mut self,
+        instances: &mut Vec<CellInstance>,
+        image: &cosmic_text::SwashImage,
+        cache_key: cosmic_text::CacheKey,
+        cell_x: f32,
+        cell_y: f32,
+        fg: [f32; 4],
+        bg: [f32; 4],
+    ) {
+        let bw = image.placement.width;
+        let bh = image.placement.height;
+        if bw == 0 || bh == 0 {
+            return;
+        }
+        if let Some(uv) = self.atlas.get_or_insert(cache_key, bw, bh) {
+            let pixels = Self::swash_to_rgba(image);
+            self.atlas.upload_glyph(&self.queue, uv, &pixels, bw, bh);
+            instances.push(CellInstance {
+                cell_pos: [
+                    cell_x + image.placement.left as f32,
+                    cell_y - image.placement.top as f32,
+                ],
+                cell_size: [bw as f32, bh as f32],
+                uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
+                fg_color: fg,
+                bg_color: bg,
+            });
+        }
+    }
+
+    /// Build instances with ligature-aware text shaping.
+    /// Groups consecutive same-style non-space cells into runs, shapes each run as a
+    /// unit so the font's GSUB rules can apply ligature substitutions, then maps
+    /// the resulting glyphs back to cell positions.
+    fn build_ligature_instances(
+        &mut self,
+        cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
+    ) -> Vec<CellInstance> {
+        let cell_w = self.cell_w;
+        let mut instances = Vec::with_capacity(cells.len());
+
+        let non_space: Vec<_> = cells.iter().filter(|&&(c, ..)| c != ' ').copied().collect();
+
+        let mut i = 0;
+        while i < non_space.len() {
+            let (_, x0, y0, fs0, fg0, bg0) = non_space[i];
+
+            // Collect a run: consecutive cells, same row + style, x advances by cell_w.
+            let mut run: Vec<(char, f32)> = vec![(non_space[i].0, x0)];
+            let mut j = i + 1;
+            while j < non_space.len() {
+                let (c, x, y, fs, fg, bg) = non_space[j];
+                let prev_x = run.last().unwrap().1;
+                let contiguous = (y - y0).abs() < 0.5
+                    && (fs - fs0).abs() < 0.1
+                    && fg == fg0
+                    && bg == bg0
+                    && (x - prev_x - cell_w).abs() < 1.0;
+                if !contiguous {
+                    break;
+                }
+                run.push((c, x));
+                j += 1;
+            }
+
+            if run.len() == 1 {
+                let (c, x) = run[0];
+                if let Some((image, cache_key)) = self.text.rasterize_glyph(c, fs0) {
+                    self.push_glyph_instance(&mut instances, &image, cache_key, x, y0, fg0, bg0);
+                }
+            } else {
+                let run_text: String = run.iter().map(|&(c, _)| c).collect();
+                // shape_run takes &mut self, so collect first to avoid borrow conflict
+                let shaped: Vec<ShapedGlyph> = self.text.shape_run(&run_text, fs0);
+                for sg in shaped {
+                    // map byte offset → char index → cell x position
+                    let char_idx = run_text[..sg.src_start].chars().count();
+                    if char_idx >= run.len() {
+                        continue;
+                    }
+                    let cell_x = run[char_idx].1;
+                    self.push_glyph_instance(
+                        &mut instances,
+                        &sg.image,
+                        sg.cache_key,
+                        cell_x,
+                        y0,
+                        fg0,
+                        bg0,
+                    );
+                }
+            }
+
+            i = j;
+        }
+
+        instances
     }
 
     #[allow(clippy::type_complexity)]
@@ -271,6 +300,19 @@ impl Renderer {
     ) {
         self.atlas.begin_frame();
 
+        let instances = if self.font_ligatures && self.cell_w > 0.0 {
+            self.build_ligature_instances(cells)
+        } else {
+            self.build_simple_instances(cells)
+        };
+
+        self.render_instances(&instances, ui_rects);
+    }
+
+    fn build_simple_instances(
+        &mut self,
+        cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
+    ) -> Vec<CellInstance> {
         let mut instances: Vec<CellInstance> = Vec::with_capacity(cells.len());
         let mut seen: HashMap<(char, u32), (cosmic_text::SwashImage, cosmic_text::CacheKey)> =
             HashMap::new();
@@ -294,50 +336,10 @@ impl Renderer {
                 }
             };
 
-            let bitmap_width = swash_image.placement.width;
-            let bitmap_height = swash_image.placement.height;
-
-            if bitmap_width == 0 || bitmap_height == 0 {
-                continue;
-            }
-
-            let uv = self
-                .atlas
-                .get_or_insert(cache_key, bitmap_width, bitmap_height);
-
-            if let Some(uv) = uv {
-                let pixels: Vec<u8> = match &swash_image.content {
-                    cosmic_text::SwashContent::Mask => {
-                        let mut rgba = vec![0u8; (bitmap_width * bitmap_height * 4) as usize];
-                        for i in 0..swash_image.data.len() {
-                            rgba[i * 4] = 255;
-                            rgba[i * 4 + 1] = 255;
-                            rgba[i * 4 + 2] = 255;
-                            rgba[i * 4 + 3] = swash_image.data[i];
-                        }
-                        rgba
-                    }
-                    cosmic_text::SwashContent::SubpixelMask => swash_image.data.clone(),
-                    cosmic_text::SwashContent::Color => swash_image.data.clone(),
-                };
-
-                self.atlas
-                    .upload_glyph(&self.queue, uv, &pixels, bitmap_width, bitmap_height);
-
-                let glyph_x = x + swash_image.placement.left as f32;
-                let glyph_y = y - swash_image.placement.top as f32;
-
-                instances.push(CellInstance {
-                    cell_pos: [glyph_x, glyph_y],
-                    cell_size: [bitmap_width as f32, bitmap_height as f32],
-                    uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
-                    fg_color: fg,
-                    bg_color: bg,
-                });
-            }
+            self.push_glyph_instance(&mut instances, &swash_image, cache_key, x, y, fg, bg);
         }
 
-        self.render_instances(&instances, ui_rects);
+        instances
     }
 
     fn render_instances(&mut self, cell_instances: &[CellInstance], ui_rects: &[UIRect]) {

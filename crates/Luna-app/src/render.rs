@@ -204,6 +204,7 @@ pub fn render_frame(
     cell_h: f32,
     cursor_blink_on: bool,
 ) -> Vec<PaneId> {
+    renderer.set_font_ligatures(state.config.font_ligatures);
     let font_size = state.font_size;
     let mut exited_panes: Vec<PaneId> = Vec::new();
 
