@@ -236,15 +236,17 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ## BLOQUE 4 — Distribución
 
-### R-017 · Repositorio GitHub real + CI activo
-**Problema:** workflows escritos pero sin repo real. T-045 pendiente.
+### R-017 · Repositorio GitHub real + CI activo ✅ (parcial)
+**Repo:** https://github.com/isradev-git/luna
 
 > **Scope:** macOS + Linux. Windows runner diferido.
 
-- [ ] Crear repositorio en GitHub (público o privado)
-- [ ] Push inicial del código
+- [x] Workflows configurados: ci.yml (ubuntu+macos), release.yml (3 targets: aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu)
+- [x] `[workspace.metadata.dist]` en Cargo.toml — cargo-dist 0.31.0
+- [x] URLs de repo actualizadas
+- [ ] Crear repositorio en GitHub y hacer push inicial
 - [ ] Verificar que `ci.yml` pasa en runners ubuntu + macos
-- [ ] Crear primer tag `v0.1.0` y verificar que `release.yml` produce binarios (macOS + Linux)
+- [ ] Crear primer tag `v0.1.0` y verificar que `release.yml` produce binarios
 - [ ] Subir binarios a GitHub Releases
 
 **Verificar:** GitHub Actions verde en ubuntu y macos. Release con binarios macOS + Linux descargables.

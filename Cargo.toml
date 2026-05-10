@@ -13,8 +13,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["Luna Team"]
-repository = "https://github.com/Luna/Luna"
-homepage = "https://github.com/Luna/Luna"
+repository = "https://github.com/isradev-git/luna"
+homepage = "https://github.com/isradev-git/luna"
 description = "A modern GPU-accelerated terminal emulator"
 
 [workspace.dependencies]
@@ -33,6 +33,17 @@ bitflags = "2"
 clap = { version = "4", features = ["derive"] }
 pollster = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
+
+[workspace.metadata.dist]
+cargo-dist-version = "0.31.0"
+ci = ["github"]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+]
+installers = []
+pr-run-mode = "plan"
 
 # The profile that 'dist' will build with
 [profile.dist]
