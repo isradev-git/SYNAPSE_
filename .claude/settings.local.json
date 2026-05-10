@@ -35,7 +35,8 @@
       "Read(//Applications/**)",
       "Bash(~/.cargo/bin/cargo test *)",
       "Bash(export PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin\")",
-      "Bash(cargo --version)"
+      "Bash(cargo --version)",
+      "Bash(xargs ls -la)"
     ]
   }
 }
