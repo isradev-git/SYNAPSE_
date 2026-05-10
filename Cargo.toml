@@ -34,17 +34,6 @@ clap = { version = "4", features = ["derive"] }
 pollster = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
 
-[workspace.metadata.dist]
-cargo-dist-version = "0.31.0"
-ci = ["github"]
-targets = [
-    "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
-    "x86_64-unknown-linux-gnu",
-]
-installers = []
-pr-run-mode = "plan"
-
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
