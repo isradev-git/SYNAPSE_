@@ -7,7 +7,10 @@ use winit::{
 };
 
 use luna_terminal::MouseReportMode;
-use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SCROLL_BTN_W, SplitDirection, TAB_BAR_HEIGHT};
+use luna_ui::{
+    layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection, SCROLL_BTN_W,
+    TAB_BAR_HEIGHT,
+};
 
 use crate::{
     pane_ops::{active_pane_mut, find_hovered_divider, handle_tab_click},
@@ -25,7 +28,12 @@ fn cursor_to_pane_cell(
 ) -> Option<(usize, usize)> {
     let active_id = tab_bar.active_tab().active_pane;
     let pane_area = layout.pane_area();
-    let pane_rect = PaneRect { x: pane_area.0, y: pane_area.1, w: pane_area.2, h: pane_area.3 };
+    let pane_rect = PaneRect {
+        x: pane_area.0,
+        y: pane_area.1,
+        w: pane_area.2,
+        h: pane_area.3,
+    };
     let layouts = tab_bar.active_tab().pane_tree.get_layout(pane_rect);
     let rect = layouts.iter().find(|(id, _)| *id == active_id)?.1;
 
@@ -89,7 +97,13 @@ pub fn handle_scroll(
 
     if mode != MouseReportMode::None && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
         if let Some((col, row)) = cursor_to_pane_cell(
-            state.cursor_x, state.cursor_y, tab_bar, layout, cell_w, cell_h, margin,
+            state.cursor_x,
+            state.cursor_y,
+            tab_bar,
+            layout,
+            cell_w,
+            cell_h,
+            margin,
         ) {
             let btn = if is_up { 64u8 } else { 65u8 };
             for _ in 0..lines {
@@ -141,7 +155,13 @@ pub fn handle_mouse_button(
 
         if mode != MouseReportMode::None && !shift_held && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
             if let Some((col, row)) = cursor_to_pane_cell(
-                state.cursor_x, state.cursor_y, tab_bar, layout, cell_w, cell_h, margin,
+                state.cursor_x,
+                state.cursor_y,
+                tab_bar,
+                layout,
+                cell_w,
+                cell_h,
+                margin,
             ) {
                 let btn = match button {
                     MouseButton::Left => 0u8,
@@ -167,7 +187,8 @@ pub fn handle_mouse_button(
 
                 // Multi-click tracking
                 let now = std::time::Instant::now();
-                if now.duration_since(state.last_click_time) < std::time::Duration::from_millis(400) {
+                if now.duration_since(state.last_click_time) < std::time::Duration::from_millis(400)
+                {
                     state.click_count = state.click_count.saturating_add(1).min(3);
                 } else {
                     state.click_count = 1;
@@ -181,7 +202,8 @@ pub fn handle_mouse_button(
                     // Double / triple click selection
                     let col = ((x - margin as f64) / cell_w as f64).floor().max(0.0) as usize;
                     let vrow = ((y - TAB_BAR_HEIGHT as f64 - margin as f64) / cell_h as f64)
-                        .floor().max(0.0) as usize;
+                        .floor()
+                        .max(0.0) as usize;
                     if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
                         let grid = pane.grid.borrow();
                         let cols = grid.cols();
@@ -194,12 +216,15 @@ pub fn handle_mouse_button(
                             state.selection = Some(sel);
                         } else {
                             // Double click → word
-                            let is_sep = |c: char| c == ' ' || c == '\t' || c == '\0'
-                                || "()[]{}\"'`/\\|;,.<>!@#$%^&*+-=~".contains(c);
-                            let char_at = |c: usize| grid
-                                .get_visible(c, vrow)
-                                .map(|cell| cell.c)
-                                .unwrap_or(' ');
+                            let is_sep = |c: char| {
+                                c == ' '
+                                    || c == '\t'
+                                    || c == '\0'
+                                    || "()[]{}\"'`/\\|;,.<>!@#$%^&*+-=~".contains(c)
+                            };
+                            let char_at = |c: usize| {
+                                grid.get_visible(c, vrow).map(|cell| cell.c).unwrap_or(' ')
+                            };
 
                             let mut start = col;
                             while start > 0 && !is_sep(char_at(start - 1)) {
@@ -308,9 +333,7 @@ pub fn handle_cursor_moved(
             h: pane_area.3,
         };
         let dividers = tab_bar.active_tab().pane_tree.get_dividers(pane_rect);
-        if let Some(info) =
-            find_hovered_divider(&dividers, state.cursor_x, state.cursor_y)
-        {
+        if let Some(info) = find_hovered_divider(&dividers, state.cursor_x, state.cursor_y) {
             match info.direction {
                 SplitDirection::Horizontal => {
                     window.set_cursor(CursorIcon::NsResize);
@@ -380,10 +403,7 @@ impl App {
         );
     }
 
-    pub(crate) fn handle_cursor_moved(
-        &mut self,
-        position: winit::dpi::PhysicalPosition<f64>,
-    ) {
+    pub(crate) fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
         handle_cursor_moved(
             position,
             self.window.scale_factor(),

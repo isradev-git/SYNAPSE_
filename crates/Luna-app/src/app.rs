@@ -14,24 +14,21 @@ use luna_ui::{
     tab_bar::{Tab, TabBar, TabId},
 };
 
-use crate::{
-    pane_ops::create_pane,
-    state::AppState,
-};
+use crate::{pane_ops::create_pane, state::AppState};
 
 pub struct App {
-    pub window:          Arc<Window>,
-    pub renderer:        Renderer,
-    pub layout:          Layout,
-    pub tab_bar:         TabBar,
-    pub panes:           Vec<Pane>,
-    pub clipboard:       Option<arboard::Clipboard>,
-    pub state:           AppState,
-    pub cell_w:          f32,
-    pub cell_h:          f32,
-    pub margin:          f32,
+    pub window: Arc<Window>,
+    pub renderer: Renderer,
+    pub layout: Layout,
+    pub tab_bar: TabBar,
+    pub panes: Vec<Pane>,
+    pub clipboard: Option<arboard::Clipboard>,
+    pub state: AppState,
+    pub cell_w: f32,
+    pub cell_h: f32,
+    pub margin: f32,
     pub cursor_blink_on: bool,
-    pub last_blink:      std::time::Instant,
+    pub last_blink: std::time::Instant,
 }
 
 impl App {
@@ -42,15 +39,17 @@ impl App {
         let event_loop = EventLoop::new()?;
 
         #[allow(deprecated)]
-        let window = Arc::new(event_loop.create_window(
-            WindowAttributes::default()
-                .with_title("Luna")
-                .with_inner_size(winit::dpi::LogicalSize::new(
-                    config.window_width as f64,
-                    config.window_height as f64,
-                ))
-                .with_resizable(true),
-        )?);
+        let window = Arc::new(
+            event_loop.create_window(
+                WindowAttributes::default()
+                    .with_title("Luna")
+                    .with_inner_size(winit::dpi::LogicalSize::new(
+                        config.window_width as f64,
+                        config.window_height as f64,
+                    ))
+                    .with_resizable(true),
+            )?,
+        );
         let mut renderer = Renderer::new(window.clone());
 
         let mut layout = Layout::new();
@@ -79,8 +78,16 @@ impl App {
 
         Ok((
             App {
-                window, renderer, layout, tab_bar, panes, clipboard, state,
-                cell_w, cell_h, margin,
+                window,
+                renderer,
+                layout,
+                tab_bar,
+                panes,
+                clipboard,
+                state,
+                cell_w,
+                cell_h,
+                margin,
                 cursor_blink_on: true,
                 last_blink: std::time::Instant::now(),
             },
@@ -99,21 +106,21 @@ impl App {
         Ok(())
     }
 
-    fn handle_window_event(
-        &mut self,
-        event: WindowEvent,
-        elwt: &ActiveEventLoop,
-    ) {
+    fn handle_window_event(&mut self, event: WindowEvent, elwt: &ActiveEventLoop) {
         match event {
-            WindowEvent::CloseRequested                                         => elwt.exit(),
-            WindowEvent::Resized(size)                                          => self.handle_resize(size),
-            WindowEvent::ModifiersChanged(m)                                    => self.state.modifiers = m.state(),
-            WindowEvent::MouseWheel { delta, .. }                               => self.handle_scroll(delta),
-            WindowEvent::MouseInput { state: button_state, button, .. }        => self.handle_mouse_button(button_state, button),
-            WindowEvent::CursorMoved { position, .. }                           => self.handle_cursor_moved(position),
-            WindowEvent::RedrawRequested                                        => self.render(),
-            WindowEvent::KeyboardInput { event, .. }                            => self.handle_keyboard(event),
-            WindowEvent::Focused(focused)                                       => self.handle_focus(focused),
+            WindowEvent::CloseRequested => elwt.exit(),
+            WindowEvent::Resized(size) => self.handle_resize(size),
+            WindowEvent::ModifiersChanged(m) => self.state.modifiers = m.state(),
+            WindowEvent::MouseWheel { delta, .. } => self.handle_scroll(delta),
+            WindowEvent::MouseInput {
+                state: button_state,
+                button,
+                ..
+            } => self.handle_mouse_button(button_state, button),
+            WindowEvent::CursorMoved { position, .. } => self.handle_cursor_moved(position),
+            WindowEvent::RedrawRequested => self.render(),
+            WindowEvent::KeyboardInput { event, .. } => self.handle_keyboard(event),
+            WindowEvent::Focused(focused) => self.handle_focus(focused),
             _ => {}
         }
     }
@@ -150,7 +157,10 @@ impl App {
                     pane.cols = new_cols;
                     pane.rows = new_rows;
                     pane.grid.borrow_mut().resize(new_cols, new_rows);
-                    let _ = pane.pty_session.pty.resize(new_cols as u16, new_rows as u16);
+                    let _ = pane
+                        .pty_session
+                        .pty
+                        .resize(new_cols as u16, new_rows as u16);
                 }
             }
         }

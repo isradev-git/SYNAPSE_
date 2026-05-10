@@ -2,8 +2,7 @@ use cosmic_text::{Attrs, CacheKey, CacheKeyFlags, Family, FontSystem, SwashCache
 
 const JETBRAINS_MONO_REGULAR: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf");
-const JETBRAINS_MONO_BOLD: &[u8] =
-    include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf");
+const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf");
 const JETBRAINS_MONO_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf");
 
@@ -36,11 +35,7 @@ impl TextShaping {
         }
     }
 
-    pub fn rasterize_glyph(
-        &mut self,
-        c: char,
-        font_size: f32,
-    ) -> Option<(SwashImage, CacheKey)> {
+    pub fn rasterize_glyph(&mut self, c: char, font_size: f32) -> Option<(SwashImage, CacheKey)> {
         let attrs = Attrs::new().family(Family::Name("JetBrains Mono"));
 
         let mut buffer = cosmic_text::Buffer::new(

@@ -7,10 +7,7 @@ use luna_ui::{layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::Tab
 
 use crate::{
     input::InputAction,
-    pane_ops::{
-        active_pane_mut, adjacent_pane,
-        create_pane_full, find_pane,
-    },
+    pane_ops::{active_pane_mut, adjacent_pane, create_pane_full, find_pane},
     search::{handle_history_search_input, handle_search_input, update_search_matches},
     state::AppState,
 };
@@ -36,13 +33,21 @@ fn ensure_tab_visible(
     }
 }
 
-fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &crate::state::Selection, cols: usize) -> String {
+fn extract_selection(
+    grid: &luna_terminal::grid::Grid,
+    sel: &crate::state::Selection,
+    cols: usize,
+) -> String {
     let (start, end) = sel.normalized();
     let mut result = String::new();
 
     for vrow in start.1..=end.1 {
         let line_start = if vrow == start.1 { start.0 } else { 0 };
-        let line_end = if vrow == end.1 { end.0.min(cols - 1) } else { cols - 1 };
+        let line_end = if vrow == end.1 {
+            end.0.min(cols - 1)
+        } else {
+            cols - 1
+        };
 
         for col in line_start..=line_end {
             let cell = match grid.get_visible(col, vrow) {
@@ -50,7 +55,11 @@ fn extract_selection(grid: &luna_terminal::grid::Grid, sel: &crate::state::Selec
                 None => continue,
             };
 
-            if cell.c == '\0' || cell.flags.contains(luna_terminal::grid::CellFlags::INVISIBLE) {
+            if cell.c == '\0'
+                || cell
+                    .flags
+                    .contains(luna_terminal::grid::CellFlags::INVISIBLE)
+            {
                 result.push(' ');
             } else {
                 result.push(cell.c);
@@ -134,7 +143,14 @@ pub fn handle_keyboard(
                 let (_, pane_id) = tab_bar.new_tab();
                 let shell = state.config.shell_program.as_str();
                 let args = &state.config.shell_args;
-                panes.push(create_pane_full(pane_id, new_cols, new_rows, None, Some(shell), args));
+                panes.push(create_pane_full(
+                    pane_id,
+                    new_cols,
+                    new_rows,
+                    None,
+                    Some(shell),
+                    args,
+                ));
                 let n = tab_bar.tabs.len();
                 ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
             }
@@ -164,38 +180,98 @@ pub fn handle_keyboard(
                 let n = tab_bar.tabs.len();
                 ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
             }
-            Some(Action::TabSwitch1) => { tab_bar.activate(0); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
-            Some(Action::TabSwitch2) => { tab_bar.activate(1); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
-            Some(Action::TabSwitch3) => { tab_bar.activate(2); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
-            Some(Action::TabSwitch4) => { tab_bar.activate(3); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
-            Some(Action::TabSwitch5) => { tab_bar.activate(4); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
-            Some(Action::TabSwitch6) => { tab_bar.activate(5); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
-            Some(Action::TabSwitch7) => { tab_bar.activate(6); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
-            Some(Action::TabSwitch8) => { tab_bar.activate(7); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
-            Some(Action::TabSwitch9) => { tab_bar.activate(8); let n = tab_bar.tabs.len(); ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset); }
+            Some(Action::TabSwitch1) => {
+                tab_bar.activate(0);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
+            Some(Action::TabSwitch2) => {
+                tab_bar.activate(1);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
+            Some(Action::TabSwitch3) => {
+                tab_bar.activate(2);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
+            Some(Action::TabSwitch4) => {
+                tab_bar.activate(3);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
+            Some(Action::TabSwitch5) => {
+                tab_bar.activate(4);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
+            Some(Action::TabSwitch6) => {
+                tab_bar.activate(5);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
+            Some(Action::TabSwitch7) => {
+                tab_bar.activate(6);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
+            Some(Action::TabSwitch8) => {
+                tab_bar.activate(7);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
+            Some(Action::TabSwitch9) => {
+                tab_bar.activate(8);
+                let n = tab_bar.tabs.len();
+                ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
+            }
             Some(Action::SplitVertical) => {
                 let active_id = tab_bar.active_tab().active_pane;
                 let new_pane_id = tab_bar.next_pane_id();
-                if tab_bar.active_tab_mut().pane_tree.split(active_id, new_pane_id, SplitDirection::Vertical).is_ok() {
-                            if let Some(pane) = find_pane(panes, active_id) {
+                if tab_bar
+                    .active_tab_mut()
+                    .pane_tree
+                    .split(active_id, new_pane_id, SplitDirection::Vertical)
+                    .is_ok()
+                {
+                    if let Some(pane) = find_pane(panes, active_id) {
                         let cwd = pane.cwd();
                         let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
                         let shell = state.config.shell_program.as_str();
                         let args = &state.config.shell_args;
-                        panes.push(create_pane_full(new_pane_id, pane.cols, pane.rows, cwd_opt, Some(shell), args));
+                        panes.push(create_pane_full(
+                            new_pane_id,
+                            pane.cols,
+                            pane.rows,
+                            cwd_opt,
+                            Some(shell),
+                            args,
+                        ));
                     }
                 }
             }
             Some(Action::SplitHorizontal) => {
                 let active_id = tab_bar.active_tab().active_pane;
                 let new_pane_id = tab_bar.next_pane_id();
-                if tab_bar.active_tab_mut().pane_tree.split(active_id, new_pane_id, SplitDirection::Horizontal).is_ok() {
-                            if let Some(pane) = find_pane(panes, active_id) {
+                if tab_bar
+                    .active_tab_mut()
+                    .pane_tree
+                    .split(active_id, new_pane_id, SplitDirection::Horizontal)
+                    .is_ok()
+                {
+                    if let Some(pane) = find_pane(panes, active_id) {
                         let cwd = pane.cwd();
                         let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
                         let shell = state.config.shell_program.as_str();
                         let args = &state.config.shell_args;
-                        panes.push(create_pane_full(new_pane_id, pane.cols, pane.rows, cwd_opt, Some(shell), args));
+                        panes.push(create_pane_full(
+                            new_pane_id,
+                            pane.cols,
+                            pane.rows,
+                            cwd_opt,
+                            Some(shell),
+                            args,
+                        ));
                     }
                 }
             }
@@ -217,8 +293,10 @@ pub fn handle_keyboard(
                     }
                 }
             }
-            Some(Action::NavigateUp) | Some(Action::NavigateDown)
-            | Some(Action::NavigateLeft) | Some(Action::NavigateRight) => {
+            Some(Action::NavigateUp)
+            | Some(Action::NavigateDown)
+            | Some(Action::NavigateLeft)
+            | Some(Action::NavigateRight) => {
                 let dir = match action_opt {
                     Some(Action::NavigateUp) => "up",
                     Some(Action::NavigateDown) => "down",
@@ -283,17 +361,26 @@ pub fn handle_keyboard(
             }
             Some(Action::ReloadConfig) => {
                 state.config.reload();
-                state.theme = luna_config::Theme::load(&state.config.theme, luna_config::Config::config_dir());
+                state.theme = luna_config::Theme::load(
+                    &state.config.theme,
+                    luna_config::Config::config_dir(),
+                );
                 if let Some(config_path) = luna_config::Config::config_path() {
                     let editor = std::env::var("EDITOR")
                         .or_else(|_| std::env::var("VISUAL"))
                         .unwrap_or_else(|_| {
                             #[cfg(target_os = "macos")]
-                            { "open".to_string() }
+                            {
+                                "open".to_string()
+                            }
                             #[cfg(target_os = "windows")]
-                            { "notepad".to_string() }
+                            {
+                                "notepad".to_string()
+                            }
                             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                            { "xdg-open".to_string() }
+                            {
+                                "xdg-open".to_string()
+                            }
                         });
                     let cmd = format!("{} {}\r", editor, config_path.display());
                     let pane = active_pane_mut(panes, tab_bar);
@@ -317,7 +404,9 @@ pub fn handle_keyboard(
             InputAction::Write(bytes) => {
                 if bytes != b"\x1b[5~" && bytes != b"\x1b[6~" {
                     active_pane_mut(panes, tab_bar)
-                        .grid.borrow_mut().scroll_to_bottom();
+                        .grid
+                        .borrow_mut()
+                        .scroll_to_bottom();
                 }
                 let pane = active_pane_mut(panes, tab_bar);
                 if let Err(e) = pane.pty_session.pty.write(&bytes) {
@@ -326,19 +415,27 @@ pub fn handle_keyboard(
             }
             InputAction::ScrollUp(lines) => {
                 active_pane_mut(panes, tab_bar)
-                    .grid.borrow_mut().scroll_up(lines);
+                    .grid
+                    .borrow_mut()
+                    .scroll_up(lines);
             }
             InputAction::ScrollDown(lines) => {
                 active_pane_mut(panes, tab_bar)
-                    .grid.borrow_mut().scroll_down(lines);
+                    .grid
+                    .borrow_mut()
+                    .scroll_down(lines);
             }
             InputAction::ScrollToTop => {
                 active_pane_mut(panes, tab_bar)
-                    .grid.borrow_mut().scroll_to_top();
+                    .grid
+                    .borrow_mut()
+                    .scroll_to_top();
             }
             InputAction::ScrollToBottom => {
                 active_pane_mut(panes, tab_bar)
-                    .grid.borrow_mut().scroll_to_bottom();
+                    .grid
+                    .borrow_mut()
+                    .scroll_to_bottom();
             }
             InputAction::Copy => {
                 let pane = active_pane_mut(panes, tab_bar);

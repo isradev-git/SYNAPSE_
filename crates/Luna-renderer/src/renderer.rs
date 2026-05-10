@@ -28,7 +28,9 @@ impl Renderer {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window.clone()).expect("Failed to create surface");
+        let surface = instance
+            .create_surface(window.clone())
+            .expect("Failed to create surface");
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -79,7 +81,12 @@ impl Renderer {
             surface,
             device,
             queue,
-            clear_color: wgpu::Color { r: 33.0 / 255.0, g: 11.0 / 255.0, b: 75.0 / 255.0, a: 1.0 },
+            clear_color: wgpu::Color {
+                r: 33.0 / 255.0,
+                g: 11.0 / 255.0,
+                b: 75.0 / 255.0,
+                a: 1.0,
+            },
             config,
             size,
             atlas,
@@ -153,12 +160,8 @@ impl Renderer {
                             }
                             rgba
                         }
-                        cosmic_text::SwashContent::SubpixelMask => {
-                            swash_image.data.clone()
-                        }
-                        cosmic_text::SwashContent::Color => {
-                            swash_image.data.clone()
-                        }
+                        cosmic_text::SwashContent::SubpixelMask => swash_image.data.clone(),
+                        cosmic_text::SwashContent::Color => swash_image.data.clone(),
                     };
 
                     self.atlas
@@ -186,10 +189,7 @@ impl Renderer {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn draw_cells(
-        &mut self,
-        cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
-    ) {
+    pub fn draw_cells(&mut self, cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])]) {
         let mut instances: Vec<CellInstance> = Vec::with_capacity(cells.len());
         let mut seen: HashMap<(char, u32), (cosmic_text::SwashImage, cosmic_text::CacheKey)> =
             HashMap::new();
@@ -236,12 +236,8 @@ impl Renderer {
                         }
                         rgba
                     }
-                    cosmic_text::SwashContent::SubpixelMask => {
-                        swash_image.data.clone()
-                    }
-                    cosmic_text::SwashContent::Color => {
-                        swash_image.data.clone()
-                    }
+                    cosmic_text::SwashContent::SubpixelMask => swash_image.data.clone(),
+                    cosmic_text::SwashContent::Color => swash_image.data.clone(),
                 };
 
                 self.atlas
@@ -321,12 +317,8 @@ impl Renderer {
                         }
                         rgba
                     }
-                    cosmic_text::SwashContent::SubpixelMask => {
-                        swash_image.data.clone()
-                    }
-                    cosmic_text::SwashContent::Color => {
-                        swash_image.data.clone()
-                    }
+                    cosmic_text::SwashContent::SubpixelMask => swash_image.data.clone(),
+                    cosmic_text::SwashContent::Color => swash_image.data.clone(),
                 };
 
                 self.atlas
@@ -400,11 +392,8 @@ impl Renderer {
             );
 
             if !ui_rects.is_empty() {
-                self.ui_renderer.draw(
-                    &mut render_pass,
-                    ui_rects,
-                    &self.queue,
-                );
+                self.ui_renderer
+                    .draw(&mut render_pass, ui_rects, &self.queue);
             }
         }
 

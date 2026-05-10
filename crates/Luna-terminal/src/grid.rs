@@ -24,12 +24,7 @@ impl Color {
         match self {
             Color::Default => [1.0, 1.0, 1.0, 1.0],
             Color::Indexed(idx) => ansi_256_to_rgba(*idx),
-            Color::Rgb(r, g, b) => [
-                *r as f32 / 255.0,
-                *g as f32 / 255.0,
-                *b as f32 / 255.0,
-                1.0,
-            ],
+            Color::Rgb(r, g, b) => [*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0, 1.0],
         }
     }
 
@@ -37,12 +32,7 @@ impl Color {
         match self {
             Color::Default => [0.0, 0.0, 0.0, 0.0],
             Color::Indexed(idx) => ansi_256_to_rgba(*idx),
-            Color::Rgb(r, g, b) => [
-                *r as f32 / 255.0,
-                *g as f32 / 255.0,
-                *b as f32 / 255.0,
-                1.0,
-            ],
+            Color::Rgb(r, g, b) => [*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0, 1.0],
         }
     }
 
@@ -55,22 +45,22 @@ fn ansi_256_to_rgba(idx: u8) -> [f32; 4] {
     match idx {
         0..=15 => {
             const NAMES: [[f32; 3]; 16] = [
-                [0.0,      0.0,      0.0     ], // Black
-                [0.8,      0.0,      0.0     ], // Red
-                [0.0,      0.8,      0.0     ], // Green
-                [0.8,      0.8,      0.0     ], // Yellow
-                [0.0,      0.0,      0.8     ], // Blue
-                [0.8,      0.0,      0.8     ], // Magenta
-                [0.0,      0.8,      0.8     ], // Cyan
-                [0.749,    0.749,    0.749   ], // White
-                [0.501,    0.501,    0.501   ], // Bright Black
-                [1.0,      0.333,    0.333   ], // Bright Red
-                [0.333,    1.0,      0.333   ], // Bright Green
-                [1.0,      1.0,      0.333   ], // Bright Yellow
-                [0.333,    0.333,    1.0     ], // Bright Blue
-                [1.0,      0.333,    1.0     ], // Bright Magenta
-                [0.333,    1.0,      1.0     ], // Bright Cyan
-                [1.0,      1.0,      1.0     ], // Bright White
+                [0.0, 0.0, 0.0],       // Black
+                [0.8, 0.0, 0.0],       // Red
+                [0.0, 0.8, 0.0],       // Green
+                [0.8, 0.8, 0.0],       // Yellow
+                [0.0, 0.0, 0.8],       // Blue
+                [0.8, 0.0, 0.8],       // Magenta
+                [0.0, 0.8, 0.8],       // Cyan
+                [0.749, 0.749, 0.749], // White
+                [0.501, 0.501, 0.501], // Bright Black
+                [1.0, 0.333, 0.333],   // Bright Red
+                [0.333, 1.0, 0.333],   // Bright Green
+                [1.0, 1.0, 0.333],     // Bright Yellow
+                [0.333, 0.333, 1.0],   // Bright Blue
+                [1.0, 0.333, 1.0],     // Bright Magenta
+                [0.333, 1.0, 1.0],     // Bright Cyan
+                [1.0, 1.0, 1.0],       // Bright White
             ];
             let [r, g, b] = NAMES[idx as usize];
             [r, g, b, 1.0]
@@ -91,12 +81,20 @@ fn ansi_256_to_rgba(idx: u8) -> [f32; 4] {
                 1.0
             };
             let g = match (offset / 6) % 6 {
-                0 => 0.0, 1 => 0.333, 2 => 0.502,
-                3 => 0.667, 4 => 0.835, _ => 1.0,
+                0 => 0.0,
+                1 => 0.333,
+                2 => 0.502,
+                3 => 0.667,
+                4 => 0.835,
+                _ => 1.0,
             };
             let b = match offset % 6 {
-                0 => 0.0, 1 => 0.333, 2 => 0.502,
-                3 => 0.667, 4 => 0.835, _ => 1.0,
+                0 => 0.0,
+                1 => 0.333,
+                2 => 0.502,
+                3 => 0.667,
+                4 => 0.835,
+                _ => 1.0,
             };
             [r, g, b, 1.0]
         }
@@ -662,8 +660,22 @@ mod tests {
     #[test]
     fn test_scroll_up() {
         let mut grid = Grid::new(80, 3);
-        grid.set(0, 0, CharCell { c: 'A', ..CharCell::default() });
-        grid.set(0, 1, CharCell { c: 'B', ..CharCell::default() });
+        grid.set(
+            0,
+            0,
+            CharCell {
+                c: 'A',
+                ..CharCell::default()
+            },
+        );
+        grid.set(
+            0,
+            1,
+            CharCell {
+                c: 'B',
+                ..CharCell::default()
+            },
+        );
         grid.set_cursor(0, 2);
         for _ in 0..80 {
             grid.advance_cursor();
@@ -682,7 +694,14 @@ mod tests {
     #[test]
     fn test_resize() {
         let mut grid = Grid::new(80, 24);
-        grid.set(0, 0, CharCell { c: 'X', ..CharCell::default() });
+        grid.set(
+            0,
+            0,
+            CharCell {
+                c: 'X',
+                ..CharCell::default()
+            },
+        );
         grid.resize(40, 12);
         assert_eq!(grid.cols(), 40);
         assert_eq!(grid.rows(), 12);
@@ -692,15 +711,26 @@ mod tests {
     #[test]
     fn test_visible_cells_bounded_no_scroll() {
         let mut grid = Grid::new(10, 5);
-        grid.set(3, 2, CharCell { c: 'Z', ..CharCell::default() });
+        grid.set(
+            3,
+            2,
+            CharCell {
+                c: 'Z',
+                ..CharCell::default()
+            },
+        );
 
         let cells = grid.visible_cells_bounded(5, 10);
-        let found = cells.iter().find(|(col, row, cell)| *col == 3 && *row == 2 && cell.c == 'Z');
+        let found = cells
+            .iter()
+            .find(|(col, row, cell)| *col == 3 && *row == 2 && cell.c == 'Z');
         assert!(found.is_some(), "bounded should include cell at (3,2)");
 
         // Bounds: only pane_rows=3, pane_cols=5
         let cells_small = grid.visible_cells_bounded(3, 5);
-        let out_of_bounds = cells_small.iter().any(|(col, row, _)| *row >= 3 || *col >= 5);
+        let out_of_bounds = cells_small
+            .iter()
+            .any(|(col, row, _)| *row >= 3 || *col >= 5);
         assert!(!out_of_bounds, "bounded must not exceed max_rows/max_cols");
     }
 
@@ -719,7 +749,11 @@ mod tests {
         // With pane_rows=3, pane_cols=5: must not return more than 3 rows of data
         let cells = grid.visible_cells_bounded(3, 5);
         let max_vrow = cells.iter().map(|(_, row, _)| *row).max().unwrap_or(0);
-        assert!(max_vrow < 3, "bounded rows must be < max_rows=3, got {}", max_vrow);
+        assert!(
+            max_vrow < 3,
+            "bounded rows must be < max_rows=3, got {}",
+            max_vrow
+        );
     }
 
     #[test]
@@ -727,7 +761,14 @@ mod tests {
         let mut grid = Grid::new(80, 24);
         // Set a non-default cell so it's included
         for col in 0..10 {
-            grid.set(col, 0, CharCell { c: 'A', ..CharCell::default() });
+            grid.set(
+                col,
+                0,
+                CharCell {
+                    c: 'A',
+                    ..CharCell::default()
+                },
+            );
         }
 
         // With max 5 cols, only 5 of those 10 cells in row 0 should appear

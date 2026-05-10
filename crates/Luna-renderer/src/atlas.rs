@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use cosmic_text::CacheKey;
+use std::collections::HashMap;
 use wgpu::{Device, Queue};
 
 pub const ATLAS_SIZE: u32 = 2048;
@@ -62,30 +62,27 @@ impl TextureAtlas {
             ..Default::default()
         });
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Luna Atlas BindGroupLayout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Luna Atlas BindGroupLayout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(
-                            wgpu::SamplerBindingType::Filtering,
-                        ),
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Luna Atlas BindGroup"),
@@ -170,7 +167,13 @@ impl TextureAtlas {
         }
 
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
+        self.cache.insert(
+            key,
+            AtlasEntry {
+                uv: rect,
+                last_frame: self.frame,
+            },
+        );
         Some(rect)
     }
 
@@ -248,7 +251,7 @@ mod tests {
         let mut rects = Vec::new();
 
         for i in 0..100 {
-            let w = (i % 5 + 1) * 8;  // widths 8..40
+            let w = (i % 5 + 1) * 8; // widths 8..40
             let h = (i % 3 + 1) * 12; // heights 12..36
 
             if x_offset + w > atlas_size {
@@ -256,11 +259,7 @@ mod tests {
                 y_offset += row_height;
                 row_height = 0;
             }
-            assert!(
-                y_offset + h <= atlas_size,
-                "Atlas overflow at glyph {}",
-                i
-            );
+            assert!(y_offset + h <= atlas_size, "Atlas overflow at glyph {}", i);
 
             let u0 = x_offset as f32 / atlas_size as f32;
             let v0 = y_offset as f32 / atlas_size as f32;
@@ -272,7 +271,9 @@ mod tests {
             rects.push((u0, v0, u1, v1));
 
             for (j, &prev) in rects.iter().enumerate().take(rects.len()) {
-                if i == j as u32 { continue; }
+                if i == j as u32 {
+                    continue;
+                }
                 let (pu0, pv0, pu1, pv1) = prev;
                 let overlap = !(u0 >= pu1 || u1 <= pu0 || v0 >= pv1 || v1 <= pv0);
                 assert!(!overlap, "Overlap between glyph {} and {}", i, j);

@@ -267,7 +267,11 @@ mod tests {
         for name in &["luna", "dracula", "catppuccin-mocha", "tokyo-night"] {
             let t = Theme::load(name, None);
             // bg alpha should always be 1.0
-            assert!((t.bg[3] - 1.0).abs() < 0.001, "theme {} bg alpha != 1", name);
+            assert!(
+                (t.bg[3] - 1.0).abs() < 0.001,
+                "theme {} bg alpha != 1",
+                name
+            );
         }
     }
 }

@@ -41,7 +41,11 @@ impl InputAction {
         Self::from_named_key(&key_ref, modifiers, application_cursor)
     }
 
-    fn from_named_key(key: &Key<&str>, modifiers: ModifiersState, application_cursor: bool) -> Self {
+    fn from_named_key(
+        key: &Key<&str>,
+        modifiers: ModifiersState,
+        application_cursor: bool,
+    ) -> Self {
         use Key::Named;
         let named = match key {
             Named(n) => n,

@@ -4,11 +4,7 @@ use luna_config::Theme;
 use luna_renderer::{renderer::Renderer, ui::UIRect};
 use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
 
-use crate::{
-    pane_ops::find_pane,
-    search::build_match_set,
-    state::AppState,
-};
+use crate::{pane_ops::find_pane, search::build_match_set, state::AppState};
 
 const TAB_FONT_SIZE: f32 = 12.0;
 
@@ -44,8 +40,16 @@ pub fn build_tab_bar_ui_rects(
 
     for (vis_i, i) in (start..end).enumerate() {
         let x = x_start + vis_i as f32 * tab_w;
-        let color = if i == tab_bar.active { theme.tab_active_bg } else { theme.tab_inactive_bg };
-        rects.push(UIRect { pos: [x, 0.0], size: [tab_w, layout.tab_bar_height], color });
+        let color = if i == tab_bar.active {
+            theme.tab_active_bg
+        } else {
+            theme.tab_inactive_bg
+        };
+        rects.push(UIRect {
+            pos: [x, 0.0],
+            size: [tab_w, layout.tab_bar_height],
+            color,
+        });
 
         if hover_tab == Some(i) && i != tab_bar.active {
             rects.push(UIRect {
@@ -103,14 +107,29 @@ pub fn build_tab_bar_text(
 
     // < button text
     if show_left {
-        result.push(('<', 4.0, text_y, TAB_FONT_SIZE, theme.tab_button_text, theme.tab_bar_bg));
+        result.push((
+            '<',
+            4.0,
+            text_y,
+            TAB_FONT_SIZE,
+            theme.tab_button_text,
+            theme.tab_bar_bg,
+        ));
     }
 
     for (vis_i, i) in (start..end).enumerate() {
         let tab = &tab_bar.tabs[i];
         let x = x_start + vis_i as f32 * tab_w;
-        let fg = if i == tab_bar.active { theme.tab_text } else { theme.tab_text_inactive };
-        let bg = if i == tab_bar.active { theme.tab_active_bg } else { theme.tab_inactive_bg };
+        let fg = if i == tab_bar.active {
+            theme.tab_text
+        } else {
+            theme.tab_text_inactive
+        };
+        let bg = if i == tab_bar.active {
+            theme.tab_active_bg
+        } else {
+            theme.tab_inactive_bg
+        };
 
         let raw_title: String = if !tab.title.is_empty() {
             tab.title.clone()
@@ -125,7 +144,11 @@ pub fn build_tab_bar_text(
         };
         let max_chars = ((tab_w - 24.0) / char_w).max(1.0) as usize;
         let title: String = if raw_title.chars().count() > max_chars {
-            raw_title.chars().take(max_chars.saturating_sub(1)).collect::<String>() + "…"
+            raw_title
+                .chars()
+                .take(max_chars.saturating_sub(1))
+                .collect::<String>()
+                + "…"
         } else {
             raw_title
         };
@@ -136,17 +159,35 @@ pub fn build_tab_bar_text(
         }
 
         let close_x = x + tab_w - 14.0;
-        let close_fg = if i == tab_bar.active { [1.0, 1.0, 1.0, 0.7_f32] } else { [0.8, 0.8, 0.8, 0.5_f32] };
+        let close_fg = if i == tab_bar.active {
+            [1.0, 1.0, 1.0, 0.7_f32]
+        } else {
+            [0.8, 0.8, 0.8, 0.5_f32]
+        };
         result.push(('×', close_x, text_y, TAB_FONT_SIZE, close_fg, bg));
     }
 
     // + button
     let plus_x = x_start + vis_count as f32 * tab_w;
-    result.push(('+', plus_x + 8.0, text_y, TAB_FONT_SIZE, theme.tab_button_text, theme.tab_bar_bg));
+    result.push((
+        '+',
+        plus_x + 8.0,
+        text_y,
+        TAB_FONT_SIZE,
+        theme.tab_button_text,
+        theme.tab_bar_bg,
+    ));
 
     // > button text
     if show_right {
-        result.push(('>', plus_x + 32.0 + 4.0, text_y, TAB_FONT_SIZE, theme.tab_button_text, theme.tab_bar_bg));
+        result.push((
+            '>',
+            plus_x + 32.0 + 4.0,
+            text_y,
+            TAB_FONT_SIZE,
+            theme.tab_button_text,
+            theme.tab_bar_bg,
+        ));
     }
 
     result
@@ -210,7 +251,8 @@ pub fn render_frame(
     let mut cell_data: Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> = Vec::new();
     let mut ui_rects: Vec<UIRect> = Vec::new();
 
-    let match_set: HashSet<(usize, usize)> = if state.search.active && !state.search.term.is_empty() {
+    let match_set: HashSet<(usize, usize)> = if state.search.active && !state.search.term.is_empty()
+    {
         build_match_set(&state.search.matches, state.search.term.len())
     } else {
         HashSet::new()
@@ -236,7 +278,8 @@ pub fn render_frame(
         let cursor_row = grid_ref.cursor_row();
         let scrollback_len = grid_ref.scrollback_len();
         let scroll_offset = grid_ref.scroll_offset();
-        let sb_visible = ((scroll_offset + pane_rows).min(scrollback_len)).saturating_sub(scroll_offset);
+        let sb_visible =
+            ((scroll_offset + pane_rows).min(scrollback_len)).saturating_sub(scroll_offset);
         let scrolled = scroll_offset > 0;
         let is_active = pane_id == active_pane_id;
 
@@ -257,8 +300,12 @@ pub fn render_frame(
                 scrollback_len + vrow - sb_visible
             };
             let selection_bg = is_active
-                && state.selection.as_ref().is_some_and(|s| s.contains(col, vrow));
-            let match_is_current = state.search.active && !state.search.term.is_empty()
+                && state
+                    .selection
+                    .as_ref()
+                    .is_some_and(|s| s.contains(col, vrow));
+            let match_is_current = state.search.active
+                && !state.search.term.is_empty()
                 && !state.search.matches.is_empty()
                 && {
                     let cm = &state.search.matches[state.search.current_match];
@@ -278,7 +325,12 @@ pub fn render_frame(
             cell_data.push((cell.c, x, y, font_size, cell.fg.fg_rgba(), bg));
         }
 
-        if is_active && !scrolled && cursor_col < pane_cols && cursor_row < pane_rows && cursor_blink_on {
+        if is_active
+            && !scrolled
+            && cursor_col < pane_cols
+            && cursor_row < pane_rows
+            && cursor_blink_on
+        {
             let cx = content_x + cursor_col as f32 * cell_w;
             let cy = content_y + cursor_row as f32 * cell_h;
             let cursor_color = state.theme.cursor;
@@ -373,25 +425,57 @@ pub fn render_frame(
         let transparent = [0.0, 0.0, 0.0, 0.0];
 
         for (j, &c) in prefix_chars.iter().enumerate() {
-            cell_data.push((c, text_x + j as f32 * char_w, text_y, search_fs, state.theme.search_text_dim, transparent));
+            cell_data.push((
+                c,
+                text_x + j as f32 * char_w,
+                text_y,
+                search_fs,
+                state.theme.search_text_dim,
+                transparent,
+            ));
         }
         for (j, &c) in term_chars.iter().enumerate() {
-            cell_data.push((c, text_x + (prefix_chars.len() + j) as f32 * char_w, text_y, search_fs, state.theme.search_text, transparent));
+            cell_data.push((
+                c,
+                text_x + (prefix_chars.len() + j) as f32 * char_w,
+                text_y,
+                search_fs,
+                state.theme.search_text,
+                transparent,
+            ));
         }
         let cursor_col = prefix_chars.len() + state.search.cursor_pos;
-        cell_data.push(('|', text_x + cursor_col as f32 * char_w, text_y, search_fs, state.theme.search_text, transparent));
+        cell_data.push((
+            '|',
+            text_x + cursor_col as f32 * char_w,
+            text_y,
+            search_fs,
+            state.theme.search_text,
+            transparent,
+        ));
 
         let counter = if state.search.term.is_empty() {
             String::new()
         } else if state.search.matches.is_empty() {
             "0 matches".to_string()
         } else {
-            format!("{}/{}", state.search.current_match + 1, state.search.matches.len())
+            format!(
+                "{}/{}",
+                state.search.current_match + 1,
+                state.search.matches.len()
+            )
         };
         if !counter.is_empty() {
             let counter_x = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
             for (j, c) in counter.chars().enumerate() {
-                cell_data.push((c, counter_x + j as f32 * char_w, text_y, search_fs, state.theme.search_text_dim, transparent));
+                cell_data.push((
+                    c,
+                    counter_x + j as f32 * char_w,
+                    text_y,
+                    search_fs,
+                    state.theme.search_text_dim,
+                    transparent,
+                ));
             }
         }
     }
@@ -430,22 +514,47 @@ pub fn render_frame(
             if j >= max_chars {
                 break;
             }
-            cell_data.push((c, text_x + j as f32 * char_w, text_y, search_fs, state.theme.search_text, transparent));
+            cell_data.push((
+                c,
+                text_x + j as f32 * char_w,
+                text_y,
+                search_fs,
+                state.theme.search_text,
+                transparent,
+            ));
         }
 
         if !state.history_search.matches.is_empty() {
-            let counter = format!("{}/{}", state.history_search.current_match + 1, state.history_search.matches.len());
+            let counter = format!(
+                "{}/{}",
+                state.history_search.current_match + 1,
+                state.history_search.matches.len()
+            );
             let cx = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
             for (j, c) in counter.chars().enumerate() {
-                cell_data.push((c, cx + j as f32 * char_w, text_y, search_fs, state.theme.search_text_dim, transparent));
+                cell_data.push((
+                    c,
+                    cx + j as f32 * char_w,
+                    text_y,
+                    search_fs,
+                    state.theme.search_text_dim,
+                    transparent,
+                ));
             }
         }
     }
 
-    let tab_ui = build_tab_bar_ui_rects(layout, tab_bar, state.hover_tab, state.tab_scroll_offset, &state.theme);
+    let tab_ui = build_tab_bar_ui_rects(
+        layout,
+        tab_bar,
+        state.hover_tab,
+        state.tab_scroll_offset,
+        &state.theme,
+    );
     ui_rects.extend(tab_ui);
 
-    for tab_cell in build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset, &state.theme) {
+    for tab_cell in build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset, &state.theme)
+    {
         cell_data.push(tab_cell);
     }
 
@@ -494,7 +603,11 @@ impl App {
             let _ = pane.pty_session.pty.kill();
         }
 
-        let tab_idx = self.tab_bar.tabs.iter().position(|t| t.pane_tree.all_panes().contains(&pane_id));
+        let tab_idx = self
+            .tab_bar
+            .tabs
+            .iter()
+            .position(|t| t.pane_tree.all_panes().contains(&pane_id));
 
         if let Some(idx) = tab_idx {
             let pane_count = self.tab_bar.tabs[idx].pane_tree.all_panes().len();
@@ -502,12 +615,15 @@ impl App {
             if pane_count == 1 {
                 if self.tab_bar.tabs.len() == 1 {
                     let pane_area = self.layout.pane_area();
-                    let new_cols = ((pane_area.2 - self.margin * 2.0) / self.cell_w).max(1.0) as usize;
-                    let new_rows = ((pane_area.3 - self.margin * 2.0) / self.cell_h).max(1.0) as usize;
+                    let new_cols =
+                        ((pane_area.2 - self.margin * 2.0) / self.cell_w).max(1.0) as usize;
+                    let new_rows =
+                        ((pane_area.3 - self.margin * 2.0) / self.cell_h).max(1.0) as usize;
                     let new_pane_id = self.tab_bar.next_pane_id();
                     self.tab_bar.tabs[0].pane_tree = luna_ui::PaneTree::leaf(new_pane_id);
                     self.tab_bar.tabs[0].active_pane = new_pane_id;
-                    self.panes.push(create_pane(new_pane_id, new_cols, new_rows));
+                    self.panes
+                        .push(create_pane(new_pane_id, new_cols, new_rows));
                 } else {
                     self.tab_bar.close_tab(idx);
                 }

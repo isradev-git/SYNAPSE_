@@ -1,4 +1,4 @@
-use wgpu::{Buffer, Device, Queue, RenderPipeline, BindGroup};
+use wgpu::{BindGroup, Buffer, Device, Queue, RenderPipeline};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -42,15 +42,10 @@ pub struct UIRenderer {
 }
 
 impl UIRenderer {
-    pub fn new(
-        device: &Device,
-        surface_format: wgpu::TextureFormat,
-    ) -> Self {
+    pub fn new(device: &Device, surface_format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Luna UI Shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("shaders/ui.wgsl").into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ui.wgsl").into()),
         });
 
         let screen_bind_group_layout =

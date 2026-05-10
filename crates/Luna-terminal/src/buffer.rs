@@ -64,7 +64,10 @@ mod tests {
     #[test]
     fn test_push_and_get() {
         let mut buf = ScrollbackBuffer::new(5);
-        let line1: Vec<CharCell> = vec![CharCell { c: 'A', ..CharCell::default() }];
+        let line1: Vec<CharCell> = vec![CharCell {
+            c: 'A',
+            ..CharCell::default()
+        }];
         buf.push(line1);
         assert_eq!(buf.len(), 1);
         assert_eq!(buf.get_line(0)[0].c, 'A');

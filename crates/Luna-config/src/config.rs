@@ -37,15 +37,33 @@ pub struct Config {
     pub theme: String,
 }
 
-fn default_font_size() -> f32 { 14.0 }
-fn default_font_family() -> String { "monospace".to_string() }
-fn default_window_width() -> u32 { 1280 }
-fn default_window_height() -> u32 { 800 }
-fn default_scrollback_lines() -> usize { 100_000 }
-fn default_cursor_style() -> CursorStyle { CursorStyle::Block }
-fn default_cursor_blink() -> bool { true }
-fn default_cursor_blink_ms() -> u64 { 500 }
-fn default_theme() -> String { "luna".to_string() }
+fn default_font_size() -> f32 {
+    14.0
+}
+fn default_font_family() -> String {
+    "monospace".to_string()
+}
+fn default_window_width() -> u32 {
+    1280
+}
+fn default_window_height() -> u32 {
+    800
+}
+fn default_scrollback_lines() -> usize {
+    100_000
+}
+fn default_cursor_style() -> CursorStyle {
+    CursorStyle::Block
+}
+fn default_cursor_blink() -> bool {
+    true
+}
+fn default_cursor_blink_ms() -> u64 {
+    500
+}
+fn default_theme() -> String {
+    "luna".to_string()
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -126,9 +144,7 @@ fn config_dir() -> Option<PathBuf> {
     {
         std::env::var("XDG_CONFIG_HOME")
             .map(PathBuf::from)
-            .or_else(|_| {
-                std::env::var("HOME").map(|h| PathBuf::from(h).join(".config"))
-            })
+            .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".config")))
             .ok()
             .map(|d| d.join("Luna"))
     }

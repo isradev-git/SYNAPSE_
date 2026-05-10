@@ -34,7 +34,8 @@ impl Pane {
             bracketed_paste: true,
             ..Default::default()
         }));
-        let processor = VteProcessor::new_with_title(grid.clone(), title.clone(), cwd.clone(), modes.clone());
+        let processor =
+            VteProcessor::new_with_title(grid.clone(), title.clone(), cwd.clone(), modes.clone());
         Self {
             id,
             pty_session,

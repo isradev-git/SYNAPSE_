@@ -45,7 +45,10 @@ pub fn build_match_set(matches: &[SearchMatch], term_len: usize) -> HashSet<(usi
 }
 
 pub fn update_search_matches(state: &mut AppState, tab_bar: &TabBar, panes: &[Pane]) {
-    let pane = panes.iter().find(|p| p.id == tab_bar.active_tab().active_pane).unwrap();
+    let pane = panes
+        .iter()
+        .find(|p| p.id == tab_bar.active_tab().active_pane)
+        .unwrap();
     let grid = pane.grid.borrow();
     state.search.matches = find_matches(&grid, &state.search.term);
     state.search.current_match = 0;
@@ -59,7 +62,10 @@ pub fn scroll_to_current_match(state: &AppState, tab_bar: &TabBar, panes: &[Pane
         return;
     }
     let current = &state.search.matches[state.search.current_match];
-    let pane = panes.iter().find(|p| p.id == tab_bar.active_tab().active_pane).unwrap();
+    let pane = panes
+        .iter()
+        .find(|p| p.id == tab_bar.active_tab().active_pane)
+        .unwrap();
     let mut grid = pane.grid.borrow_mut();
     let sb_len = grid.scrollback_len();
     let grid_rows = grid.rows();

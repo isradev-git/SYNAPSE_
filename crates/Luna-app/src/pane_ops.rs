@@ -39,9 +39,8 @@ pub fn create_pane_full(
             shell_config.args = shell_args.to_vec();
         }
     }
-    let pty_handle =
-        luna_terminal::pty::PtyHandle::spawn(cols as u16, rows as u16, &shell_config)
-            .expect("Failed to spawn PTY");
+    let pty_handle = luna_terminal::pty::PtyHandle::spawn(cols as u16, rows as u16, &shell_config)
+        .expect("Failed to spawn PTY");
     let pty_session = luna_terminal::pty::PtyHandle::start_reader(pty_handle);
     Pane::new(id, pty_session, grid, cols, rows)
 }
@@ -58,40 +57,52 @@ pub fn active_pane_mut<'a>(panes: &'a mut [Pane], tab_bar: &TabBar) -> &'a mut P
         .expect("Active pane not found")
 }
 
-pub fn adjacent_pane(layouts: &[(PaneId, PaneRect)], from: PaneId, direction: &str) -> Option<PaneId> {
+pub fn adjacent_pane(
+    layouts: &[(PaneId, PaneRect)],
+    from: PaneId,
+    direction: &str,
+) -> Option<PaneId> {
     let from_rect = layouts.iter().find(|(id, _)| *id == from)?.1;
 
     match direction {
         "right" => layouts
             .iter()
-            .filter(|(id, r)| *id != from
-                && r.x >= from_rect.x + from_rect.w - 1.0
-                && r.y < from_rect.y + from_rect.h
-                && r.y + r.h > from_rect.y)
+            .filter(|(id, r)| {
+                *id != from
+                    && r.x >= from_rect.x + from_rect.w - 1.0
+                    && r.y < from_rect.y + from_rect.h
+                    && r.y + r.h > from_rect.y
+            })
             .min_by(|(_, a), (_, b)| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(id, _)| *id),
         "left" => layouts
             .iter()
-            .filter(|(id, r)| *id != from
-                && r.x + r.w <= from_rect.x + 1.0
-                && r.y < from_rect.y + from_rect.h
-                && r.y + r.h > from_rect.y)
+            .filter(|(id, r)| {
+                *id != from
+                    && r.x + r.w <= from_rect.x + 1.0
+                    && r.y < from_rect.y + from_rect.h
+                    && r.y + r.h > from_rect.y
+            })
             .max_by(|(_, a), (_, b)| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(id, _)| *id),
         "down" => layouts
             .iter()
-            .filter(|(id, r)| *id != from
-                && r.y >= from_rect.y + from_rect.h - 1.0
-                && r.x < from_rect.x + from_rect.w
-                && r.x + r.w > from_rect.x)
+            .filter(|(id, r)| {
+                *id != from
+                    && r.y >= from_rect.y + from_rect.h - 1.0
+                    && r.x < from_rect.x + from_rect.w
+                    && r.x + r.w > from_rect.x
+            })
             .min_by(|(_, a), (_, b)| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(id, _)| *id),
         "up" => layouts
             .iter()
-            .filter(|(id, r)| *id != from
-                && r.y + r.h <= from_rect.y + 1.0
-                && r.x < from_rect.x + from_rect.w
-                && r.x + r.w > from_rect.x)
+            .filter(|(id, r)| {
+                *id != from
+                    && r.y + r.h <= from_rect.y + 1.0
+                    && r.x < from_rect.x + from_rect.w
+                    && r.x + r.w > from_rect.x
+            })
             .max_by(|(_, a), (_, b)| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(id, _)| *id),
         _ => None,
@@ -106,8 +117,7 @@ pub fn handle_tab_click(
     scroll_offset: &mut usize,
 ) {
     let tab_count = tab_bar.tabs.len();
-    let (start, end, show_left, show_right) =
-        layout.tab_visible_range(tab_count, *scroll_offset);
+    let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, *scroll_offset);
     let vis_count = end - start;
     let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right) as f64;
     let x_start = if show_left { SCROLL_BTN_W as f64 } else { 0.0 };
@@ -131,8 +141,7 @@ pub fn handle_tab_click(
         panes.push(create_pane(pane_id, new_cols, new_rows));
         // Scroll so the new active tab is visible
         let new_count = tab_bar.tabs.len();
-        let (new_start, new_end, _, _) =
-            layout.tab_visible_range(new_count, *scroll_offset);
+        let (new_start, new_end, _, _) = layout.tab_visible_range(new_count, *scroll_offset);
         if tab_bar.active >= new_end {
             let vis = new_end.saturating_sub(new_start).max(1);
             *scroll_offset = tab_bar.active.saturating_sub(vis.saturating_sub(1));
@@ -218,7 +227,10 @@ impl App {
                 pane.cols = new_cols;
                 pane.rows = new_rows;
                 pane.grid.borrow_mut().resize(new_cols, new_rows);
-                let _ = pane.pty_session.pty.resize(new_cols as u16, new_rows as u16);
+                let _ = pane
+                    .pty_session
+                    .pty
+                    .resize(new_cols as u16, new_rows as u16);
             }
         }
     }

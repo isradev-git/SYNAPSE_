@@ -109,8 +109,14 @@ impl vte::Perform for VteProcessor {
 
     fn execute(&mut self, byte: u8) {
         match byte {
-            b'\x0e' => { self.use_dec_graphics = true; return; }
-            b'\x0f' => { self.use_dec_graphics = false; return; }
+            b'\x0e' => {
+                self.use_dec_graphics = true;
+                return;
+            }
+            b'\x0f' => {
+                self.use_dec_graphics = false;
+                return;
+            }
             _ => {}
         }
         let mut grid = self.grid.borrow_mut();
@@ -140,13 +146,7 @@ impl vte::Perform for VteProcessor {
         }
     }
 
-    fn hook(
-        &mut self,
-        _params: &vte::Params,
-        _intermediates: &[u8],
-        _ignore: bool,
-        _action: char,
-    ) {
+    fn hook(&mut self, _params: &vte::Params, _intermediates: &[u8], _ignore: bool, _action: char) {
     }
 
     fn put(&mut self, _byte: u8) {}
@@ -316,8 +316,16 @@ impl vte::Perform for VteProcessor {
                 let p1 = get_param(params, 1);
                 let mut grid = self.grid.borrow_mut();
                 let rows = grid.rows();
-                let top = if p0 <= 0 { 0 } else { (p0 as usize - 1).min(rows - 1) };
-                let bottom = if p1 <= 0 { rows - 1 } else { (p1 as usize - 1).min(rows - 1) };
+                let top = if p0 <= 0 {
+                    0
+                } else {
+                    (p0 as usize - 1).min(rows - 1)
+                };
+                let bottom = if p1 <= 0 {
+                    rows - 1
+                } else {
+                    (p1 as usize - 1).min(rows - 1)
+                };
                 grid.set_scroll_region(top, bottom);
             }
             'm' => {
@@ -330,9 +338,27 @@ impl vte::Perform for VteProcessor {
                     let mut modes = self.modes.borrow_mut();
                     match mode_num {
                         1 => modes.application_cursor = enable,
-                        1000 => modes.mouse_report = if enable { MouseReportMode::X10 } else { MouseReportMode::None },
-                        1002 => modes.mouse_report = if enable { MouseReportMode::ButtonMotion } else { MouseReportMode::None },
-                        1003 => modes.mouse_report = if enable { MouseReportMode::AnyMotion } else { MouseReportMode::None },
+                        1000 => {
+                            modes.mouse_report = if enable {
+                                MouseReportMode::X10
+                            } else {
+                                MouseReportMode::None
+                            }
+                        }
+                        1002 => {
+                            modes.mouse_report = if enable {
+                                MouseReportMode::ButtonMotion
+                            } else {
+                                MouseReportMode::None
+                            }
+                        }
+                        1003 => {
+                            modes.mouse_report = if enable {
+                                MouseReportMode::AnyMotion
+                            } else {
+                                MouseReportMode::None
+                            }
+                        }
                         1004 => modes.focus_events = enable,
                         1006 => modes.mouse_sgr = enable,
                         2004 => modes.bracketed_paste = enable,
@@ -352,8 +378,12 @@ impl vte::Perform for VteProcessor {
 
     fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
         match (intermediates.first().copied(), byte) {
-            (None, b'7') => { self.grid.borrow_mut().save_cursor(); }
-            (None, b'8') => { self.grid.borrow_mut().restore_cursor(); }
+            (None, b'7') => {
+                self.grid.borrow_mut().save_cursor();
+            }
+            (None, b'8') => {
+                self.grid.borrow_mut().restore_cursor();
+            }
             (None, b'c') => {
                 self.reset_state();
                 self.use_dec_graphics = false;
@@ -365,8 +395,12 @@ impl vte::Perform for VteProcessor {
                 drop(g);
                 *self.modes.borrow_mut() = TerminalModes::default();
             }
-            (Some(b'('), b'0') => { self.use_dec_graphics = true; }
-            (Some(b'('), b'B') => { self.use_dec_graphics = false; }
+            (Some(b'('), b'0') => {
+                self.use_dec_graphics = true;
+            }
+            (Some(b'('), b'B') => {
+                self.use_dec_graphics = false;
+            }
             _ => {}
         }
     }
@@ -374,12 +408,28 @@ impl vte::Perform for VteProcessor {
 
 fn dec_graphics(b: u8) -> char {
     match b {
-        b'j' => '┘', b'k' => '┐', b'l' => '┌', b'm' => '└',
-        b'n' => '┼', b'q' => '─', b't' => '├', b'u' => '┤',
-        b'v' => '┴', b'w' => '┬', b'x' => '│',
-        b'`' => '◆', b'a' => '▒', b'f' => '°', b'g' => '±',
-        b'o' => '⎺', b'p' => '⎻', b'r' => '⎼', b's' => '⎽',
-        b'y' => '≤', b'z' => '≥', b'~' => '·',
+        b'j' => '┘',
+        b'k' => '┐',
+        b'l' => '┌',
+        b'm' => '└',
+        b'n' => '┼',
+        b'q' => '─',
+        b't' => '├',
+        b'u' => '┤',
+        b'v' => '┴',
+        b'w' => '┬',
+        b'x' => '│',
+        b'`' => '◆',
+        b'a' => '▒',
+        b'f' => '°',
+        b'g' => '±',
+        b'o' => '⎺',
+        b'p' => '⎻',
+        b'r' => '⎼',
+        b's' => '⎽',
+        b'y' => '≤',
+        b'z' => '≥',
+        b'~' => '·',
         _ => b as char,
     }
 }
@@ -951,9 +1001,13 @@ mod tests {
         let grid = make_grid(80, 24);
         let mut proc = VteProcessor::new(grid.clone());
         proc.process(b"\x1b[4;3;1m");
-        assert!(proc.flags.contains(CellFlags::UNDERLINE | CellFlags::ITALIC | CellFlags::BOLD));
+        assert!(proc
+            .flags
+            .contains(CellFlags::UNDERLINE | CellFlags::ITALIC | CellFlags::BOLD));
         proc.process(b"\x1b[24;23;22m");
-        assert!(!proc.flags.contains(CellFlags::UNDERLINE | CellFlags::ITALIC | CellFlags::BOLD));
+        assert!(!proc
+            .flags
+            .contains(CellFlags::UNDERLINE | CellFlags::ITALIC | CellFlags::BOLD));
     }
 
     // ── RIS (reset to initial state) ────────────────────────────────────
@@ -1206,7 +1260,7 @@ mod tests {
         }
         // Scroll up within region: row 3 → row 2, row 4 → row 3, row 2 (new) → blank
         proc.process(b"\x1b[5;1H"); // go to row 5 (bottom of region)
-        proc.process(b"\n");         // LF at bottom of region triggers scroll
+        proc.process(b"\n"); // LF at bottom of region triggers scroll
 
         let g = grid.borrow();
         // Row 0 (A) and row 1 (B) should be unaffected
@@ -1239,7 +1293,10 @@ mod tests {
     fn test_dl_delete_lines() {
         let grid = make_grid(10, 5);
         let mut proc = VteProcessor::new(grid.clone());
-        for (i, row_str) in [b"AAAAA" as &[u8], b"BBBBB", b"CCCCC", b"DDDDD"].iter().enumerate() {
+        for (i, row_str) in [b"AAAAA" as &[u8], b"BBBBB", b"CCCCC", b"DDDDD"]
+            .iter()
+            .enumerate()
+        {
             proc.process(format!("\x1b[{};1H", i + 1).as_bytes());
             proc.process(row_str);
         }

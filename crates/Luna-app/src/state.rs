@@ -240,7 +240,9 @@ impl HistorySearchState {
         if self.matches.is_empty() {
             None
         } else {
-            self.history.get(self.matches[self.current_match]).map(|s| s.as_str())
+            self.history
+                .get(self.matches[self.current_match])
+                .map(|s| s.as_str())
         }
     }
 

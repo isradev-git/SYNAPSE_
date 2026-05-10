@@ -1,4 +1,4 @@
-use wgpu::{Device, Queue, RenderPipeline, Buffer, BindGroup, BindGroupLayout};
+use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPipeline};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -68,9 +68,7 @@ impl CellRenderer {
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Luna Cell Shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("shaders/cell.wgsl").into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/cell.wgsl").into()),
         });
 
         let screen_bind_group_layout =

@@ -345,9 +345,7 @@ impl PaneTree {
     pub fn set_ratio(&mut self, pane_id: PaneId, ratio: f32) {
         match self {
             PaneTree::Leaf(_) => {}
-            PaneTree::Split {
-                first, second, ..
-            } => {
+            PaneTree::Split { first, second, .. } => {
                 // Check if this split's children contain the pane_id
                 let first_panes = first.all_panes();
                 let second_panes = second.all_panes();
@@ -394,7 +392,9 @@ mod tests {
     #[test]
     fn test_close_pane() {
         let mut tree = PaneTree::Leaf(PaneId(1));
-        let result = tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical).unwrap();
+        let result = tree
+            .split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
         assert_eq!(result, (PaneId(1), PaneId(2)));
 
         // Close one pane -> should collapse back to single leaf
@@ -415,9 +415,12 @@ mod tests {
     #[test]
     fn test_four_pane_layout_no_overlap() {
         let mut tree = PaneTree::Leaf(PaneId(1));
-        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical).unwrap();
-        tree.split(PaneId(1), PaneId(3), SplitDirection::Horizontal).unwrap();
-        tree.split(PaneId(2), PaneId(4), SplitDirection::Horizontal).unwrap();
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
+        tree.split(PaneId(1), PaneId(3), SplitDirection::Horizontal)
+            .unwrap();
+        tree.split(PaneId(2), PaneId(4), SplitDirection::Horizontal)
+            .unwrap();
 
         let panes = tree.all_panes();
         assert_eq!(panes.len(), 4);
@@ -445,8 +448,8 @@ mod tests {
                 assert!(
                     !(overlap_x && overlap_y),
                     "Panes {} and {} overlap: {:?} vs {:?}",
-                    layouts[i].0.0,
-                    layouts[j].0.0,
+                    layouts[i].0 .0,
+                    layouts[j].0 .0,
                     a,
                     b
                 );
