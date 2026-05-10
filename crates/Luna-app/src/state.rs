@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use luna_config::{Config, Keybinds};
+use luna_config::{Config, Keybinds, Theme};
 use luna_ui::pane::PaneId;
 use luna_ui::splitter::{PaneRect, SplitDirection};
 use winit::keyboard::ModifiersState;
@@ -152,6 +152,7 @@ impl SearchState {
 pub struct AppState {
     pub config: Config,
     pub keybinds: Keybinds,
+    pub theme: Theme,
     pub modifiers: ModifiersState,
     pub selection: Option<Selection>,
     pub selecting: bool,
@@ -171,9 +172,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config: Config, keybinds: Keybinds, font_size: f32) -> Self {
+        let theme = Theme::load(&config.theme, luna_config::Config::config_dir());
         Self {
             config,
             keybinds,
+            theme,
             modifiers: ModifiersState::empty(),
             selection: None,
             selecting: false,

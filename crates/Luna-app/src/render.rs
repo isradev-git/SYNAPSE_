@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use luna_config::Theme;
 use luna_renderer::{renderer::Renderer, ui::UIRect};
 use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
 
@@ -16,13 +17,14 @@ pub fn build_tab_bar_ui_rects(
     tab_bar: &TabBar,
     hover_tab: Option<usize>,
     scroll_offset: usize,
+    theme: &Theme,
 ) -> Vec<UIRect> {
     let mut rects = Vec::new();
 
     rects.push(UIRect {
         pos: [0.0, 0.0],
         size: [layout.window_width, layout.tab_bar_height],
-        color: theme::TAB_BAR_BG,
+        color: theme.tab_bar_bg,
     });
 
     let tab_count = tab_bar.tabs.len();
@@ -36,20 +38,20 @@ pub fn build_tab_bar_ui_rects(
         rects.push(UIRect {
             pos: [0.0, 0.0],
             size: [SCROLL_BTN_W, layout.tab_bar_height],
-            color: theme::TAB_BAR_BG,
+            color: theme.tab_bar_bg,
         });
     }
 
     for (vis_i, i) in (start..end).enumerate() {
         let x = x_start + vis_i as f32 * tab_w;
-        let color = if i == tab_bar.active { theme::TAB_ACTIVE_BG } else { theme::TAB_INACTIVE_BG };
+        let color = if i == tab_bar.active { theme.tab_active_bg } else { theme.tab_inactive_bg };
         rects.push(UIRect { pos: [x, 0.0], size: [tab_w, layout.tab_bar_height], color });
 
         if hover_tab == Some(i) && i != tab_bar.active {
             rects.push(UIRect {
                 pos: [x, 0.0],
                 size: [tab_w, layout.tab_bar_height],
-                color: theme::TAB_HOVER_BG,
+                color: theme.tab_hover_bg,
             });
         }
 
@@ -57,7 +59,7 @@ pub fn build_tab_bar_ui_rects(
             rects.push(UIRect {
                 pos: [x, 4.0],
                 size: [1.0, layout.tab_bar_height - 8.0],
-                color: theme::TAB_SEPARATOR,
+                color: theme.tab_separator,
             });
         }
     }
@@ -67,7 +69,7 @@ pub fn build_tab_bar_ui_rects(
     rects.push(UIRect {
         pos: [plus_x, 0.0],
         size: [32.0, layout.tab_bar_height],
-        color: theme::TAB_BAR_BG,
+        color: theme.tab_bar_bg,
     });
 
     // > scroll button
@@ -75,7 +77,7 @@ pub fn build_tab_bar_ui_rects(
         rects.push(UIRect {
             pos: [plus_x + 32.0, 0.0],
             size: [SCROLL_BTN_W, layout.tab_bar_height],
-            color: theme::TAB_BAR_BG,
+            color: theme.tab_bar_bg,
         });
     }
 
@@ -88,6 +90,7 @@ pub fn build_tab_bar_text(
     tab_bar: &TabBar,
     _scale_factor: f64,
     scroll_offset: usize,
+    theme: &Theme,
 ) -> Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> {
     let mut result = Vec::new();
     let tab_count = tab_bar.tabs.len();
@@ -100,14 +103,14 @@ pub fn build_tab_bar_text(
 
     // < button text
     if show_left {
-        result.push(('<', 4.0, text_y, TAB_FONT_SIZE, theme::TAB_BUTTON_TEXT, theme::TAB_BAR_BG));
+        result.push(('<', 4.0, text_y, TAB_FONT_SIZE, theme.tab_button_text, theme.tab_bar_bg));
     }
 
     for (vis_i, i) in (start..end).enumerate() {
         let tab = &tab_bar.tabs[i];
         let x = x_start + vis_i as f32 * tab_w;
-        let fg = if i == tab_bar.active { theme::TAB_TEXT } else { theme::TAB_TEXT_INACTIVE };
-        let bg = if i == tab_bar.active { theme::TAB_ACTIVE_BG } else { theme::TAB_INACTIVE_BG };
+        let fg = if i == tab_bar.active { theme.tab_text } else { theme.tab_text_inactive };
+        let bg = if i == tab_bar.active { theme.tab_active_bg } else { theme.tab_inactive_bg };
 
         let raw_title: String = if !tab.title.is_empty() {
             tab.title.clone()
@@ -139,11 +142,11 @@ pub fn build_tab_bar_text(
 
     // + button
     let plus_x = x_start + vis_count as f32 * tab_w;
-    result.push(('+', plus_x + 8.0, text_y, TAB_FONT_SIZE, theme::TAB_BUTTON_TEXT, theme::TAB_BAR_BG));
+    result.push(('+', plus_x + 8.0, text_y, TAB_FONT_SIZE, theme.tab_button_text, theme.tab_bar_bg));
 
     // > button text
     if show_right {
-        result.push(('>', plus_x + 32.0 + 4.0, text_y, TAB_FONT_SIZE, theme::TAB_BUTTON_TEXT, theme::TAB_BAR_BG));
+        result.push(('>', plus_x + 32.0 + 4.0, text_y, TAB_FONT_SIZE, theme.tab_button_text, theme.tab_bar_bg));
     }
 
     result
@@ -263,11 +266,11 @@ pub fn render_frame(
                 };
             let match_is_in = match_set.contains(&(col, global_row));
             let bg = if selection_bg {
-                [1.0, 0.239, 0.58, 0.4]
+                state.theme.selection
             } else if match_is_current {
-                theme::SEARCH_CURRENT
+                state.theme.search_current
             } else if match_is_in {
-                theme::SEARCH_HIGHLIGHT
+                state.theme.search_highlight
             } else {
                 cell.bg.bg_rgba()
             };
@@ -278,7 +281,7 @@ pub fn render_frame(
         if is_active && !scrolled && cursor_col < pane_cols && cursor_row < pane_rows && cursor_blink_on {
             let cx = content_x + cursor_col as f32 * cell_w;
             let cy = content_y + cursor_row as f32 * cell_h;
-            let cursor_color = [1.0_f32, 0.239, 0.58, 1.0];
+            let cursor_color = state.theme.cursor;
             match state.config.cursor_style {
                 luna_config::CursorStyle::Block => {
                     let cell = grid_ref.get(cursor_col, cursor_row);
@@ -305,9 +308,9 @@ pub fn render_frame(
 
         // Pane borders (1px)
         let border_color = if is_active {
-            theme::PANEL_ACTIVE_BORDER
+            state.theme.panel_active_border
         } else {
-            theme::PANEL_INACTIVE_BORDER
+            state.theme.panel_inactive_border
         };
         ui_rects.push(UIRect {
             pos: [rect.x, rect.y],
@@ -342,7 +345,7 @@ pub fn render_frame(
         ui_rects.push(UIRect {
             pos: [dx, dy],
             size: [dw, dh],
-            color: theme::PANEL_DIVIDER,
+            color: state.theme.panel_divider,
         });
     }
 
@@ -357,7 +360,7 @@ pub fn render_frame(
         ui_rects.push(UIRect {
             pos: [bar_x, bar_y],
             size: [bar_w, bar_h],
-            color: theme::SEARCH_BAR_BG,
+            color: state.theme.search_bar_bg,
         });
 
         let search_fs = 12.0;
@@ -370,13 +373,13 @@ pub fn render_frame(
         let transparent = [0.0, 0.0, 0.0, 0.0];
 
         for (j, &c) in prefix_chars.iter().enumerate() {
-            cell_data.push((c, text_x + j as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT_DIM, transparent));
+            cell_data.push((c, text_x + j as f32 * char_w, text_y, search_fs, state.theme.search_text_dim, transparent));
         }
         for (j, &c) in term_chars.iter().enumerate() {
-            cell_data.push((c, text_x + (prefix_chars.len() + j) as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT, transparent));
+            cell_data.push((c, text_x + (prefix_chars.len() + j) as f32 * char_w, text_y, search_fs, state.theme.search_text, transparent));
         }
         let cursor_col = prefix_chars.len() + state.search.cursor_pos;
-        cell_data.push(('|', text_x + cursor_col as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT, transparent));
+        cell_data.push(('|', text_x + cursor_col as f32 * char_w, text_y, search_fs, state.theme.search_text, transparent));
 
         let counter = if state.search.term.is_empty() {
             String::new()
@@ -388,7 +391,7 @@ pub fn render_frame(
         if !counter.is_empty() {
             let counter_x = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
             for (j, c) in counter.chars().enumerate() {
-                cell_data.push((c, counter_x + j as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT_DIM, transparent));
+                cell_data.push((c, counter_x + j as f32 * char_w, text_y, search_fs, state.theme.search_text_dim, transparent));
             }
         }
     }
@@ -404,7 +407,7 @@ pub fn render_frame(
         ui_rects.push(UIRect {
             pos: [bar_x, bar_y],
             size: [bar_w, bar_h],
-            color: theme::SEARCH_BAR_BG,
+            color: state.theme.search_bar_bg,
         });
 
         let search_fs = 12.0;
@@ -427,22 +430,22 @@ pub fn render_frame(
             if j >= max_chars {
                 break;
             }
-            cell_data.push((c, text_x + j as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT, transparent));
+            cell_data.push((c, text_x + j as f32 * char_w, text_y, search_fs, state.theme.search_text, transparent));
         }
 
         if !state.history_search.matches.is_empty() {
             let counter = format!("{}/{}", state.history_search.current_match + 1, state.history_search.matches.len());
             let cx = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
             for (j, c) in counter.chars().enumerate() {
-                cell_data.push((c, cx + j as f32 * char_w, text_y, search_fs, theme::SEARCH_TEXT_DIM, transparent));
+                cell_data.push((c, cx + j as f32 * char_w, text_y, search_fs, state.theme.search_text_dim, transparent));
             }
         }
     }
 
-    let tab_ui = build_tab_bar_ui_rects(layout, tab_bar, state.hover_tab, state.tab_scroll_offset);
+    let tab_ui = build_tab_bar_ui_rects(layout, tab_bar, state.hover_tab, state.tab_scroll_offset, &state.theme);
     ui_rects.extend(tab_ui);
 
-    for tab_cell in build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset) {
+    for tab_cell in build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset, &state.theme) {
         cell_data.push(tab_cell);
     }
 

@@ -75,6 +75,7 @@ impl App {
 
         let clipboard = arboard::Clipboard::new().ok();
         let state = AppState::new(config, keybinds, initial_font_size);
+        renderer.set_clear_color(state.theme.bg);
 
         Ok((
             App {

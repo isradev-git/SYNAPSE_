@@ -18,6 +18,7 @@ pub struct Renderer {
     cell_renderer: CellRenderer,
     ui_renderer: UIRenderer,
     text: TextShaping,
+    clear_color: wgpu::Color,
 }
 
 impl Renderer {
@@ -78,6 +79,7 @@ impl Renderer {
             surface,
             device,
             queue,
+            clear_color: wgpu::Color { r: 33.0 / 255.0, g: 11.0 / 255.0, b: 75.0 / 255.0, a: 1.0 },
             config,
             size,
             atlas,
@@ -89,6 +91,15 @@ impl Renderer {
 
     pub fn size(&self) -> winit::dpi::PhysicalSize<u32> {
         self.size
+    }
+
+    pub fn set_clear_color(&mut self, color: [f32; 4]) {
+        self.clear_color = wgpu::Color {
+            r: color[0] as f64,
+            g: color[1] as f64,
+            b: color[2] as f64,
+            a: color[3] as f64,
+        };
     }
 
     pub fn cell_metrics(&mut self, font_size: f32) -> (f32, f32) {
@@ -372,12 +383,7 @@ impl Renderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 33.0 / 255.0,
-                            g: 11.0 / 255.0,
-                            b: 75.0 / 255.0,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -428,12 +434,7 @@ impl Renderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 33.0 / 255.0,
-                            g: 11.0 / 255.0,
-                            b: 75.0 / 255.0,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],

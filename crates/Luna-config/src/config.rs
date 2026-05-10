@@ -33,6 +33,8 @@ pub struct Config {
     pub cursor_blink: bool,
     #[serde(default = "default_cursor_blink_ms")]
     pub cursor_blink_ms: u64,
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 fn default_font_size() -> f32 { 14.0 }
@@ -43,6 +45,7 @@ fn default_scrollback_lines() -> usize { 100_000 }
 fn default_cursor_style() -> CursorStyle { CursorStyle::Block }
 fn default_cursor_blink() -> bool { true }
 fn default_cursor_blink_ms() -> u64 { 500 }
+fn default_theme() -> String { "luna".to_string() }
 
 impl Default for Config {
     fn default() -> Self {
@@ -58,11 +61,16 @@ impl Default for Config {
             cursor_style: default_cursor_style(),
             cursor_blink: default_cursor_blink(),
             cursor_blink_ms: default_cursor_blink_ms(),
+            theme: default_theme(),
         }
     }
 }
 
 impl Config {
+    pub fn config_dir() -> Option<PathBuf> {
+        config_dir()
+    }
+
     pub fn config_path() -> Option<PathBuf> {
         config_dir().map(|d| d.join("config.toml"))
     }

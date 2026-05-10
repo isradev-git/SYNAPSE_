@@ -22,7 +22,37 @@ window_height = 800
 
 # Líneas de scrollback (default: 100_000)
 scrollback_lines = 100000
+
+# Tema de colores: "luna" | "dracula" | "catppuccin-mocha" | "tokyo-night"
+# También acepta nombre de archivo en ~/.config/Luna/themes/<nombre>.toml
+theme = "luna"
 ```
+
+### Temas incluidos
+
+| Nombre | Descripción |
+|--------|-------------|
+| `luna` | Paleta morada original (por defecto) |
+| `dracula` | Tema oscuro Dracula |
+| `catppuccin-mocha` | Catppuccin Mocha |
+| `tokyo-night` | Tokyo Night |
+
+### Temas personalizados
+
+Crear `~/.config/Luna/themes/mi-tema.toml` con cualquier subconjunto de colores en hex:
+
+```toml
+[colors]
+bg = "#1e1e1e"
+fg = "#d4d4d4"
+cursor = "#569cd6"
+tab_active_bg = "#007acc"
+tab_inactive_bg = "#252526"
+panel_active_border = "#007acc"
+```
+
+Cualquier campo omitido hereda del tema base especificado en `config.toml`.
+Activar con `theme = "mi-tema"` en `config.toml`.
 
 ### Keybinds personalizados
 

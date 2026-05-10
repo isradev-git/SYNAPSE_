@@ -326,17 +326,18 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ---
 
-### R-023 · Sistema de temas
+### R-023 · Sistema de temas ✓
 **Problema:** paleta hardcodeada en `theme.rs`. Sin carga de temas externos.
 
-- [ ] En `config.rs`: añadir `theme: String` (default `"Luna"`)
-- [ ] En `Luna-config`: añadir módulo `themes.rs` con struct `Theme { bg, fg, cursor, selection, tab_active, ... }`
-- [ ] Leer tema desde `~/.config/Luna/themes/<name>.toml` si existe
-- [ ] Fallback al tema Luna hardcodeado si no se encuentra
-- [ ] Pasar `Theme` al renderer en vez de constantes de `theme.rs`
-- [ ] Incluir 2-3 temas extra: `Dracula`, `Catppuccin-Mocha`, `Tokyo-Night`
+- [x] En `config.rs`: añadir `theme: String` (default `"luna"`)
+- [x] En `Luna-config`: añadir módulo `themes.rs` con struct `Theme { bg, fg, cursor, selection, tab_active, ... }`
+- [x] Leer tema desde `~/.config/Luna/themes/<name>.toml` si existe (override parcial sobre built-in)
+- [x] Fallback al tema Luna hardcodeado si no se encuentra
+- [x] Pasar `Theme` al renderer vía `AppState.theme` — constantes eliminadas de `theme.rs`
+- [x] 4 temas built-in: `luna`, `dracula`, `catppuccin-mocha`, `tokyo-night`
+- [x] `Ctrl+,` recarga config Y tema en caliente
 
-**Verificar:** `theme = "Dracula"` en config cambia toda la paleta de colores.
+**Verificar:** `theme = "dracula"` en config cambia toda la paleta de colores.
 
 ---
 

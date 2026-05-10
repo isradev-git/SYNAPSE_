@@ -18,6 +18,7 @@ use crate::{
 pub enum PostKeyAction {
     None,
     FontChange(f32),
+    ThemeChange,
 }
 
 fn ensure_tab_visible(
@@ -282,6 +283,7 @@ pub fn handle_keyboard(
             }
             Some(Action::ReloadConfig) => {
                 state.config.reload();
+                state.theme = luna_config::Theme::load(&state.config.theme, luna_config::Config::config_dir());
                 if let Some(config_path) = luna_config::Config::config_path() {
                     let editor = std::env::var("EDITOR")
                         .or_else(|_| std::env::var("VISUAL"))
@@ -297,7 +299,7 @@ pub fn handle_keyboard(
                     let pane = active_pane_mut(panes, tab_bar);
                     let _ = pane.pty_session.pty.write(cmd.as_bytes());
                 }
-                return PostKeyAction::FontChange(state.config.font_size);
+                return PostKeyAction::ThemeChange;
             }
             None => {
                 keybind_handled = false;
@@ -385,8 +387,13 @@ impl App {
             &mut self.clipboard,
             &self.window,
         );
-        if let PostKeyAction::FontChange(size) = action {
-            self.change_font_size(size);
+        match action {
+            PostKeyAction::FontChange(size) => self.change_font_size(size),
+            PostKeyAction::ThemeChange => {
+                self.renderer.set_clear_color(self.state.theme.bg);
+                self.change_font_size(self.state.config.font_size);
+            }
+            PostKeyAction::None => {}
         }
     }
 }

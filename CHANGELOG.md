@@ -4,6 +4,13 @@ Los cambios significativos se documentan aquí siguiendo el formato [Keep a Chan
 
 ## [0.1.0] — Sin publicar
 
+### R-023 · Sistema de temas
+- `Theme` struct en `Luna-config/src/themes.rs` con 21 campos de color como `[f32; 4]`
+- 4 temas built-in: `luna` (default), `dracula`, `catppuccin-mocha`, `tokyo-night`
+- Carga desde `~/.config/Luna/themes/<name>.toml` con override parcial sobre el built-in
+- `theme = "nombre"` en `config.toml`; `Ctrl+,` recarga tema + config en caliente
+- Clear color del renderer ahora dinámico vía `Renderer::set_clear_color`
+
 ### R-025 · Ctrl+, abre config en $EDITOR
 - `Ctrl+,` ahora recarga config Y envía `$EDITOR <config_path>\r` al PTY activo
 - Detecta `$EDITOR` → `$VISUAL` → fallback OS (`open` macOS, `notepad` Windows, `xdg-open` Linux)
