@@ -282,6 +282,21 @@ pub fn handle_keyboard(
             }
             Some(Action::ReloadConfig) => {
                 state.config.reload();
+                if let Some(config_path) = luna_config::Config::config_path() {
+                    let editor = std::env::var("EDITOR")
+                        .or_else(|_| std::env::var("VISUAL"))
+                        .unwrap_or_else(|_| {
+                            #[cfg(target_os = "macos")]
+                            { "open".to_string() }
+                            #[cfg(target_os = "windows")]
+                            { "notepad".to_string() }
+                            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                            { "xdg-open".to_string() }
+                        });
+                    let cmd = format!("{} {}\r", editor, config_path.display());
+                    let pane = active_pane_mut(panes, tab_bar);
+                    let _ = pane.pty_session.pty.write(cmd.as_bytes());
+                }
                 return PostKeyAction::FontChange(state.config.font_size);
             }
             None => {

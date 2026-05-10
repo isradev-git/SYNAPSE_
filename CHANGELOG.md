@@ -4,6 +4,10 @@ Los cambios significativos se documentan aquí siguiendo el formato [Keep a Chan
 
 ## [0.1.0] — Sin publicar
 
+### R-025 · Ctrl+, abre config en $EDITOR
+- `Ctrl+,` ahora recarga config Y envía `$EDITOR <config_path>\r` al PTY activo
+- Detecta `$EDITOR` → `$VISUAL` → fallback OS (`open` macOS, `notepad` Windows, `xdg-open` Linux)
+
 ### R-016 · vttest — Conformidad VT100/VT220
 - `DECSTBM` (`CSI r`): scroll region configurable; cursor homes al activar
 - `SU`/`SD` (`CSI S`/`T`): scroll hacia arriba/abajo dentro de la región

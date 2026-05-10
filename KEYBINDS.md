@@ -67,7 +67,7 @@ Todos los atajos son personalizables via `~/.config/Luna/config.toml`.
 
 | Atajo                  | Acción                        |
 |------------------------|-------------------------------|
-| Ctrl+,                 | Recargar configuración        |
+| Ctrl+,                 | Recargar config + abrir en $EDITOR |
 
 ## Personalización
 

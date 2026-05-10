@@ -356,14 +356,13 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ---
 
-### R-025 · Ctrl+, abre editor de config
+### R-025 · Ctrl+, abre editor de config ✓
 **Problema:** `proyecto.md` dice "abrir config en editor". Código: recarga silenciosa. Discrepancia.
 
-- [ ] En `keyboard.rs` / acción `ReloadConfig`: además de recargar, abrir el archivo en editor:
-  - Detectar `$EDITOR` o `$VISUAL`
-  - Fallback: `xdg-open` (Linux), `open` (macOS), `notepad` (Windows)
-  - Enviar el comando como input al PTY activo: `$EDITOR ~/.config/Luna/config.toml\r`
-- [ ] O bien: mantener solo recarga silenciosa y documentar correctamente (decisión de diseño)
+- [x] En `keyboard.rs` / acción `ReloadConfig`: además de recargar, abrir el archivo en editor:
+  - [x] Detectar `$EDITOR` o `$VISUAL`
+  - [x] Fallback: `xdg-open` (Linux), `open` (macOS), `notepad` (Windows)
+  - [x] Enviar el comando como input al PTY activo: `$EDITOR ~/.config/Luna/config.toml\r`
 
 **Verificar:** `Ctrl+,` abre el config en `$EDITOR` dentro de la terminal.
 
