@@ -192,6 +192,7 @@ impl Renderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_glyph_instance(
         &mut self,
         instances: &mut Vec<CellInstance>,
@@ -227,6 +228,7 @@ impl Renderer {
     /// Groups consecutive same-style non-space cells into runs, shapes each run as a
     /// unit so the font's GSUB rules can apply ligature substitutions, then maps
     /// the resulting glyphs back to cell positions.
+    #[allow(clippy::type_complexity)]
     fn build_ligature_instances(
         &mut self,
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
@@ -309,6 +311,7 @@ impl Renderer {
         self.render_instances(&instances, ui_rects);
     }
 
+    #[allow(clippy::type_complexity)]
     fn build_simple_instances(
         &mut self,
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
