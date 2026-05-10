@@ -89,6 +89,13 @@ Hot-reload: `Ctrl+,`
 - Startup: <200ms
 - RAM idle: <50MB
 
+## Platform scope
+
+**Active targets:** macOS (Metal) + Linux (X11/Wayland).
+**Windows:** deferred — not tested, not a priority right now.
+
+When writing platform-specific code, implement macOS + Linux paths fully. Add a `#[cfg(target_os = "windows")]` stub only if needed to keep compilation clean, but don't invest in Windows behavior.
+
 ## No network, no database
 
 Desktop app. Everything in-memory. No REST routes, no DB.

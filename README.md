@@ -14,7 +14,7 @@ Fase 10 (Calidad y Documentación) — MVP funcional con tabs, splits, búsqueda
 |---------------|-----------------------------------|
 | Lenguaje      | Rust (stable, edition 2021)       |
 | Windowing     | winit 0.30                        |
-| GPU Rendering | wgpu 22 (Vulkan/Metal/DX12)       |
+| GPU Rendering | wgpu 22 (Metal/Vulkan)            |
 | Text Shaping  | cosmic-text 0.12 + JetBrains Mono |
 | PTY           | portable-pty 0.8                  |
 | VT Parser     | vte 0.13                          |
@@ -30,23 +30,25 @@ Fase 10 (Calidad y Documentación) — MVP funcional con tabs, splits, búsqueda
 - **Búsqueda**: Ctrl+Shift+F (buffer) + Ctrl+R (historial)
 - **Fuente dinámica**: Ctrl+=/-/0 en runtime
 - **Config TOML**: ~/.config/Luna/config.toml con keybinds personalizables
-- **Multiplataforma**: Linux (X11/Wayland), macOS (Metal), Windows (DX12)
+- **Plataformas**: macOS (Metal) y Linux (X11/Wayland) — Windows en desarrollo futuro
 
 ## Instalación rápida
 
 ```sh
-# Desde source
+# Desde source (macOS / Linux)
 git clone https://github.com/Luna/Luna.git
 cd Luna
 cargo build --release -p Luna-app
 ./target/release/luna
-
-# Linux (precompilado)
-curl -fsSL https://github.com/Luna/Luna/releases/latest/download/Luna-app-installer.sh | sh
-
-# macOS (Homebrew)
-brew install Luna/Luna/luna
 ```
+
+> **Linux:** requiere dependencias del sistema:
+> ```sh
+> # Ubuntu/Debian
+> sudo apt install libx11-dev libxkbcommon-dev libwayland-dev libxrandr-dev libxi-dev
+> # Fedora
+> sudo dnf install libX11-devel libxkbcommon-devel wayland-devel
+> ```
 
 ## Documentación
 

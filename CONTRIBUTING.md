@@ -1,5 +1,10 @@
 # Contributing to Luna
 
+## Plataformas soportadas
+
+**Activo:** macOS (Metal) + Linux (X11/Wayland).
+**Windows:** no soportado actualmente — contribuciones aceptadas pero sin garantía de mantenimiento.
+
 ## Configuración del entorno
 
 ```sh

@@ -239,18 +239,22 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 ### R-017 · Repositorio GitHub real + CI activo
 **Problema:** workflows escritos pero sin repo real. T-045 pendiente.
 
+> **Scope:** macOS + Linux. Windows runner diferido.
+
 - [ ] Crear repositorio en GitHub (público o privado)
 - [ ] Push inicial del código
-- [ ] Verificar que `ci.yml` pasa en los 3 runners (ubuntu, macos, windows)
-- [ ] Crear primer tag `v0.1.0` y verificar que `release.yml` produce binarios
+- [ ] Verificar que `ci.yml` pasa en runners ubuntu + macos
+- [ ] Crear primer tag `v0.1.0` y verificar que `release.yml` produce binarios (macOS + Linux)
 - [ ] Subir binarios a GitHub Releases
 
-**Verificar:** GitHub Actions verde en los 3 OS. Release con 5 binarios descargables.
+**Verificar:** GitHub Actions verde en ubuntu y macos. Release con binarios macOS + Linux descargables.
 
 ---
 
 ### R-018 · Firma de binarios
-**Problema:** sin firma, macOS muestra "desarrollador no verificado" y Windows SmartScreen bloquea.
+**Problema:** sin firma, macOS muestra "desarrollador no verificado".
+
+> **Scope:** macOS + Linux. Windows (SmartScreen/Authenticode) diferido.
 
 **macOS:**
 - [ ] Obtener Apple Developer Certificate (99$/año)
@@ -258,29 +262,25 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 - [ ] Añadir paso de notarización: `xcrun notarytool submit` + `xcrun stapler staple`
 - [ ] Documentar en `CONTRIBUTING.md` requisitos para builds firmados
 
-**Windows:**
-- [ ] Obtener Code Signing Certificate EV (DigiCert / Sectigo, ~300$/año)
-- [ ] En `build/build-win.ps1`: añadir `signtool sign` tras compilar
-- [ ] Verificar que SmartScreen no bloquea el instalador
-
 **Linux:**
 - [ ] Crear clave GPG para el proyecto
 - [ ] En `release.yml`: firmar `.deb`, `.rpm`, AppImage con GPG
 - [ ] Publicar clave pública en keyserver
 
-**Verificar:** instalar en macOS real sin warnings. Instalar en Windows real sin SmartScreen.
+**Verificar:** instalar en macOS real sin warnings. Paquetes Linux con firma GPG verificable.
 
 ---
 
 ### R-019 · Tests en OS reales
 **Problema:** T-042/043/044: sin validación en hardware real.
 
+> **Scope:** macOS + Linux. Windows diferido.
+
 - [ ] macOS (Apple Silicon y/o Intel): Metal renderer, fuentes del sistema, PTY, resize
-- [ ] Windows 10/11: DX12 renderer, cmd.exe y PowerShell, instalador WiX, PATH
 - [ ] Ubuntu 22.04 LTS: X11 y Wayland, paquetes .deb y AppImage
 - [ ] Para cada fallo: fix + regresión test
 
-**Verificar:** app arranca, muestra terminal funcional, splits/tabs funcionan, en los 3 OS.
+**Verificar:** app arranca, muestra terminal funcional, splits/tabs funcionan en macOS y Linux.
 
 ---
 
