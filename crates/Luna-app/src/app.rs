@@ -37,6 +37,8 @@ pub struct App {
     pub cached_blink: bool,
     pub cached_font_size: f32,
     pub cached_active_tab: usize,
+    pub frame_count: u64,
+    pub fps_last_print: std::time::Instant,
 }
 
 impl App {
@@ -103,6 +105,8 @@ impl App {
                 cached_blink: true,
                 cached_font_size: initial_font_size,
                 cached_active_tab: 0,
+                frame_count: 0,
+                fps_last_print: std::time::Instant::now(),
             },
             event_loop,
         ))

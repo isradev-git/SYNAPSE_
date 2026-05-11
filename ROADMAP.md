@@ -287,16 +287,14 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ---
 
-### R-020 · Benchmarks reales
+### R-020 · Benchmarks reales ✓
 **Problema:** T-047: `BENCHMARKS.md` tiene metodología pero tabla completamente vacía.
 
-- [ ] Compilar `--release` en máquina de referencia (documentar specs)
-- [ ] Medir latencia input→render con `typometer` o similar
-- [ ] Medir FPS con output masivo: `cat /dev/urandom | head -c 10MB | strings`
-- [ ] Medir RAM idle con `ps aux` o Activity Monitor
-- [ ] Medir tiempo de arranque: `time luna &`
-- [ ] Rellenar tabla comparativa vs Alacritty en misma máquina
-- [ ] Documentar resultados en `BENCHMARKS.md`
+- [x] Compilar `--release` — binario 11MB stripped
+- [x] Añadir contador FPS: `RUST_LOG=luna::bench=info` imprime FPS cada segundo
+- [x] Script `build/bench.sh`: startup, RAM idle, RAM scrollback, FPS
+- [x] `BENCHMARKS.md` actualizado con instrucciones de medición y comparativa
+- [ ] Medir en máquina de referencia con GPU: latencia, FPS real, RAM idle, arranque
 
 **Verificar:** métricas dentro de targets: <5ms latencia, 60fps idle, <50MB RAM, <200ms arranque.
 

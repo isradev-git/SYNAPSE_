@@ -620,6 +620,16 @@ use crate::pane_ops::create_pane;
 
 impl App {
     pub(crate) fn render(&mut self) {
+        self.frame_count += 1;
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(self.fps_last_print);
+        if elapsed >= std::time::Duration::from_secs(1) {
+            let fps = self.frame_count as f64 / elapsed.as_secs_f64();
+            tracing::info!(target: "luna::bench", "FPS: {:.1}", fps);
+            self.frame_count = 0;
+            self.fps_last_print = now;
+        }
+
         if self.state.config.cursor_blink {
             let blink_ms = self.state.config.cursor_blink_ms;
             if self.last_blink.elapsed() >= std::time::Duration::from_millis(blink_ms) {
