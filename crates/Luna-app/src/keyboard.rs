@@ -182,14 +182,21 @@ pub fn handle_keyboard(
                 let (_, pane_id) = tab_bar.new_tab();
                 let shell = state.config.shell_program.as_str();
                 let args = &state.config.shell_args;
-                panes.push(create_pane_full(
+                match create_pane_full(
                     pane_id,
                     new_cols,
                     new_rows,
                     None,
                     Some(shell),
                     args,
-                ));
+                ) {
+                    Ok(pane) => panes.push(pane),
+                    Err(e) => {
+                        tracing::warn!("Failed to spawn PTY for new tab: {}", e);
+                        tab_bar.close_tab(tab_bar.active);
+                        return PostKeyAction::None;
+                    }
+                }
                 let n = tab_bar.tabs.len();
                 ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
             }
@@ -278,14 +285,17 @@ pub fn handle_keyboard(
                         let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
                         let shell = state.config.shell_program.as_str();
                         let args = &state.config.shell_args;
-                        panes.push(create_pane_full(
+                        match create_pane_full(
                             new_pane_id,
                             pane.cols,
                             pane.rows,
                             cwd_opt,
                             Some(shell),
                             args,
-                        ));
+                        ) {
+                            Ok(new_pane) => panes.push(new_pane),
+                            Err(e) => tracing::warn!("Failed to spawn PTY for vertical split: {}", e),
+                        }
                     }
                 }
             }
@@ -303,14 +313,17 @@ pub fn handle_keyboard(
                         let cwd_opt = if cwd.is_empty() { None } else { Some(cwd) };
                         let shell = state.config.shell_program.as_str();
                         let args = &state.config.shell_args;
-                        panes.push(create_pane_full(
+                        match create_pane_full(
                             new_pane_id,
                             pane.cols,
                             pane.rows,
                             cwd_opt,
                             Some(shell),
                             args,
-                        ));
+                        ) {
+                            Ok(new_pane) => panes.push(new_pane),
+                            Err(e) => tracing::warn!("Failed to spawn PTY for horizontal split: {}", e),
+                        }
                     }
                 }
             }

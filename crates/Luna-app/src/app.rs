@@ -60,7 +60,7 @@ impl App {
                     .with_resizable(true),
             )?,
         );
-        let mut renderer = Renderer::new(window.clone());
+        let mut renderer = Renderer::new(window.clone())?;
 
         let mut layout = Layout::new();
         let size = renderer.size();
@@ -76,7 +76,7 @@ impl App {
 
         let first_tab_id = TabId(0);
         let first_pane_id = PaneId(0);
-        let first_pane = create_pane(first_pane_id, cols, rows);
+        let first_pane = create_pane(first_pane_id, cols, rows)?;
         let first_tab = Tab::new(first_tab_id, first_pane_id);
         let tab_bar = TabBar::new(first_tab);
 

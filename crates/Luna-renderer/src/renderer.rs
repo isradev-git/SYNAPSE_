@@ -24,7 +24,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: Arc<Window>) -> Self {
+    pub fn new(window: Arc<Window>) -> Result<Self, String> {
         let instance = Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -32,14 +32,22 @@ impl Renderer {
 
         let surface = instance
             .create_surface(window.clone())
-            .expect("Failed to create surface");
+            .map_err(|e| format!("Failed to create GPU surface: {}", e))?;
 
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        }))
-        .expect("Failed to find suitable GPU adapter");
+        let adapter = match pollster::block_on(instance.request_adapter(
+            &wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            },
+        )) {
+            Some(adapter) => adapter,
+            None => {
+                return Err(
+                    "No compatible GPU found. Luna requires DX12 (Windows), Metal (macOS), or Vulkan (Linux).".into(),
+                )
+            }
+        };
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
@@ -50,7 +58,7 @@ impl Renderer {
             },
             None,
         ))
-        .expect("Failed to create GPU device");
+        .map_err(|e| format!("Failed to create GPU device: {}", e))?;
 
         let device = Arc::new(device);
 
@@ -82,7 +90,7 @@ impl Renderer {
         let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
         let text = TextShaping::new();
 
-        Self {
+        Ok(Self {
             surface,
             device,
             queue,
@@ -100,7 +108,7 @@ impl Renderer {
             text,
             font_ligatures: false,
             cell_w: 0.0,
-        }
+        })
     }
 
     pub fn set_font_ligatures(&mut self, enabled: bool) {

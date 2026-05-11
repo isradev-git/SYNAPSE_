@@ -8,11 +8,11 @@ use luna_ui::{
 
 const CLOSE_BTN_W: f32 = 16.0;
 
-pub fn create_pane(id: PaneId, cols: usize, rows: usize) -> Pane {
+pub fn create_pane(id: PaneId, cols: usize, rows: usize) -> Result<Pane, String> {
     create_pane_with_cwd(id, cols, rows, None)
 }
 
-pub fn create_pane_with_cwd(id: PaneId, cols: usize, rows: usize, cwd: Option<String>) -> Pane {
+pub fn create_pane_with_cwd(id: PaneId, cols: usize, rows: usize, cwd: Option<String>) -> Result<Pane, String> {
     create_pane_full(id, cols, rows, cwd, None, &[])
 }
 
@@ -23,7 +23,7 @@ pub fn create_pane_full(
     cwd: Option<String>,
     shell_override: Option<&str>,
     shell_args: &[String],
-) -> Pane {
+) -> Result<Pane, String> {
     use luna_terminal::grid::Grid;
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -39,10 +39,9 @@ pub fn create_pane_full(
             shell_config.args = shell_args.to_vec();
         }
     }
-    let pty_handle = luna_terminal::pty::PtyHandle::spawn(cols as u16, rows as u16, &shell_config)
-        .expect("Failed to spawn PTY");
+    let pty_handle = luna_terminal::pty::PtyHandle::spawn(cols as u16, rows as u16, &shell_config)?;
     let pty_session = luna_terminal::pty::PtyHandle::start_reader(pty_handle);
-    Pane::new(id, pty_session, grid, cols, rows)
+    Ok(Pane::new(id, pty_session, grid, cols, rows))
 }
 
 pub fn find_pane(panes: &[Pane], id: PaneId) -> Option<&Pane> {
@@ -138,7 +137,14 @@ pub fn handle_tab_click(
         let new_cols = ((layout.window_width as f64 - margin * 2.0) / cell_w).max(1.0) as usize;
         let new_rows = (pane_height / cell_h).max(1.0) as usize;
         let (_, pane_id) = tab_bar.new_tab();
-        panes.push(create_pane(pane_id, new_cols, new_rows));
+        match create_pane(pane_id, new_cols, new_rows) {
+            Ok(pane) => panes.push(pane),
+            Err(e) => {
+                tracing::warn!("Failed to spawn PTY for new tab: {}", e);
+                tab_bar.close_tab(tab_bar.active);
+                return;
+            }
+        }
         // Scroll so the new active tab is visible
         let new_count = tab_bar.tabs.len();
         let (new_start, new_end, _, _) = layout.tab_visible_range(new_count, *scroll_offset);

@@ -687,8 +687,10 @@ impl App {
                     let new_pane_id = self.tab_bar.next_pane_id();
                     self.tab_bar.tabs[0].pane_tree = luna_ui::PaneTree::leaf(new_pane_id);
                     self.tab_bar.tabs[0].active_pane = new_pane_id;
-                    self.panes
-                        .push(create_pane(new_pane_id, new_cols, new_rows));
+                    match create_pane(new_pane_id, new_cols, new_rows) {
+                        Ok(pane) => self.panes.push(pane),
+                        Err(e) => tracing::warn!("Failed to spawn replacement PTY: {}", e),
+                    }
                 } else {
                     self.tab_bar.close_tab(idx);
                 }

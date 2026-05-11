@@ -92,16 +92,16 @@
                     <!--
                       Enabling the license sidecar file in the installer is a four step process:
 
-                      1. Uncomment the `Component` tag and its contents.
-                      2. Change the value for the `Source` attribute in the `File` tag to a path
-                         to the file that should be included as the license sidecar file. The path
-                         can, and probably should be, relative to this file.
-                      3. Change the value for the `Name` attribute in the `File` tag to the
-                         desired name for the file when it is installed alongside the `bin` folder
-                         in the installation directory. This can be omitted if the desired name is
-                         the same as the file name.
-                      4. Uncomment the `ComponentRef` tag with the Id attribute value of "License"
-                         further down in this file.
+                       1. Uncomment the `Component` tag and its contents.
+                       2. Change the value for the `Source` attribute in the `File` tag to a path
+                          to the file that should be included as the license sidecar file. The path
+                          can, and probably should be, relative to this file.
+                       3. Change the value for the `Name` attribute in the `File` tag to the
+                          desired name for the file when it is installed alongside the `bin` folder
+                          in the installation directory. This can be omitted if the desired name is
+                          the same as the file name.
+                       4. Uncomment the `ComponentRef` tag with the Id attribute value of "License"
+                          further down in this file.
                     -->
                     <Component Id='License' Guid='*'>
                         <File Id='LicenseFile' Name='LICENSE' DiskId='1' Source='..\..\LICENSE' KeyPath='yes'/>
@@ -129,6 +129,31 @@
                     </Directory>
                 </Directory>
             </Directory>
+
+            <!-- Start Menu shortcut -->
+            <Directory Id='ProgramMenuFolder'>
+                <Directory Id='AppProgramMenuFolder' Name='Luna'>
+                    <Component Id='StartMenuShortcut' Guid='*'>
+                        <Shortcut
+                            Id='StartMenuShortcutLink'
+                            Name='Luna'
+                            Description='GPU-accelerated terminal emulator'
+                            Target='[Bin]luna.exe'
+                            WorkingDirectory='APPLICATIONFOLDER'/>
+                        <RegistryValue
+                            Root='HKCU'
+                            Key='Software\Luna'
+                            Name='installed'
+                            Type='integer'
+                            Value='1'
+                            KeyPath='yes'/>
+                        <RemoveFolder
+                            Id='RemoveAppProgramMenuFolder'
+                            Directory='AppProgramMenuFolder'
+                            On='uninstall'/>
+                    </Component>
+                </Directory>
+            </Directory>
         </Directory>
 
         <Feature
@@ -148,6 +173,8 @@
             <ComponentRef Id='License'/>
 
             <ComponentRef Id='binary0'/>
+
+            <ComponentRef Id='StartMenuShortcut'/>
 
             <Feature
                 Id='Environment'
