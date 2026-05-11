@@ -60,7 +60,7 @@
 
     <Product
         Id='*'
-        Name='Luna-app'
+        Name='Luna'
         UpgradeCode='15DE80B0-003D-4204-A483-C981A0EF3935'
         Manufacturer='Luna Team'
         Language='1033'
@@ -83,11 +83,11 @@
             DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
 
         <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
-        <Property Id='DiskPrompt' Value='Luna-app Installation'/>
+        <Property Id='DiskPrompt' Value='Luna Installation'/>
 
         <Directory Id='TARGETDIR' Name='SourceDir'>
             <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
-                <Directory Id='APPLICATIONFOLDER' Name='Luna-app'>
+                <Directory Id='APPLICATIONFOLDER' Name='Luna'>
                     
                     <!--
                       Enabling the license sidecar file in the installer is a four step process:
@@ -103,11 +103,9 @@
                       4. Uncomment the `ComponentRef` tag with the Id attribute value of "License"
                          further down in this file.
                     -->
-                    <!--
                     <Component Id='License' Guid='*'>
-                        <File Id='LicenseFile' Name='ChangeMe' DiskId='1' Source='C:\Path\To\File' KeyPath='yes'/>
+                        <File Id='LicenseFile' Name='LICENSE' DiskId='1' Source='..\..\LICENSE' KeyPath='yes'/>
                     </Component>
-                    -->
 
                     <Directory Id='Bin' Name='bin'>
                         <Component Id='Path' Guid='B68D0359-145D-4B73-8DBD-EE5F5587EF08' KeyPath='yes'>
@@ -147,7 +145,7 @@
               Uncomment the following `ComponentRef` tag to add the license
               sidecar file to the installer.
             -->
-            <!--<ComponentRef Id='License'/>-->
+            <ComponentRef Id='License'/>
 
             <ComponentRef Id='binary0'/>
 
@@ -173,7 +171,7 @@
         <!--<Icon Id='ProductICO' SourceFile='wix\Product.ico'/>-->
         <!--<Property Id='ARPPRODUCTICON' Value='ProductICO' />-->
 
-        <Property Id='ARPHELPLINK' Value='https://github.com/Luna/Luna'/>
+        <Property Id='ARPHELPLINK' Value='https://github.com/isradev-git/luna'/>
         
         <UI>
             <UIRef Id='WixUI_FeatureTree'/>
