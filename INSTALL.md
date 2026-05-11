@@ -1,115 +1,158 @@
 # Instalación de Luna
 
-Luna es un emulador de terminal GPU-accelerated disponible para Linux, macOS y Windows.
+Luna es un emulador de terminal GPU-accelerated para Linux, macOS y Windows.
 
 ## Contenido
 
-- [Binarios precompilados](#binarios-precompilados-recomendado)
-  - [Linux](#linux)
-  - [macOS](#macos)
-  - [Windows](#windows)
+- [macOS](#macos)
+- [Linux](#linux)
+- [Windows](#windows)
 - [Compilar desde source](#compilar-desde-source)
 - [Configuración inicial](#configuración-inicial)
 
 ---
 
-## Binarios precompilados (recomendado)
+## macOS
 
-### Linux
+Luna tiene binarios para **Apple Silicon (M1/M2/M3/M4)** e **Intel** — el proceso es idéntico en ambos.
 
-**Installer automático (x86_64):**
+### Opción A — Installer automático (recomendado)
+
+Abre Terminal y ejecuta:
+
 ```sh
-curl -fsSL https://github.com/isradev-git/luna/releases/latest/download/luna-installer.sh | sh
-```
-Instala el binario en `~/.cargo/bin/luna` y lo añade al PATH.
-
-**Descarga manual:**
-1. Ir a [Releases](https://github.com/isradev-git/luna/releases/latest)
-2. Descargar `luna-x86_64-unknown-linux-gnu.tar.gz`
-3. Extraer e instalar:
-```sh
-tar xzf luna-x86_64-unknown-linux-gnu.tar.gz
-sudo mv luna /usr/local/bin/luna
-luna
+curl -fsSL https://github.com/isradev-git/luna/releases/latest/download/Luna-app-installer.sh | sh
 ```
 
-**Dependencias del sistema (requeridas):**
-```sh
-# Ubuntu / Debian
-sudo apt install libx11-6 libxkbcommon0 libwayland-client0
+El script detecta tu arquitectura, descarga el binario correcto y lo instala en `~/.cargo/bin/luna`.
+Como se ejecuta vía `curl | sh`, **macOS no le añade el flag de cuarentena** y Gatekeeper no interviene.
 
-# Fedora / RHEL
-sudo dnf install libX11 libxkbcommon wayland-libs-client
+Asegúrate de que `~/.cargo/bin` está en tu PATH. Si no lo está, añade al final de `~/.zshrc`:
+
+```sh
+export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
----
+### Opción B — Descarga manual desde Releases
 
-### macOS
+1. Ve a [github.com/isradev-git/luna/releases/latest](https://github.com/isradev-git/luna/releases/latest)
+2. Descarga el archivo para tu chip:
+   - **Apple Silicon**: `Luna-app-aarch64-apple-darwin.tar.xz`
+   - **Intel**: `Luna-app-x86_64-apple-darwin.tar.xz`
+3. En Terminal, extrae e instala:
 
-**Installer automático (Apple Silicon y Intel):**
 ```sh
-curl -fsSL https://github.com/isradev-git/luna/releases/latest/download/luna-installer.sh | sh
+# Apple Silicon
+tar xJf Luna-app-aarch64-apple-darwin.tar.xz
+sudo install -m755 Luna-app-aarch64-apple-darwin/luna /usr/local/bin/luna
+
+# Intel
+tar xJf Luna-app-x86_64-apple-darwin.tar.xz
+sudo install -m755 Luna-app-x86_64-apple-darwin/luna /usr/local/bin/luna
 ```
 
-**Descarga manual:**
-1. Ir a [Releases](https://github.com/isradev-git/luna/releases/latest)
-2. Descargar el tarball para tu arquitectura:
-   - Apple Silicon (M1/M2/M3): `luna-aarch64-apple-darwin.tar.gz`
-   - Intel: `luna-x86_64-apple-darwin.tar.gz`
-3. Extraer e instalar:
-```sh
-tar xzf luna-*.tar.gz
-sudo mv luna /usr/local/bin/luna
-luna
-```
-
-> **Nota:** Si macOS muestra "desarrollador no verificado", ejecutar:
+> **Si usaste el navegador para descargar** (Safari, Chrome…), macOS marca el archivo con un flag de cuarentena. Quítalo antes de ejecutar:
 > ```sh
 > xattr -dr com.apple.quarantine /usr/local/bin/luna
 > ```
+> Si descargaste con curl en Terminal, esto no es necesario.
+
+### Opción C — Compilar desde source
+
+Sin cuarentena, sin advertencias. Ver [Compilar desde source → macOS](#macos-1).
 
 ---
 
-### Windows
+## Linux
+
+El binario precompilado es un ejecutable `x86_64` enlazado dinámicamente contra **glibc**. Funciona en cualquier distribución moderna x86_64 con las dependencias de runtime instaladas.
+
+> **Alpine Linux y NixOS:** el binario glibc no es compatible. Usa la opción de [compilar desde source](#linux-1).
+
+### Opción A — Installer automático
+
+```sh
+curl -fsSL https://github.com/isradev-git/luna/releases/latest/download/Luna-app-installer.sh | sh
+```
+
+Instala en `~/.cargo/bin/luna`. Añade `~/.cargo/bin` al PATH si no lo tienes:
+
+```sh
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+### Opción B — Descarga manual
+
+```sh
+curl -LO https://github.com/isradev-git/luna/releases/latest/download/Luna-app-x86_64-unknown-linux-gnu.tar.xz
+tar xJf Luna-app-x86_64-unknown-linux-gnu.tar.xz
+sudo install -m755 Luna-app-x86_64-unknown-linux-gnu/luna /usr/local/bin/luna
+luna
+```
+
+### Dependencias de runtime
+
+Necesarias para ejecutar el binario precompilado. Instálalas si Luna falla al arrancar.
+
+```sh
+# Ubuntu / Debian / Linux Mint / Pop!_OS
+sudo apt install libx11-6 libxkbcommon0 libwayland-client0 libxrandr2 libxi6
+
+# Fedora / RHEL / Rocky Linux / AlmaLinux
+sudo dnf install libX11 libxkbcommon wayland-libs-client libXrandr libXi
+
+# Arch Linux / Manjaro / EndeavourOS
+sudo pacman -S libx11 libxkbcommon wayland libxrandr libxi
+
+# openSUSE Tumbleweed / Leap
+sudo zypper install libX11-6 libxkbcommon0 libwayland-client0 libXrandr2 libXi6
+```
+
+Luna usa GPU vía Vulkan. En la mayoría de sistemas el driver ya incluye el loader de Vulkan. Si Luna no arranca con error de GPU:
+
+```sh
+# Ubuntu / Debian
+sudo apt install libvulkan1
+
+# Fedora
+sudo dnf install vulkan-loader
+
+# Arch
+sudo pacman -S vulkan-icd-loader
+```
+
+---
+
+## Windows
 
 **Installer PowerShell:**
 ```powershell
-irm https://github.com/isradev-git/luna/releases/latest/download/luna-installer.ps1 | iex
+irm https://github.com/isradev-git/luna/releases/latest/download/Luna-app-installer.ps1 | iex
 ```
 
-**Instalador MSI (recomendado para entornos corporativos):**
-1. Ir a [Releases](https://github.com/isradev-git/luna/releases/latest)
-2. Descargar `luna-x86_64-pc-windows-msvc.msi`
-3. Ejecutar el `.msi` y seguir el asistente de instalación
-4. El instalador añade `luna` al PATH del sistema automáticamente
+**Instalador MSI** (recomendado para entornos corporativos):
+1. Descargar `Luna-app-x86_64-pc-windows-msvc.msi` desde [Releases](https://github.com/isradev-git/luna/releases/latest)
+2. Ejecutar el `.msi` y seguir el asistente
+3. El instalador añade `luna` al PATH del sistema automáticamente
 
-**Descarga manual (ZIP):**
-1. Descargar `luna-x86_64-pc-windows-msvc.zip` desde Releases
+**ZIP manual:**
+1. Descargar `Luna-app-x86_64-pc-windows-msvc.zip` desde Releases
 2. Extraer `luna.exe` a una carpeta en tu PATH (por ejemplo `C:\tools\`)
+
+> **SmartScreen:** como el binario aún no tiene certificado de firma, Windows puede mostrar una advertencia la primera vez. Haz clic en "Más información" → "Ejecutar de todas formas".
 
 ---
 
 ## Compilar desde source
 
-Requiere [Rust stable](https://rustup.rs/) (1.75+).
-
-### Linux
-
-```sh
-# Instalar dependencias de desarrollo
-sudo apt install libx11-dev libxkbcommon-dev libwayland-dev libxrandr-dev libxi-dev mold
-
-# Clonar y compilar
-git clone https://github.com/isradev-git/luna.git
-cd luna
-cargo build --release -p Luna-app
-./target/release/luna
-```
+Requiere [Rust stable](https://rustup.rs/) 1.75+.
 
 ### macOS
 
+No requiere dependencias adicionales. Xcode Command Line Tools es suficiente.
+
 ```sh
-# Xcode Command Line Tools (si no están instalados)
+# Instalar Xcode CLT si no lo tienes
 xcode-select --install
 
 git clone https://github.com/isradev-git/luna.git
@@ -118,12 +161,44 @@ cargo build --release -p Luna-app
 ./target/release/luna
 ```
 
+El binario compilado localmente no tiene flag de cuarentena — Gatekeeper no interviene.
+
+### Linux
+
+Instala las dependencias de desarrollo antes de compilar:
+
+```sh
+# Ubuntu / Debian / Linux Mint / Pop!_OS
+sudo apt install libx11-dev libxkbcommon-dev libwayland-dev libxrandr-dev libxi-dev mold
+
+# Fedora / RHEL / Rocky Linux / AlmaLinux
+sudo dnf install libX11-devel libxkbcommon-devel wayland-devel libXrandr-devel libXi-devel
+
+# Arch Linux / Manjaro / EndeavourOS
+sudo pacman -S libx11 libxkbcommon wayland libxrandr libxi mold
+
+# openSUSE Tumbleweed / Leap
+sudo zypper install libX11-devel libxkbcommon-devel wayland-devel libXrandr-devel libXi-devel
+
+# Alpine Linux
+sudo apk add libx11-dev libxkbcommon-dev wayland-dev libxrandr-dev libxi-dev
+
+# NixOS
+nix-shell -p libX11 libxkbcommon wayland libXrandr libXi
+```
+
+```sh
+git clone https://github.com/isradev-git/luna.git
+cd luna
+cargo build --release -p Luna-app
+./target/release/luna
+```
+
 ### Windows
 
-```powershell
-# Requiere Visual Studio Build Tools o Visual Studio con componente C++
-# https://visualstudio.microsoft.com/visual-cpp-build-tools/
+Requiere [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) con el componente "Desarrollo para el escritorio con C++".
 
+```powershell
 git clone https://github.com/isradev-git/luna.git
 cd luna
 cargo build --release -p Luna-app
@@ -134,7 +209,10 @@ cargo build --release -p Luna-app
 
 ## Configuración inicial
 
-Al primer arranque, Luna crea `~/.config/Luna/config.toml` (Linux/macOS) o `%APPDATA%\Luna\config.toml` (Windows) con valores por defecto.
+Al primer arranque Luna crea el archivo de configuración con valores por defecto:
+
+- **Linux / macOS**: `~/.config/Luna/config.toml`
+- **Windows**: `%APPDATA%\Luna\config.toml`
 
 ### Ejemplo de config.toml
 

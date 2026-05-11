@@ -39,10 +39,10 @@ Fase 10 (Calidad y Documentación) — MVP funcional con tabs, splits, búsqueda
 
 ```sh
 # Linux / macOS
-curl -fsSL https://github.com/isradev-git/luna/releases/latest/download/luna-installer.sh | sh
+curl -fsSL https://github.com/isradev-git/luna/releases/latest/download/Luna-app-installer.sh | sh
 
 # Windows (PowerShell)
-irm https://github.com/isradev-git/luna/releases/latest/download/luna-installer.ps1 | iex
+irm https://github.com/isradev-git/luna/releases/latest/download/Luna-app-installer.ps1 | iex
 ```
 
 También disponible como `.msi` (Windows) y tarballs en la [página de releases](https://github.com/isradev-git/luna/releases/latest).
