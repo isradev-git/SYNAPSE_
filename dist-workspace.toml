@@ -13,4 +13,4 @@ targets = [
 ]
 hosting = "github"
 pr-run-mode = "plan"
-allow-dirty = ["ci"]
+allow-dirty = ["ci", "msi"]
