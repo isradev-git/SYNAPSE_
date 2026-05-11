@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Luna-app"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "Luna-config",
  "Luna-renderer",
@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "Luna-config"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "toml",
@@ -30,7 +30,7 @@ dependencies = [
 
 [[package]]
 name = "Luna-renderer"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "Luna-terminal"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bitflags 2.11.1",
  "portable-pty",
@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "Luna-ui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "Luna-renderer",
  "Luna-terminal",

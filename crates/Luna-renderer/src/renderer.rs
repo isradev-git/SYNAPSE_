@@ -25,10 +25,15 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(window: Arc<Window>) -> Result<Self, String> {
-        let instance = Instance::new(wgpu::InstanceDescriptor {
+        let instance_desc = wgpu::InstanceDescriptor {
+            #[cfg(target_os = "windows")]
+            backends: wgpu::Backends::DX12 | wgpu::Backends::DX11 | wgpu::Backends::VULKAN,
+            #[cfg(not(target_os = "windows"))]
             backends: wgpu::Backends::all(),
             ..Default::default()
-        });
+        };
+
+        let instance = Instance::new(instance_desc);
 
         let surface = instance
             .create_surface(window.clone())
@@ -42,12 +47,41 @@ impl Renderer {
             },
         )) {
             Some(adapter) => adapter,
-            None => {
-                return Err(
-                    "No compatible GPU found. Luna requires DX12 (Windows), Metal (macOS), or Vulkan (Linux).".into(),
-                )
-            }
+            None => match pollster::block_on(instance.request_adapter(
+                &wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::LowPower,
+                    compatible_surface: Some(&surface),
+                    force_fallback_adapter: true,
+                },
+            )) {
+                Some(fallback) => {
+                    tracing::warn!("Using software/fallback GPU adapter. Performance may be reduced.");
+                    fallback
+                }
+                None => {
+                    let msg = format!(
+                        "No compatible GPU found.\n\
+                         Luna requires DirectX 12 (Windows), Metal (macOS), or Vulkan (Linux).\n\
+                         On Windows, ensure DirectX 12 compatible drivers are installed.\n\
+                         On VMs, enable 3D acceleration or GPU passthrough.\n\
+                         Log: {}",
+                        std::env::temp_dir()
+                            .join("Luna")
+                            .join("luna.log")
+                            .display()
+                    );
+                    return Err(msg);
+                }
+            },
         };
+
+        let adapter_info = adapter.get_info();
+        tracing::info!(
+            "GPU adapter: {} ({:?} backend), driver: {}",
+            adapter_info.name,
+            adapter_info.backend,
+            adapter_info.driver_info
+        );
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {

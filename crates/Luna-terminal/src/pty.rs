@@ -29,7 +29,7 @@ impl PtyHandle {
 
         let pair = pty_system
             .openpty(size)
-            .map_err(|e| format!("PTY open error: {}", e))?;
+            .map_err(|e| format!("PTY open error: {}. Luna requires ConPTY (Windows 10 1809+) or a POSIX-compatible PTY.", e))?;
 
         let mut cmd = CommandBuilder::new(&shell.program);
         if !shell.args.is_empty() {
@@ -45,7 +45,10 @@ impl PtyHandle {
         let child = pair
             .slave
             .spawn_command(cmd)
-            .map_err(|e| format!("PTY spawn error: {}", e))?;
+            .map_err(|e| format!(
+                "PTY spawn error: {} (shell: {}). Verify the shell exists and is executable.",
+                e, shell.program
+            ))?;
 
         let reader = pair
             .master

@@ -3,31 +3,28 @@ struct VertexOutput {
     @location(0) @interpolate(flat) color: vec4<f32>,
 }
 
-struct UIRect {
-    pos: vec2<f32>,
-    size: vec2<f32>,
-    color: vec4<f32>,
-}
-
 struct ScreenUniform {
     screen_size: vec2<f32>,
 }
 
 @group(0) @binding(0) var<uniform> screen: ScreenUniform;
 
+fn corner_for_index(idx: u32) -> vec2<f32> {
+    if (idx == 0u) { return vec2(0.0, 0.0); }
+    if (idx == 1u) { return vec2(1.0, 0.0); }
+    if (idx == 2u) { return vec2(1.0, 1.0); }
+    return vec2(0.0, 1.0);
+}
+
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
-    @location(0) rect: UIRect,
+    @location(0) pos: vec2<f32>,
+    @location(1) size: vec2<f32>,
+    @location(2) color: vec4<f32>,
 ) -> VertexOutput {
-    let corners = array<vec2<f32>, 4>(
-        vec2(0.0, 0.0),
-        vec2(1.0, 0.0),
-        vec2(1.0, 1.0),
-        vec2(0.0, 1.0),
-    );
-    let corner = corners[vertex_index];
-    let pixel_pos = rect.pos + corner * rect.size;
+    let corner = corner_for_index(vertex_index);
+    let pixel_pos = pos + corner * size;
 
     var out: VertexOutput;
     out.position = vec4(
@@ -36,7 +33,7 @@ fn vs_main(
         0.0,
         1.0,
     );
-    out.color = rect.color;
+    out.color = color;
     return out;
 }
 

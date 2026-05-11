@@ -5,14 +5,6 @@ struct VertexOutput {
     @location(2) @interpolate(flat) bg_color: vec4<f32>,
 }
 
-struct CellInstance {
-    cell_pos: vec2<f32>,
-    cell_size: vec2<f32>,
-    uv_rect: vec4<f32>,
-    fg_color: vec4<f32>,
-    bg_color: vec4<f32>,
-}
-
 struct ScreenUniform {
     screen_size: vec2<f32>,
 }
@@ -21,20 +13,25 @@ struct ScreenUniform {
 @group(0) @binding(1) var atlas_sampler: sampler;
 @group(1) @binding(0) var<uniform> screen: ScreenUniform;
 
+fn corner_for_index(idx: u32) -> vec2<f32> {
+    if (idx == 0u) { return vec2(0.0, 0.0); }
+    if (idx == 1u) { return vec2(1.0, 0.0); }
+    if (idx == 2u) { return vec2(1.0, 1.0); }
+    return vec2(0.0, 1.0);
+}
+
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
-    @location(0) instance: CellInstance,
+    @location(0) cell_pos: vec2<f32>,
+    @location(1) cell_size: vec2<f32>,
+    @location(2) uv_rect: vec4<f32>,
+    @location(3) fg_color: vec4<f32>,
+    @location(4) bg_color: vec4<f32>,
 ) -> VertexOutput {
-    let corners = array<vec2<f32>, 4>(
-        vec2(0.0, 0.0),
-        vec2(1.0, 0.0),
-        vec2(1.0, 1.0),
-        vec2(0.0, 1.0),
-    );
-    let corner = corners[vertex_index];
+    let corner = corner_for_index(vertex_index);
 
-    let pixel_pos = instance.cell_pos + corner * instance.cell_size;
+    let pixel_pos = cell_pos + corner * cell_size;
 
     var out: VertexOutput;
     out.position = vec4(
@@ -43,11 +40,11 @@ fn vs_main(
         0.0,
         1.0,
     );
-    let uv_top_left = instance.uv_rect.xy;
-    let uv_size = instance.uv_rect.zw - instance.uv_rect.xy;
+    let uv_top_left = uv_rect.xy;
+    let uv_size = uv_rect.zw - uv_rect.xy;
     out.uv = uv_top_left + corner * uv_size;
-    out.fg_color = instance.fg_color;
-    out.bg_color = instance.bg_color;
+    out.fg_color = fg_color;
+    out.bg_color = bg_color;
     return out;
 }
 
