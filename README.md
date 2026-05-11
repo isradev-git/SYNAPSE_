@@ -2,6 +2,9 @@
 
 > Terminal emulator GPU-accelerated · Rust · wgpu · Multiplataforma
 
+[![CI](https://github.com/isradev-git/luna/actions/workflows/ci.yml/badge.svg)](https://github.com/isradev-git/luna/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/isradev-git/luna)](https://github.com/isradev-git/luna/releases/latest)
+
 Luna es un emulador de terminal moderno con rendering por GPU (Vulkan/Metal/DirectX 12), soporte completo VT100/xterm-256color, paneles divididos, tabs, y configuración en TOML.
 
 ## Estado
@@ -30,25 +33,21 @@ Fase 10 (Calidad y Documentación) — MVP funcional con tabs, splits, búsqueda
 - **Búsqueda**: Ctrl+Shift+F (buffer) + Ctrl+R (historial)
 - **Fuente dinámica**: Ctrl+=/-/0 en runtime
 - **Config TOML**: ~/.config/Luna/config.toml con keybinds personalizables
-- **Plataformas**: macOS (Metal) y Linux (X11/Wayland) — Windows en desarrollo futuro
+- **Plataformas**: macOS (Metal), Linux (X11/Wayland) y Windows (DirectX 12)
 
 ## Instalación rápida
 
 ```sh
-# Desde source (macOS / Linux)
-git clone https://github.com/Luna/Luna.git
-cd Luna
-cargo build --release -p Luna-app
-./target/release/luna
+# Linux / macOS
+curl -fsSL https://github.com/isradev-git/luna/releases/latest/download/luna-installer.sh | sh
+
+# Windows (PowerShell)
+irm https://github.com/isradev-git/luna/releases/latest/download/luna-installer.ps1 | iex
 ```
 
-> **Linux:** requiere dependencias del sistema:
-> ```sh
-> # Ubuntu/Debian
-> sudo apt install libx11-dev libxkbcommon-dev libwayland-dev libxrandr-dev libxi-dev
-> # Fedora
-> sudo dnf install libX11-devel libxkbcommon-devel wayland-devel
-> ```
+También disponible como `.msi` (Windows) y tarballs en la [página de releases](https://github.com/isradev-git/luna/releases/latest).
+
+Ver [INSTALL.md](INSTALL.md) para instrucciones detalladas por plataforma, compilar desde source, y configuración inicial.
 
 ## Documentación
 
