@@ -4,7 +4,7 @@ use luna_config::Theme;
 use luna_renderer::{renderer::Renderer, ui::UIRect};
 use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
 
-use crate::{pane_ops::find_pane, search::build_match_set, state::AppState};
+use crate::{app::CellData, pane_ops::find_pane, search::build_match_set, state::AppState};
 
 const TAB_FONT_SIZE: f32 = 12.0;
 
@@ -203,20 +203,44 @@ pub fn render_frame(
     cell_w: f32,
     cell_h: f32,
     cursor_blink_on: bool,
+    cached_cell_data: &mut CellData,
+    cached_ui_rects: &mut Vec<UIRect>,
+    cached_blink: &mut bool,
+    cached_font_size: &mut f32,
+    cached_active_tab: &mut usize,
 ) -> Vec<PaneId> {
     renderer.set_font_ligatures(state.config.font_ligatures);
     let font_size = state.font_size;
     let mut exited_panes: Vec<PaneId> = Vec::new();
+    let mut pty_received = false;
 
     for pane in panes.iter_mut() {
         loop {
             match pane.pty_session.rx.try_recv() {
-                Ok(Some(data)) => pane.processor.process(&data),
+                Ok(Some(data)) => {
+                    pane.processor.process(&data);
+                    pty_received = true;
+                    // Write any kitty protocol responses back to PTY
+                    let responses = pane.processor.drain_kitty_responses();
+                    for resp in responses {
+                        let _ = pane.pty_session.pty.write(&resp);
+                    }
+                }
                 Ok(None) => {
+                    let responses = pane.processor.drain_kitty_responses();
+                    for resp in responses {
+                        let _ = pane.pty_session.pty.write(&resp);
+                    }
                     exited_panes.push(pane.id);
                     break;
                 }
-                Err(_) => break,
+                Err(_) => {
+                    let responses = pane.processor.drain_kitty_responses();
+                    for resp in responses {
+                        let _ = pane.pty_session.pty.write(&resp);
+                    }
+                    break;
+                }
             }
         }
     }
@@ -234,336 +258,360 @@ pub fn render_frame(
         }
     }
 
-    let active_pane_id = tab_bar.active_tab().active_pane;
-    let pane_tree = &tab_bar.active_tab().pane_tree;
+    let any_grid_dirty = panes.iter().any(|p| p.grid.borrow().has_frame_dirty());
+    let font_changed = (*cached_font_size - font_size).abs() > 0.01;
+    let blink_changed = *cached_blink != cursor_blink_on;
+    let tab_changed = tab_bar.active != *cached_active_tab;
+    let ui_active = state.selecting || state.search.active || state.history_search.active;
+    let first_frame = cached_cell_data.is_empty();
 
-    let pane_area = layout.pane_area();
-    let margin = layout.pane_margin();
-    let pane_rect = luna_ui::PaneRect {
-        x: pane_area.0,
-        y: pane_area.1,
-        w: pane_area.2,
-        h: pane_area.3,
-    };
+    let needs_rebuild = pty_received
+        || any_grid_dirty
+        || font_changed
+        || blink_changed
+        || tab_changed
+        || ui_active
+        || first_frame;
 
-    let layouts = pane_tree.get_layout(pane_rect);
-    let dividers = pane_tree.get_dividers(pane_rect);
+    if needs_rebuild {
+        cached_cell_data.clear();
+        cached_ui_rects.clear();
 
-    let mut cell_data: Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> = Vec::new();
-    let mut ui_rects: Vec<UIRect> = Vec::new();
+        let active_pane_id = tab_bar.active_tab().active_pane;
+        let pane_tree = &tab_bar.active_tab().pane_tree;
 
-    let match_set: HashSet<(usize, usize)> = if state.search.active && !state.search.term.is_empty()
-    {
-        build_match_set(&state.search.matches, state.search.term.len())
-    } else {
-        HashSet::new()
-    };
+        let pane_area = layout.pane_area();
+        let margin = layout.pane_margin();
+        let pane_rect = luna_ui::PaneRect {
+            x: pane_area.0,
+            y: pane_area.1,
+            w: pane_area.2,
+            h: pane_area.3,
+        };
 
-    for &(pane_id, rect) in &layouts {
-        let pane = find_pane(panes, pane_id);
-        if pane.is_none() {
-            continue;
-        }
-        let pane = pane.unwrap();
-        let grid_ref = pane.grid.borrow();
+        let layouts = pane_tree.get_layout(pane_rect);
+        let dividers = pane_tree.get_dividers(pane_rect);
 
-        let content_x = rect.x + margin;
-        let content_y = rect.y + margin;
-        let content_w = (rect.w - margin * 2.0).max(0.0);
-        let content_h = (rect.h - margin * 2.0).max(0.0);
-
-        let pane_cols = ((content_w) / cell_w).max(1.0) as usize;
-        let pane_rows = ((content_h) / cell_h).max(1.0) as usize;
-
-        let cursor_col = grid_ref.cursor_col();
-        let cursor_row = grid_ref.cursor_row();
-        let scrollback_len = grid_ref.scrollback_len();
-        let scroll_offset = grid_ref.scroll_offset();
-        let sb_visible =
-            ((scroll_offset + pane_rows).min(scrollback_len)).saturating_sub(scroll_offset);
-        let scrolled = scroll_offset > 0;
-        let is_active = pane_id == active_pane_id;
-
-        for (col, vrow, cell) in grid_ref.visible_cells_bounded(pane_rows, pane_cols) {
-            if !scrolled && col == cursor_col && vrow == cursor_row {
-                continue;
-            }
-            if cell.c == ' ' && cell.bg == luna_terminal::grid::Color::Default {
-                continue;
-            }
-
-            let x = content_x + col as f32 * cell_w;
-            let y = content_y + vrow as f32 * cell_h;
-
-            let global_row = if vrow < sb_visible {
-                scroll_offset + vrow
-            } else {
-                scrollback_len + vrow - sb_visible
-            };
-            let selection_bg = is_active
-                && state
-                    .selection
-                    .as_ref()
-                    .is_some_and(|s| s.contains(col, vrow));
-            let match_is_current = state.search.active
-                && !state.search.term.is_empty()
-                && !state.search.matches.is_empty()
-                && {
-                    let cm = &state.search.matches[state.search.current_match];
-                    cm.row == global_row && col >= cm.col && col < cm.col + state.search.term.len()
-                };
-            let match_is_in = match_set.contains(&(col, global_row));
-            let bg = if selection_bg {
-                state.theme.selection
-            } else if match_is_current {
-                state.theme.search_current
-            } else if match_is_in {
-                state.theme.search_highlight
-            } else {
-                cell.bg.bg_rgba()
-            };
-
-            cell_data.push((cell.c, x, y, font_size, cell.fg.fg_rgba(), bg));
-        }
-
-        if is_active
-            && !scrolled
-            && cursor_col < pane_cols
-            && cursor_row < pane_rows
-            && cursor_blink_on
+        let match_set: HashSet<(usize, usize)> = if state.search.active
+            && !state.search.term.is_empty()
         {
-            let cx = content_x + cursor_col as f32 * cell_w;
-            let cy = content_y + cursor_row as f32 * cell_h;
-            let cursor_color = state.theme.cursor;
-            match state.config.cursor_style {
-                luna_config::CursorStyle::Block => {
-                    let cell = grid_ref.get(cursor_col, cursor_row);
-                    let cursor_fg = [0.13, 0.04, 0.29, 1.0];
-                    cell_data.push((cell.c, cx, cy, font_size, cursor_fg, cursor_color));
+            build_match_set(&state.search.matches, state.search.term.len())
+        } else {
+            HashSet::new()
+        };
+
+        for &(pane_id, rect) in &layouts {
+            let pane = find_pane(panes, pane_id);
+            if pane.is_none() {
+                continue;
+            }
+            let pane = pane.unwrap();
+            let grid_ref = pane.grid.borrow();
+
+            let content_x = rect.x + margin;
+            let content_y = rect.y + margin;
+            let content_w = (rect.w - margin * 2.0).max(0.0);
+            let content_h = (rect.h - margin * 2.0).max(0.0);
+
+            let pane_cols = ((content_w) / cell_w).max(1.0) as usize;
+            let pane_rows = ((content_h) / cell_h).max(1.0) as usize;
+
+            let cursor_col = grid_ref.cursor_col();
+            let cursor_row = grid_ref.cursor_row();
+            let scrollback_len = grid_ref.scrollback_len();
+            let scroll_offset = grid_ref.scroll_offset();
+            let sb_visible =
+                ((scroll_offset + pane_rows).min(scrollback_len)).saturating_sub(scroll_offset);
+            let scrolled = scroll_offset > 0;
+            let is_active = pane_id == active_pane_id;
+
+            for (col, vrow, cell) in grid_ref.visible_cells_bounded(pane_rows, pane_cols) {
+                if !scrolled && col == cursor_col && vrow == cursor_row {
+                    continue;
                 }
-                luna_config::CursorStyle::Beam => {
-                    ui_rects.push(UIRect {
-                        pos: [cx, cy],
-                        size: [1.5, cell_h],
-                        color: cursor_color,
-                    });
+                if cell.c == ' ' && cell.bg == luna_terminal::grid::Color::Default {
+                    continue;
                 }
-                luna_config::CursorStyle::Underline => {
-                    ui_rects.push(UIRect {
-                        pos: [cx, cy + cell_h - 2.0],
-                        size: [cell_w, 2.0],
-                        color: cursor_color,
-                    });
+
+                let x = content_x + col as f32 * cell_w;
+                let y = content_y + vrow as f32 * cell_h;
+
+                let global_row = if vrow < sb_visible {
+                    scroll_offset + vrow
+                } else {
+                    scrollback_len + vrow - sb_visible
+                };
+                let selection_bg = is_active
+                    && state
+                        .selection
+                        .as_ref()
+                        .is_some_and(|s| s.contains(col, vrow));
+                let match_is_current = state.search.active
+                    && !state.search.term.is_empty()
+                    && !state.search.matches.is_empty()
+                    && {
+                        let cm = &state.search.matches[state.search.current_match];
+                        cm.row == global_row
+                            && col >= cm.col
+                            && col < cm.col + state.search.term.len()
+                    };
+                let match_is_in = match_set.contains(&(col, global_row));
+                let bg = if selection_bg {
+                    state.theme.selection
+                } else if match_is_current {
+                    state.theme.search_current
+                } else if match_is_in {
+                    state.theme.search_highlight
+                } else {
+                    cell.bg.bg_rgba()
+                };
+
+                cached_cell_data.push((cell.c, x, y, font_size, cell.fg.fg_rgba(), bg));
+            }
+
+            if is_active
+                && !scrolled
+                && cursor_col < pane_cols
+                && cursor_row < pane_rows
+                && cursor_blink_on
+            {
+                let cx = content_x + cursor_col as f32 * cell_w;
+                let cy = content_y + cursor_row as f32 * cell_h;
+                let cursor_color = state.theme.cursor;
+                match state.config.cursor_style {
+                    luna_config::CursorStyle::Block => {
+                        let cell = grid_ref.get(cursor_col, cursor_row);
+                        let cursor_fg = [0.13, 0.04, 0.29, 1.0];
+                        cached_cell_data.push((cell.c, cx, cy, font_size, cursor_fg, cursor_color));
+                    }
+                    luna_config::CursorStyle::Beam => {
+                        cached_ui_rects.push(UIRect {
+                            pos: [cx, cy],
+                            size: [1.5, cell_h],
+                            color: cursor_color,
+                        });
+                    }
+                    luna_config::CursorStyle::Underline => {
+                        cached_ui_rects.push(UIRect {
+                            pos: [cx, cy + cell_h - 2.0],
+                            size: [cell_w, 2.0],
+                            color: cursor_color,
+                        });
+                    }
                 }
             }
-        }
-        drop(grid_ref);
+            drop(grid_ref);
 
-        // Pane borders (1px)
-        let border_color = if is_active {
-            state.theme.panel_active_border
-        } else {
-            state.theme.panel_inactive_border
-        };
-        ui_rects.push(UIRect {
-            pos: [rect.x, rect.y],
-            size: [rect.w, 1.0],
-            color: border_color,
-        });
-        ui_rects.push(UIRect {
-            pos: [rect.x, rect.y + rect.h - 1.0],
-            size: [rect.w, 1.0],
-            color: border_color,
-        });
-        ui_rects.push(UIRect {
-            pos: [rect.x, rect.y],
-            size: [1.0, rect.h],
-            color: border_color,
-        });
-        ui_rects.push(UIRect {
-            pos: [rect.x + rect.w - 1.0, rect.y],
-            size: [1.0, rect.h],
-            color: border_color,
-        });
-    }
-
-    // Splitter dividers (2px line at center of 6px hitbox)
-    for info in &dividers {
-        let d = info.hitbox;
-        let (dx, dy, dw, dh) = if d.w > d.h {
-            (d.x, d.y + 2.0, d.w, 2.0)
-        } else {
-            (d.x + 2.0, d.y, 2.0, d.h)
-        };
-        ui_rects.push(UIRect {
-            pos: [dx, dy],
-            size: [dw, dh],
-            color: state.theme.panel_divider,
-        });
-    }
-
-    // Search bar overlay
-    if state.search.active {
-        let pane_area = layout.pane_area();
-        let bar_x = pane_area.0;
-        let bar_y = pane_area.1;
-        let bar_w = pane_area.2;
-        let bar_h = theme::SEARCH_BAR_HEIGHT;
-
-        ui_rects.push(UIRect {
-            pos: [bar_x, bar_y],
-            size: [bar_w, bar_h],
-            color: state.theme.search_bar_bg,
-        });
-
-        let search_fs = 12.0;
-        let char_w = search_fs * 0.6;
-        let text_y = bar_y + 7.0;
-        let text_x = bar_x + 8.0;
-        let prefix = "Search: ";
-        let prefix_chars: Vec<char> = prefix.chars().collect();
-        let term_chars: Vec<char> = state.search.term.chars().collect();
-        let transparent = [0.0, 0.0, 0.0, 0.0];
-
-        for (j, &c) in prefix_chars.iter().enumerate() {
-            cell_data.push((
-                c,
-                text_x + j as f32 * char_w,
-                text_y,
-                search_fs,
-                state.theme.search_text_dim,
-                transparent,
-            ));
-        }
-        for (j, &c) in term_chars.iter().enumerate() {
-            cell_data.push((
-                c,
-                text_x + (prefix_chars.len() + j) as f32 * char_w,
-                text_y,
-                search_fs,
-                state.theme.search_text,
-                transparent,
-            ));
-        }
-        let cursor_col = prefix_chars.len() + state.search.cursor_pos;
-        cell_data.push((
-            '|',
-            text_x + cursor_col as f32 * char_w,
-            text_y,
-            search_fs,
-            state.theme.search_text,
-            transparent,
-        ));
-
-        let counter = if state.search.term.is_empty() {
-            String::new()
-        } else if state.search.matches.is_empty() {
-            "0 matches".to_string()
-        } else {
-            format!(
-                "{}/{}",
-                state.search.current_match + 1,
-                state.search.matches.len()
-            )
-        };
-        if !counter.is_empty() {
-            let counter_x = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
-            for (j, c) in counter.chars().enumerate() {
-                cell_data.push((
-                    c,
-                    counter_x + j as f32 * char_w,
-                    text_y,
-                    search_fs,
-                    state.theme.search_text_dim,
-                    transparent,
-                ));
-            }
-        }
-    }
-
-    // History search bar overlay
-    if state.history_search.active {
-        let pane_area = layout.pane_area();
-        let bar_x = pane_area.0;
-        let bar_y = pane_area.1 + pane_area.3 - theme::SEARCH_BAR_HEIGHT;
-        let bar_w = pane_area.2;
-        let bar_h = theme::SEARCH_BAR_HEIGHT;
-
-        ui_rects.push(UIRect {
-            pos: [bar_x, bar_y],
-            size: [bar_w, bar_h],
-            color: state.theme.search_bar_bg,
-        });
-
-        let search_fs = 12.0;
-        let char_w = search_fs * 0.6;
-        let text_y = bar_y + 7.0;
-        let text_x = bar_x + 8.0;
-        let transparent = [0.0, 0.0, 0.0, 0.0];
-        let max_chars = ((bar_w - 24.0) / char_w).max(20.0) as usize;
-
-        let mut line = format!("(reverse-i-search)`{}': ", state.history_search.term);
-        if let Some(mt) = state.history_search.current_text() {
-            if mt.len() > max_chars.saturating_sub(line.len()) {
-                line.push_str(&mt[..max_chars.saturating_sub(line.len()).max(1)]);
+            let border_color = if is_active {
+                state.theme.panel_active_border
             } else {
-                line.push_str(mt);
-            }
+                state.theme.panel_inactive_border
+            };
+            cached_ui_rects.push(UIRect {
+                pos: [rect.x, rect.y],
+                size: [rect.w, 1.0],
+                color: border_color,
+            });
+            cached_ui_rects.push(UIRect {
+                pos: [rect.x, rect.y + rect.h - 1.0],
+                size: [rect.w, 1.0],
+                color: border_color,
+            });
+            cached_ui_rects.push(UIRect {
+                pos: [rect.x, rect.y],
+                size: [1.0, rect.h],
+                color: border_color,
+            });
+            cached_ui_rects.push(UIRect {
+                pos: [rect.x + rect.w - 1.0, rect.y],
+                size: [1.0, rect.h],
+                color: border_color,
+            });
         }
 
-        for (j, c) in line.chars().enumerate() {
-            if j >= max_chars {
-                break;
-            }
-            cell_data.push((
-                c,
-                text_x + j as f32 * char_w,
-                text_y,
-                search_fs,
-                state.theme.search_text,
-                transparent,
-            ));
+        for info in &dividers {
+            let d = info.hitbox;
+            let (dx, dy, dw, dh) = if d.w > d.h {
+                (d.x, d.y + 2.0, d.w, 2.0)
+            } else {
+                (d.x + 2.0, d.y, 2.0, d.h)
+            };
+            cached_ui_rects.push(UIRect {
+                pos: [dx, dy],
+                size: [dw, dh],
+                color: state.theme.panel_divider,
+            });
         }
 
-        if !state.history_search.matches.is_empty() {
-            let counter = format!(
-                "{}/{}",
-                state.history_search.current_match + 1,
-                state.history_search.matches.len()
-            );
-            let cx = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
-            for (j, c) in counter.chars().enumerate() {
-                cell_data.push((
+        // Search bar overlay
+        if state.search.active {
+            let pane_area = layout.pane_area();
+            let bar_x = pane_area.0;
+            let bar_y = pane_area.1;
+            let bar_w = pane_area.2;
+            let bar_h = theme::SEARCH_BAR_HEIGHT;
+
+            cached_ui_rects.push(UIRect {
+                pos: [bar_x, bar_y],
+                size: [bar_w, bar_h],
+                color: state.theme.search_bar_bg,
+            });
+
+            let search_fs = 12.0;
+            let char_w = search_fs * 0.6;
+            let text_y = bar_y + 7.0;
+            let text_x = bar_x + 8.0;
+            let prefix = "Search: ";
+            let prefix_chars: Vec<char> = prefix.chars().collect();
+            let term_chars: Vec<char> = state.search.term.chars().collect();
+            let transparent = [0.0, 0.0, 0.0, 0.0];
+
+            for (j, &c) in prefix_chars.iter().enumerate() {
+                cached_cell_data.push((
                     c,
-                    cx + j as f32 * char_w,
+                    text_x + j as f32 * char_w,
                     text_y,
                     search_fs,
                     state.theme.search_text_dim,
                     transparent,
                 ));
             }
+            for (j, &c) in term_chars.iter().enumerate() {
+                cached_cell_data.push((
+                    c,
+                    text_x + (prefix_chars.len() + j) as f32 * char_w,
+                    text_y,
+                    search_fs,
+                    state.theme.search_text,
+                    transparent,
+                ));
+            }
+            let cursor_col = prefix_chars.len() + state.search.cursor_pos;
+            cached_cell_data.push((
+                '|',
+                text_x + cursor_col as f32 * char_w,
+                text_y,
+                search_fs,
+                state.theme.search_text,
+                transparent,
+            ));
+
+            let counter = if state.search.term.is_empty() {
+                String::new()
+            } else if state.search.matches.is_empty() {
+                "0 matches".to_string()
+            } else {
+                format!(
+                    "{}/{}",
+                    state.search.current_match + 1,
+                    state.search.matches.len()
+                )
+            };
+            if !counter.is_empty() {
+                let counter_x = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
+                for (j, c) in counter.chars().enumerate() {
+                    cached_cell_data.push((
+                        c,
+                        counter_x + j as f32 * char_w,
+                        text_y,
+                        search_fs,
+                        state.theme.search_text_dim,
+                        transparent,
+                    ));
+                }
+            }
         }
+
+        // History search bar overlay
+        if state.history_search.active {
+            let pane_area = layout.pane_area();
+            let bar_x = pane_area.0;
+            let bar_y = pane_area.1 + pane_area.3 - theme::SEARCH_BAR_HEIGHT;
+            let bar_w = pane_area.2;
+            let bar_h = theme::SEARCH_BAR_HEIGHT;
+
+            cached_ui_rects.push(UIRect {
+                pos: [bar_x, bar_y],
+                size: [bar_w, bar_h],
+                color: state.theme.search_bar_bg,
+            });
+
+            let search_fs = 12.0;
+            let char_w = search_fs * 0.6;
+            let text_y = bar_y + 7.0;
+            let text_x = bar_x + 8.0;
+            let transparent = [0.0, 0.0, 0.0, 0.0];
+            let max_chars = ((bar_w - 24.0) / char_w).max(20.0) as usize;
+
+            let mut line = format!("(reverse-i-search)`{}': ", state.history_search.term);
+            if let Some(mt) = state.history_search.current_text() {
+                if mt.len() > max_chars.saturating_sub(line.len()) {
+                    line.push_str(&mt[..max_chars.saturating_sub(line.len()).max(1)]);
+                } else {
+                    line.push_str(mt);
+                }
+            }
+
+            for (j, c) in line.chars().enumerate() {
+                if j >= max_chars {
+                    break;
+                }
+                cached_cell_data.push((
+                    c,
+                    text_x + j as f32 * char_w,
+                    text_y,
+                    search_fs,
+                    state.theme.search_text,
+                    transparent,
+                ));
+            }
+
+            if !state.history_search.matches.is_empty() {
+                let counter = format!(
+                    "{}/{}",
+                    state.history_search.current_match + 1,
+                    state.history_search.matches.len()
+                );
+                let cx = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
+                for (j, c) in counter.chars().enumerate() {
+                    cached_cell_data.push((
+                        c,
+                        cx + j as f32 * char_w,
+                        text_y,
+                        search_fs,
+                        state.theme.search_text_dim,
+                        transparent,
+                    ));
+                }
+            }
+        }
+
+        let tab_ui = build_tab_bar_ui_rects(
+            layout,
+            tab_bar,
+            state.hover_tab,
+            state.tab_scroll_offset,
+            &state.theme,
+        );
+        cached_ui_rects.extend(tab_ui);
+
+        for tab_cell in
+            build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset, &state.theme)
+        {
+            cached_cell_data.push(tab_cell);
+        }
+
+        *cached_font_size = font_size;
+        *cached_blink = cursor_blink_on;
+        *cached_active_tab = tab_bar.active;
     }
-
-    let tab_ui = build_tab_bar_ui_rects(
-        layout,
-        tab_bar,
-        state.hover_tab,
-        state.tab_scroll_offset,
-        &state.theme,
-    );
-    ui_rects.extend(tab_ui);
-
-    for tab_cell in build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset, &state.theme)
-    {
-        cell_data.push(tab_cell);
-    }
-
-    renderer.draw_frame(&cell_data, &ui_rects);
 
     for pane in panes.iter_mut() {
+        pane.grid.borrow_mut().clear_frame_dirty();
         pane.grid.borrow_mut().clear_dirty();
     }
+
+    renderer.draw_frame(cached_cell_data, cached_ui_rects);
 
     exited_panes
 }
@@ -592,10 +640,17 @@ impl App {
             self.cell_w,
             self.cell_h,
             self.cursor_blink_on,
+            &mut self.cached_cell_data,
+            &mut self.cached_ui_rects,
+            &mut self.cached_blink,
+            &mut self.cached_font_size,
+            &mut self.cached_active_tab,
         );
 
         for pane_id in exited {
             self.handle_pane_exit(pane_id);
+            self.cached_cell_data.clear();
+            self.cached_ui_rects.clear();
         }
     }
 

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::grid::{CellFlags, CharCell, Color, Grid};
+use crate::kitty::KittyKeyboard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum MouseReportMode {
@@ -19,6 +20,7 @@ pub struct TerminalModes {
     pub mouse_sgr: bool,
     pub focus_events: bool,
     pub application_cursor: bool,
+    pub kitty: KittyKeyboard,
 }
 
 pub struct VteProcessor {
@@ -30,6 +32,7 @@ pub struct VteProcessor {
     cwd: Rc<RefCell<String>>,
     modes: Rc<RefCell<TerminalModes>>,
     use_dec_graphics: bool,
+    pending_kitty_responses: Vec<Vec<u8>>,
 }
 
 impl VteProcessor {
@@ -43,6 +46,7 @@ impl VteProcessor {
             cwd: Rc::new(RefCell::new(String::new())),
             modes: Rc::new(RefCell::new(TerminalModes::default())),
             use_dec_graphics: false,
+            pending_kitty_responses: Vec::new(),
         }
     }
 
@@ -61,6 +65,7 @@ impl VteProcessor {
             cwd,
             modes,
             use_dec_graphics: false,
+            pending_kitty_responses: Vec::new(),
         }
     }
 
@@ -73,10 +78,104 @@ impl VteProcessor {
     }
 
     pub fn process(&mut self, bytes: &[u8]) {
+        let filtered = self.preprocess_kitty(bytes);
         let mut parser = vte::Parser::new();
-        for &byte in bytes {
+        for &byte in &filtered {
             parser.advance(self, byte);
         }
+    }
+
+    pub fn drain_kitty_responses(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.pending_kitty_responses)
+    }
+
+    /// Scan raw bytes for Kitty keyboard protocol CSI sequences.
+    /// Handle them directly and remove them from the byte stream.
+    /// Supported:
+    ///   CSI ? u          → query flags → respond with CSI ? flags u
+    ///   CSI = flags ; mode u → set flags with mode
+    ///   CSI > flags u   → push flags
+    ///   CSI < n u       → pop n entries
+    fn preprocess_kitty(&mut self, bytes: &[u8]) -> Vec<u8> {
+        let mut result = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+
+        while i < bytes.len() {
+            if i + 3 < bytes.len()
+                && bytes[i] == 0x1b
+                && bytes[i + 1] == b'['
+            {
+                let marker = bytes[i + 2];
+                if matches!(marker, b'?' | b'=' | b'>' | b'<') {
+                    let start = i;
+                    i += 3; // skip ESC [ marker
+
+                    // Collect parameter bytes (0x30-0x3F) and intermediates (0x20-0x2F)
+                    let param_start = i;
+                    while i < bytes.len()
+                        && (bytes[i] >= 0x20 && bytes[i] <= 0x3F)
+                    {
+                        i += 1;
+                    }
+                    let param_bytes = &bytes[param_start..i];
+
+                    if i < bytes.len()
+                        && bytes[i] >= 0x40
+                        && bytes[i] <= 0x7E
+                    {
+                        let final_byte = bytes[i];
+                        i += 1;
+
+                        if final_byte == b'u' {
+                            let handled = match marker {
+                                b'?' => self.handle_kitty_query(),
+                                b'=' => self.handle_kitty_set(param_bytes),
+                                b'>' => self.handle_kitty_push(param_bytes),
+                                b'<' => self.handle_kitty_pop(param_bytes),
+                                _ => false,
+                            };
+                            if handled {
+                                continue; // consumed the sequence
+                            }
+                        }
+                    }
+                    // Not a kitty sequence, pass through unchanged
+                    result.extend_from_slice(&bytes[start..i]);
+                    continue;
+                }
+            }
+            result.push(bytes[i]);
+            i += 1;
+        }
+        result
+    }
+
+    fn handle_kitty_query(&mut self) -> bool {
+        let flags = self.modes.borrow().kitty.flags;
+        let response = format!("\x1b[?{}u", flags);
+        self.pending_kitty_responses
+            .push(response.into_bytes());
+        true
+    }
+
+    fn handle_kitty_set(&mut self, param_bytes: &[u8]) -> bool {
+        let (flags, mode) = parse_kitty_params(param_bytes);
+        let mode = if mode == 0 { 1 } else { mode };
+        self.modes.borrow_mut().kitty.set_flags(flags, mode);
+        true
+    }
+
+    fn handle_kitty_push(&mut self, param_bytes: &[u8]) -> bool {
+        let (flags, _) = parse_kitty_params(param_bytes);
+        self.modes.borrow_mut().kitty.push(flags);
+        true
+    }
+
+    fn handle_kitty_pop(&mut self, param_bytes: &[u8]) -> bool {
+        let (n, _) = parse_kitty_params(param_bytes);
+        let n = if n == 0 { 1 } else { n as usize };
+        self.modes.borrow_mut().kitty.pop(n);
+        true
     }
 }
 
@@ -443,6 +542,29 @@ fn get_param(params: &vte::Params, idx: usize) -> i64 {
         .and_then(|g| g.first().copied())
         .map(|v| v as i64)
         .unwrap_or(0)
+}
+
+/// Parse Kitty CSI parameter bytes "flags ; mode" or multiple flag values.
+/// All numeric values are OR'd together to form the flags.
+/// If exactly 2 values are present and the second is 1-3, it's treated as mode.
+fn parse_kitty_params(param_bytes: &[u8]) -> (u8, u8) {
+    let s = String::from_utf8_lossy(param_bytes);
+    let parts: Vec<u16> = s.split(';')
+        .filter_map(|p| p.trim().parse::<u16>().ok())
+        .collect();
+
+    if parts.is_empty() {
+        return (0, 1);
+    }
+
+    // If exactly 2 values and the second looks like a mode (1-3), use it
+    if parts.len() == 2 && parts[1] >= 1 && parts[1] <= 3 {
+        return (parts[0].min(255) as u8, parts[1] as u8);
+    }
+
+    // OR all values together for flags, mode defaults to 1
+    let flags: u16 = parts.iter().fold(0u16, |acc, &v| acc | v);
+    (flags.min(255) as u8, 1)
 }
 
 impl VteProcessor {
@@ -1337,5 +1459,84 @@ mod tests {
         assert!(modes.borrow().application_cursor);
         proc.process(b"\x1b[?1l");
         assert!(!modes.borrow().application_cursor);
+    }
+
+    // ── Kitty keyboard protocol tests ────────────────────────────────────
+
+    #[test]
+    fn test_kitty_query_flags_response() {
+        let grid = make_grid(80, 24);
+        let title = Rc::new(RefCell::new(String::new()));
+        let cwd = Rc::new(RefCell::new(String::new()));
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title, cwd, modes.clone());
+        proc.process(b"\x1b[?u");
+        let responses = proc.drain_kitty_responses();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0], b"\x1b[?0u");
+    }
+
+    #[test]
+    fn test_kitty_set_disambiguate() {
+        let grid = make_grid(80, 24);
+        let title = Rc::new(RefCell::new(String::new()));
+        let cwd = Rc::new(RefCell::new(String::new()));
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title, cwd, modes.clone());
+        proc.process(b"\x1b[=1u");
+        assert_eq!(modes.borrow().kitty.flags, 1);
+        assert!(modes.borrow().kitty.is_disambiguate());
+    }
+
+    #[test]
+    fn test_kitty_set_multiple_flags() {
+        let grid = make_grid(80, 24);
+        let title = Rc::new(RefCell::new(String::new()));
+        let cwd = Rc::new(RefCell::new(String::new()));
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title, cwd, modes.clone());
+        proc.process(b"\x1b[=1;2;4u");
+        assert_eq!(modes.borrow().kitty.flags, 7);
+    }
+
+    #[test]
+    fn test_kitty_set_with_mode() {
+        let grid = make_grid(80, 24);
+        let title = Rc::new(RefCell::new(String::new()));
+        let cwd = Rc::new(RefCell::new(String::new()));
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title, cwd, modes.clone());
+        // Set flag 1 with mode 1 (replace)
+        proc.process(b"\x1b[=1;1u");
+        assert_eq!(modes.borrow().kitty.flags, 1);
+        // Add flag 2 with mode 2 (OR)
+        proc.process(b"\x1b[=2;2u");
+        assert_eq!(modes.borrow().kitty.flags, 3);
+    }
+
+    #[test]
+    fn test_kitty_push_pop() {
+        let grid = make_grid(80, 24);
+        let title = Rc::new(RefCell::new(String::new()));
+        let cwd = Rc::new(RefCell::new(String::new()));
+        let modes = Rc::new(RefCell::new(TerminalModes::default()));
+        let mut proc = VteProcessor::new_with_title(grid, title, cwd, modes.clone());
+        proc.process(b"\x1b[>1u");
+        assert_eq!(modes.borrow().kitty.flags, 1);
+        proc.process(b"\x1b[>3u");
+        assert_eq!(modes.borrow().kitty.flags, 3);
+        proc.process(b"\x1b[<1u");
+        assert_eq!(modes.borrow().kitty.flags, 1);
+    }
+
+    #[test]
+    fn test_kitty_normal_csi_u_still_works() {
+        let grid = make_grid(80, 24);
+        let mut proc = VteProcessor::new(grid.clone());
+        proc.process(b"\x1b[5;10H\x1b[s");
+        proc.process(b"\x1b[1;1H\x1b[u");
+        let g = grid.borrow();
+        assert_eq!(g.cursor_col(), 9);
+        assert_eq!(g.cursor_row(), 4);
     }
 }

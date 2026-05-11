@@ -497,23 +497,54 @@
 
 ---
 
+## FASE 11 — Optimización GPU y Frame Cache (Añadida 2026-05-11)
+
+### T-051 · Grid dirty frame
+- [x] Añadir campo `dirty_frame: bool` a `Grid`
+- [x] Marcar `dirty_frame = true` en todos los métodos mutantes: `set()`, `set_cursor()`, `advance_cursor()`, `new_line()`, `carriage_return()`, `restore_cursor()`, `shift_up_region()`, `shift_down_region()`, `scroll_up()`, `scroll_down()`, `scroll_to_bottom()`, `scroll_to_top()`, `set_scroll_offset()`, `set_scroll_region()`, `insert_chars()`, `delete_chars()`, `insert_lines()`, `delete_lines()`, `erase_chars()`, `clear_region()`, `clear_line_from_start()`, `clear_line()`, `resize()`
+- [x] Métodos `has_frame_dirty()` y `clear_frame_dirty()`
+- [x] `clear_frame_dirty()` llamado desde `render_frame()` tras cada frame
+
+### T-052 · Buffers de instancias dinámicos
+- [x] `CellRenderer.instance_buffer`: si el tamaño necesario excede al actual, se crea uno nuevo de tamaño `(needed * 2).next_power_of_two()`
+- [x] `UIRenderer.instance_buffer`: mismo patrón
+- [x] `Arc<Device>` compartido entre `Renderer`, `CellRenderer` y `UIRenderer` (wgpu 22 no implementa Clone, se pasa `Arc`)
+- [x] Eliminar el `return` silencioso que ignoraba overflow
+
+### T-053 · Caché de frame idle
+- [x] `render_frame()` decide si reconstruir o reusar caché basado en:
+  - `pty_received`: se procesaron datos del PTY
+  - `any_grid_dirty`: algún Grid tiene `dirty_frame == true`
+  - `font_changed`: `cached_font_size != font_size`
+  - `blink_changed`: `cached_blink != cursor_blink_on`
+  - `tab_changed`: `cached_active_tab != tab_bar.active`
+  - `ui_active`: `state.selecting || state.search.active || state.history_search.active`
+  - `first_frame`: `cached_cell_data.is_empty()`
+- [x] `App` almacena `cached_cell_data`, `cached_ui_rects`, `cached_blink`, `cached_font_size`, `cached_active_tab`
+- [x] Al salir un pane: se invalida el caché (`cached_cell_data.clear()`)
+
+### T-054 · Limpieza de código muerto
+- [x] Eliminar método `Renderer::render()` que creaba un render pass vacío sin draw calls
+- [x] Cambiar `CellRenderer::draw()` y `UIRenderer::draw()` a `&mut self` (necesario para resize dinámico)
+- [x] `type CellData` alias público para el tipo complejo `Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>`
+
+---
+
 ## Resumen de Fases
 
-| Fase | Descripción                    | Tareas         | Prioridad      | Estado   |
-|------|--------------------------------|----------------|----------------|----------|
-| 0    | Entorno y Scaffolding          | T-001 a T-005  | 🔴 Crítica     | ✅       |
-| 1    | Ventana base + wgpu            | T-006 a T-010  | 🔴 Crítica     | ✅       |
-| 2    | PTY y Parser VT                | T-011 a T-016  | 🔴 Crítica     | ✅       |
-| 3    | Rendering de terminal          | T-017 a T-020  | 🔴 Crítica     | ✅       |
-| 4    | Input de usuario               | T-021 a T-024  | 🔴 Crítica     | ✅       |
-| 5    | Sistema de Tabs                | T-025 a T-028  | 🟠 Alta        | ✅       |
-| 6    | Sistema de Split               | T-029 a T-033  | 🟠 Alta        | ✅       |
-| 7    | Búsqueda y productividad       | T-034 a T-036  | 🟡 Media       | ✅       |
-| 8    | Configuración                  | T-037 a T-040  | 🟡 Media       | ✅       |
-| 9    | Distribución y CI/CD           | T-041 a T-045  | 🟡 Media       | ✅       |
-| 10   | Calidad y conformidad          | T-046 a T-050  | 🟢 Baja        | ✅       |
+| Fase | Descripción                    | Tareas                    | Prioridad      | Estado   |
+|------|--------------------------------|---------------------------|----------------|----------|
+| 0    | Entorno y Scaffolding          | T-001 a T-005             | 🔴 Crítica     | ✅       |
+| 1    | Ventana base + wgpu            | T-006 a T-010             | 🔴 Crítica     | ✅       |
+| 2    | PTY y Parser VT                | T-011 a T-016             | 🔴 Crítica     | ✅       |
+| 3    | Rendering de terminal          | T-017 a T-020             | 🔴 Crítica     | ✅       |
+| 4    | Input de usuario               | T-021 a T-024             | 🔴 Crítica     | ✅       |
+| 5    | Sistema de Tabs                | T-025 a T-028             | 🟠 Alta        | ✅       |
+| 6    | Sistema de Split               | T-029 a T-033             | 🟠 Alta        | ✅       |
+| 7    | Búsqueda y productividad       | T-034 a T-036             | 🟡 Media       | ✅       |
+| 8    | Configuración                  | T-037 a T-040             | 🟡 Media       | ✅       |
+| 9    | Distribución y CI/CD           | T-041 a T-045             | 🟡 Media       | ✅       |
+| 10   | Calidad y conformidad          | T-046 a T-050             | 🟢 Baja        | ✅       |
+| 11   | Optimización GPU               | T-051 a T-054 (nuevas)    | 🔴 Crítica     | ✅       |
 
-**Total: 50 tareas atómicas.**
-Las fases 0-4 forman el MVP funcional: una terminal real corriendo en ventana con GPU rendering.
-Las fases 5-6 añaden la diferenciación visual (splits y tabs).
-Las fases 7-10 llevan el proyecto a nivel comercial.
+**Total: 54 tareas atómicas.**

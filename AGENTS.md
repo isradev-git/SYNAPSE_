@@ -62,9 +62,31 @@ CellInstance { cell_pos, cell_size, uv_rect, fg_color, bg_color }
 
 **Bind groups**: group 0 = atlas (texture + sampler), group 1 = screen uniform (vec2).
 
+## Frame cache (Fase 11 — GPU optimization)
+
+`render_frame()` en `crates/Luna-app/src/render.rs` decide si reconstruir `cell_data`/`ui_rects` o reusar el caché:
+
+**Invalidan el caché**:
+- `pty_received`: se procesaron datos del PTY
+- `any_grid_dirty`: algún `Grid` tiene `dirty_frame == true`
+- `font_changed`: `cached_font_size != state.font_size`
+- `blink_changed`: `cached_blink != cursor_blink_on`
+- `tab_changed`: `cached_active_tab != tab_bar.active`
+- `ui_active`: `state.selecting || state.search.active || state.history_search.active`
+- `first_frame`: `cached_cell_data.is_empty()`
+
+Si ninguna condición se cumple: el caché de instancias GPU se re-usa, no se sube nada a la GPU ni se itera el grid.
+
+**Buffers dinámicos**: `CellRenderer` y `UIRenderer` crean buffers GPU del tamaño justo ×2 (`next_power_of_two`). Antes: overflow = silent fail. Ahora: resize automático.
+
+**Grid.dirty_frame**: cada método mutante (`set()`, `advance_cursor()`, `scroll_up()`, `new_line()`, `resize()`, etc.) marca `dirty_frame = true`. `clear_frame_dirty()` se llama tras renderizar. No confundir con el `dirty` por-celda (CharCell.dirty) que no está conectado al render.
+
+**Arc\<Device\>**: `Renderer`, `CellRenderer` y `UIRenderer` comparten el device via `Arc<wgpu::Device>` (wgpu 22 no implementa Clone, el Arc permite la compartición).
+
 ## Convenciones de arquitectura
 
-- **Dirty tracking**: cada `CharCell` tiene flag dirty. Solo celdas modificadas se re-suben a GPU.
+- **Dirty tracking por frame**: `Grid.dirty_frame` marca si algo cambió desde el último frame. El render salta la reconstrucción de instancias si no hay cambios.
+- **CharCell.dirty**: existe pero no está conectado al render. Cada celda tiene el flag pero el render itera todo el viewport.
 - **Instanced rendering**: un solo draw call por frame, una instancia GPU por celda visible.
 - **PaneTree**: árbol binario de splits (`Leaf | Split { direction, ratio, first, second }`).
 - **Scrollback**: buffer circular, default 100.000 líneas, con `scroll_offset` para viewport scrolling.

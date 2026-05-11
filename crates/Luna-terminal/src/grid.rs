@@ -147,6 +147,7 @@ pub struct Grid {
     saved_cursor_row: usize,
     scroll_top: usize,
     scroll_bottom: usize,
+    dirty_frame: bool,
 }
 
 impl Grid {
@@ -168,6 +169,7 @@ impl Grid {
             saved_cursor_row: 0,
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
+            dirty_frame: true,
         }
     }
 
@@ -191,25 +193,38 @@ impl Grid {
         self.scroll_offset
     }
 
+    pub fn has_frame_dirty(&self) -> bool {
+        self.dirty_frame
+    }
+
+    pub fn clear_frame_dirty(&mut self) {
+        self.dirty_frame = false;
+    }
+
     pub fn scroll_up(&mut self, lines: usize) {
         let total = self.scrollback.len();
         self.scroll_offset = (self.scroll_offset + lines).min(total);
+        self.dirty_frame = true;
     }
 
     pub fn scroll_down(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+        self.dirty_frame = true;
     }
 
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_offset = 0;
+        self.dirty_frame = true;
     }
 
     pub fn scroll_to_top(&mut self) {
         self.scroll_offset = self.scrollback.len();
+        self.dirty_frame = true;
     }
 
     pub fn set_scroll_offset(&mut self, offset: usize) {
         self.scroll_offset = offset.min(self.scrollback.len());
+        self.dirty_frame = true;
     }
 
     pub fn is_at_bottom(&self) -> bool {
@@ -246,6 +261,7 @@ impl Grid {
         if col < self.cols && row < self.rows {
             let idx = self.index(col, row);
             self.cells[idx] = cell;
+            self.dirty_frame = true;
         }
     }
 
@@ -271,6 +287,7 @@ impl Grid {
     pub fn set_cursor(&mut self, col: usize, row: usize) {
         self.cursor_col = col.min(self.cols.saturating_sub(1));
         self.cursor_row = row.min(self.rows.saturating_sub(1));
+        self.dirty_frame = true;
     }
 
     pub fn save_cursor(&mut self) {
@@ -281,6 +298,7 @@ impl Grid {
     pub fn restore_cursor(&mut self) {
         self.cursor_col = self.saved_cursor_col;
         self.cursor_row = self.saved_cursor_row;
+        self.dirty_frame = true;
     }
 
     pub fn advance_cursor(&mut self) {
@@ -293,6 +311,7 @@ impl Grid {
                 self.cursor_row = (self.cursor_row + 1).min(self.rows - 1);
             }
         }
+        self.dirty_frame = true;
     }
 
     pub fn new_line(&mut self) {
@@ -302,13 +321,19 @@ impl Grid {
         } else {
             self.cursor_row = (self.cursor_row + 1).min(self.rows - 1);
         }
+        self.dirty_frame = true;
     }
 
     pub fn carriage_return(&mut self) {
         self.cursor_col = 0;
+        self.dirty_frame = true;
     }
 
     pub fn shift_up_region(&mut self, n: usize) {
+        if n == 0 {
+            return;
+        }
+        self.dirty_frame = true;
         for _ in 0..n {
             let row_size = self.cols;
 
@@ -336,6 +361,10 @@ impl Grid {
     }
 
     pub fn shift_down_region(&mut self, n: usize) {
+        if n == 0 {
+            return;
+        }
+        self.dirty_frame = true;
         for _ in 0..n {
             let row_size = self.cols;
 
@@ -367,6 +396,7 @@ impl Grid {
         }
         self.cursor_col = 0;
         self.cursor_row = 0;
+        self.dirty_frame = true;
     }
 
     pub fn insert_chars(&mut self, n: usize) {
@@ -382,6 +412,7 @@ impl Grid {
         for i in col..col + shift {
             self.cells[row_start + i] = CharCell::default();
         }
+        self.dirty_frame = true;
     }
 
     pub fn delete_chars(&mut self, n: usize) {
@@ -396,6 +427,7 @@ impl Grid {
         for i in row_size - shift..row_size {
             self.cells[row_start + i] = CharCell::default();
         }
+        self.dirty_frame = true;
     }
 
     pub fn insert_lines(&mut self, n: usize) {
@@ -422,6 +454,7 @@ impl Grid {
             }
         }
         self.cursor_col = 0;
+        self.dirty_frame = true;
     }
 
     pub fn delete_lines(&mut self, n: usize) {
@@ -449,6 +482,7 @@ impl Grid {
             }
         }
         self.cursor_col = 0;
+        self.dirty_frame = true;
     }
 
     pub fn erase_chars(&mut self, n: usize) {
@@ -459,6 +493,7 @@ impl Grid {
         for i in col..end {
             self.cells[row_start + i] = CharCell::default();
         }
+        self.dirty_frame = true;
     }
 
     pub fn clear_region(&mut self, first_row: usize, last_row_inclusive: usize) {
@@ -471,6 +506,7 @@ impl Grid {
                 self.cells[i] = CharCell::default();
             }
         }
+        self.dirty_frame = true;
     }
 
     pub fn clear_line_from_start(&mut self, col_end: usize) {
@@ -479,6 +515,7 @@ impl Grid {
         for i in row_start..row_end {
             self.cells[i] = CharCell::default();
         }
+        self.dirty_frame = true;
     }
 
     pub fn clear_line(&mut self, col_start: usize) {
@@ -487,6 +524,7 @@ impl Grid {
         for i in row_start..row_end {
             self.cells[i] = CharCell::default();
         }
+        self.dirty_frame = true;
     }
 
     pub fn resize(&mut self, new_cols: usize, new_rows: usize) {
@@ -518,6 +556,7 @@ impl Grid {
         if self.cursor_row >= new_rows {
             self.cursor_row = new_rows.saturating_sub(1);
         }
+        self.dirty_frame = true;
     }
 
     pub fn dirty_cells(&self) -> impl Iterator<Item = (usize, usize, &CharCell)> {

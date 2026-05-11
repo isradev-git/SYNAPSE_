@@ -10,7 +10,7 @@ use crate::ui::{UIRect, UIRenderer};
 
 pub struct Renderer {
     surface: Surface<'static>,
-    device: Device,
+    device: Arc<Device>,
     queue: Queue,
     config: SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
@@ -52,6 +52,8 @@ impl Renderer {
         ))
         .expect("Failed to create GPU device");
 
+        let device = Arc::new(device);
+
         let size = window.inner_size();
         let caps = surface.get_capabilities(&adapter);
         let format = caps
@@ -75,8 +77,8 @@ impl Renderer {
         surface.configure(&device, &config);
 
         let atlas = TextureAtlas::new(&device);
-        let cell_renderer = CellRenderer::new(&device, &atlas.bind_group_layout, config.format);
-        let ui_renderer = UIRenderer::new(&device, config.format);
+        let cell_renderer = CellRenderer::new(Arc::clone(&device), &atlas.bind_group_layout, config.format);
+        let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
         let text = TextShaping::new();
 
         Self {
@@ -404,43 +406,5 @@ impl Renderer {
 
         self.queue.submit(Some(encoder.finish()));
         output.present();
-    }
-
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.cell_renderer
-            .update_screen_size(&self.queue, self.size.width, self.size.height);
-
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Luna Render Encoder"),
-            });
-
-        {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Luna Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-        }
-
-        self.queue.submit(Some(encoder.finish()));
-        output.present();
-
-        Ok(())
     }
 }

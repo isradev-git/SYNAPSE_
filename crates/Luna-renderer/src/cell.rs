@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPipeline};
 
 #[repr(C)]
@@ -58,11 +59,12 @@ pub struct CellRenderer {
     screen_bind_group: BindGroup,
     screen_buffer: Buffer,
     instance_buffer: Buffer,
+    device: Arc<Device>,
 }
 
 impl CellRenderer {
     pub fn new(
-        device: &Device,
+        device: Arc<Device>,
         atlas_bind_group_layout: &BindGroupLayout,
         surface_format: wgpu::TextureFormat,
     ) -> Self {
@@ -152,6 +154,7 @@ impl CellRenderer {
             screen_bind_group,
             screen_buffer,
             instance_buffer,
+            device: device.clone(),
         }
     }
 
@@ -164,16 +167,22 @@ impl CellRenderer {
     }
 
     pub fn draw<'a>(
-        &'a self,
+        &'a mut self,
         render_pass: &mut wgpu::RenderPass<'a>,
         atlas_bind_group: &'a BindGroup,
         instances: &'a [CellInstance],
         queue: &Queue,
     ) {
-        let size = std::mem::size_of_val(instances) as u64;
+        let needed = std::mem::size_of_val(instances) as u64;
 
-        if size > self.instance_buffer.size() {
-            return;
+        if needed > self.instance_buffer.size() {
+            let new_size = (needed * 2).next_power_of_two().max(256);
+            self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Luna Cell Instance Buffer"),
+                size: new_size,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
         }
 
         queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));

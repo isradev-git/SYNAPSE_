@@ -94,6 +94,41 @@ pub fn handle_keyboard(
     clipboard: &mut Option<arboard::Clipboard>,
     window: &Arc<Window>,
 ) -> PostKeyAction {
+    // Get active pane's kitty flags
+    let kitty_flags = find_pane(panes, tab_bar.active_tab().active_pane)
+        .map(|p| p.modes.borrow().kitty.flags)
+        .unwrap_or(0);
+    let kitty_active = kitty_flags > 0;
+
+    // Handle key releases for Kitty report-events mode
+    if event.state == winit::event::ElementState::Released {
+        if kitty_active && kitty_flags & luna_terminal::kitty::KITTY_REPORT_EVENTS != 0 {
+            let action = InputAction::from_key_kitty(event, state.modifiers, kitty_flags, true);
+            if let InputAction::Write(bytes) = action {
+                let pane = active_pane_mut(panes, tab_bar);
+                let _ = pane.pty_session.pty.write(&bytes);
+            }
+        }
+        return PostKeyAction::None;
+    }
+
+    // Handle key repeats for Kitty report-events mode
+    if event.repeat && kitty_active && kitty_flags & luna_terminal::kitty::KITTY_REPORT_EVENTS != 0 {
+        // Don't process keybinds on repeats — just encode and send
+        if !state.search.active && !state.history_search.active {
+            let keybind_handled = state.keybinds.lookup(&event.logical_key, state.modifiers).is_some();
+            if !keybind_handled {
+                let action =
+                    InputAction::from_key_kitty(event, state.modifiers, kitty_flags, false);
+                if let InputAction::Write(bytes) = action {
+                    let pane = active_pane_mut(panes, tab_bar);
+                    let _ = pane.pty_session.pty.write(&bytes);
+                }
+            }
+        }
+        return PostKeyAction::None;
+    }
+
     if event.state == winit::event::ElementState::Pressed && !event.repeat {
         let logical_key = &event.logical_key;
 
@@ -393,6 +428,15 @@ pub fn handle_keyboard(
             }
         }
         if keybind_handled {
+            return PostKeyAction::None;
+        }
+
+        if kitty_active {
+            let action = InputAction::from_key_kitty(event, state.modifiers, kitty_flags, false);
+            if let InputAction::Write(bytes) = action {
+                let pane = active_pane_mut(panes, tab_bar);
+                let _ = pane.pty_session.pty.write(&bytes);
+            }
             return PostKeyAction::None;
         }
 

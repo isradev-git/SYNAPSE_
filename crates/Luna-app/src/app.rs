@@ -8,6 +8,7 @@ use winit::{
 };
 
 use luna_renderer::renderer::Renderer;
+use luna_renderer::ui::UIRect;
 use luna_ui::{
     layout::Layout,
     pane::{Pane, PaneId},
@@ -15,6 +16,8 @@ use luna_ui::{
 };
 
 use crate::{pane_ops::create_pane, state::AppState};
+
+pub type CellData = Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>;
 
 pub struct App {
     pub window: Arc<Window>,
@@ -29,6 +32,11 @@ pub struct App {
     pub margin: f32,
     pub cursor_blink_on: bool,
     pub last_blink: std::time::Instant,
+    pub cached_cell_data: CellData,
+    pub cached_ui_rects: Vec<UIRect>,
+    pub cached_blink: bool,
+    pub cached_font_size: f32,
+    pub cached_active_tab: usize,
 }
 
 impl App {
@@ -90,6 +98,11 @@ impl App {
                 margin,
                 cursor_blink_on: true,
                 last_blink: std::time::Instant::now(),
+                cached_cell_data: Vec::new(),
+                cached_ui_rects: Vec::new(),
+                cached_blink: true,
+                cached_font_size: initial_font_size,
+                cached_active_tab: 0,
             },
             event_loop,
         ))

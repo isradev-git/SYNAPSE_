@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use wgpu::{BindGroup, Buffer, Device, Queue, RenderPipeline};
 
 #[repr(C)]
@@ -39,10 +40,11 @@ pub struct UIRenderer {
     screen_bind_group: BindGroup,
     screen_buffer: Buffer,
     instance_buffer: Buffer,
+    device: Arc<Device>,
 }
 
 impl UIRenderer {
-    pub fn new(device: &Device, surface_format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: Arc<Device>, surface_format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Luna UI Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ui.wgsl").into()),
@@ -136,6 +138,7 @@ impl UIRenderer {
             screen_bind_group,
             screen_buffer,
             instance_buffer,
+            device: device.clone(),
         }
     }
 
@@ -154,14 +157,21 @@ impl UIRenderer {
     }
 
     pub fn draw<'a>(
-        &'a self,
+        &'a mut self,
         render_pass: &mut wgpu::RenderPass<'a>,
         instances: &'a [UIRect],
         queue: &Queue,
     ) {
-        let size = std::mem::size_of_val(instances) as u64;
-        if size > self.instance_buffer.size() {
-            return;
+        let needed = std::mem::size_of_val(instances) as u64;
+
+        if needed > self.instance_buffer.size() {
+            let new_size = (needed * 2).next_power_of_two().max(256);
+            self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Luna UI Instance Buffer"),
+                size: new_size,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
         }
 
         queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
