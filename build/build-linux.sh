@@ -47,7 +47,7 @@ APP_NAME="luna"
 VERSION="0.1.0"
 MAINTAINER="Luna Team"
 DESCRIPTION="A modern GPU-accelerated terminal emulator"
-HOMEPAGE="https://github.com/Luna/Luna"
+HOMEPAGE="https://github.com/isradev-git/luna"
 
 # Build
 echo "[1/4] Building $APP_NAME ($PROFILE)..."
