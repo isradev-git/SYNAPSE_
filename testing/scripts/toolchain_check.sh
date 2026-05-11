@@ -66,12 +66,6 @@ fi
 
 echo ""
 echo "  Cross-compilation targets:"
-if rustup target list 2>/dev/null | grep -q 'x86_64-pc-windows-msvc (installed)'; then
-    echo "    ✓ x86_64-pc-windows-msvc"
-else
-    echo "    ✗ x86_64-pc-windows-msvc (not installed)"
-fi
-
 if rustup target list 2>/dev/null | grep -q 'aarch64-apple-darwin (installed)'; then
     echo "    ✓ aarch64-apple-darwin"
 else

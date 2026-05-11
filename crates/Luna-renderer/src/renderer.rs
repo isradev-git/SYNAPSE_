@@ -26,9 +26,6 @@ pub struct Renderer {
 impl Renderer {
     pub fn new(window: Arc<Window>) -> Result<Self, String> {
         let instance_desc = wgpu::InstanceDescriptor {
-            #[cfg(target_os = "windows")]
-            backends: wgpu::Backends::DX12 | wgpu::Backends::VULKAN | wgpu::Backends::GL,
-            #[cfg(not(target_os = "windows"))]
             backends: wgpu::Backends::all(),
             ..Default::default()
         };

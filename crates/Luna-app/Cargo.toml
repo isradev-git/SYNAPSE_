@@ -8,12 +8,6 @@ repository.workspace = true
 homepage.workspace = true
 description = "Luna terminal emulator — binary entry point"
 
-[package.metadata.wix]
-upgrade-guid = "15DE80B0-003D-4204-A483-C981A0EF3935"
-path-guid = "B68D0359-145D-4B73-8DBD-EE5F5587EF08"
-license = false
-eula = false
-
 [[bin]]
 name = "luna"
 path = "src/main.rs"

@@ -159,13 +159,7 @@ fn config_dir() -> Option<PathBuf> {
             })
             .ok()
     }
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var("APPDATA")
-            .map(|d| PathBuf::from(d).join("Luna"))
-            .ok()
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         None
     }

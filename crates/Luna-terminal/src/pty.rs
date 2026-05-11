@@ -29,7 +29,7 @@ impl PtyHandle {
 
         let pair = pty_system
             .openpty(size)
-            .map_err(|e| format!("PTY open error: {}. Luna requires ConPTY (Windows 10 1809+) or a POSIX-compatible PTY.", e))?;
+            .map_err(|e| format!("PTY open error: {}. Luna requires a POSIX-compatible PTY.", e))?;
 
         let mut cmd = CommandBuilder::new(&shell.program);
         if !shell.args.is_empty() {

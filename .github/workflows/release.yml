@@ -113,9 +113,6 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
     steps:
-      - name: enable windows longpaths
-        run: |
-          git config --global core.longpaths true
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -139,18 +136,6 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev libxrandr-dev libxi-dev mold
-      - name: Add WiX Toolset to PATH (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $wixDir = (Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" |
-            Sort-Object Name | Select-Object -Last 1).FullName + "\bin"
-          echo $wixDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot
