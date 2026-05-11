@@ -77,7 +77,8 @@ impl Renderer {
         surface.configure(&device, &config);
 
         let atlas = TextureAtlas::new(&device);
-        let cell_renderer = CellRenderer::new(Arc::clone(&device), &atlas.bind_group_layout, config.format);
+        let cell_renderer =
+            CellRenderer::new(Arc::clone(&device), &atlas.bind_group_layout, config.format);
         let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
         let text = TextShaping::new();
 

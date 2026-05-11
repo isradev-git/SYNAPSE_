@@ -54,13 +54,12 @@ impl InputAction {
     ) -> Self {
         let key_ref = event.logical_key.as_ref();
 
-        let mod_val =
-            kitty::encode_modifiers(
-                modifiers.shift_key(),
-                modifiers.alt_key(),
-                modifiers.control_key(),
-                modifiers.super_key(),
-            );
+        let mod_val = kitty::encode_modifiers(
+            modifiers.shift_key(),
+            modifiers.alt_key(),
+            modifiers.control_key(),
+            modifiers.super_key(),
+        );
 
         let event_type = if flags & kitty::KITTY_REPORT_EVENTS != 0 {
             if is_release {
@@ -81,7 +80,9 @@ impl InputAction {
 
         // Disambiguate mode (flag 1)
         if flags & kitty::KITTY_DISAMBIGUATE != 0 {
-            return Self::encode_kitty_disambiguate(&key_ref, event, modifiers, mod_val, event_type);
+            return Self::encode_kitty_disambiguate(
+                &key_ref, event, modifiers, mod_val, event_type,
+            );
         }
 
         // Legacy mode (shouldn't reach here normally)
@@ -89,11 +90,7 @@ impl InputAction {
     }
 
     /// Report-all mode: every key is sent as a CSI escape code.
-    fn encode_kitty_all(
-        key: &Key<&str>,
-        mod_val: u16,
-        event_type: Option<u8>,
-    ) -> Self {
+    fn encode_kitty_all(key: &Key<&str>, mod_val: u16, event_type: Option<u8>) -> Self {
         let keycode = match key {
             Key::Named(named) => named_to_kitty_keycode(named),
             Key::Character(c) => {
@@ -133,7 +130,9 @@ impl InputAction {
                     NamedKey::Enter => {
                         if ctrl {
                             return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::ENTER, mod_val, event_type,
+                                kitty::keycodes::ENTER,
+                                mod_val,
+                                event_type,
                             ));
                         }
                         return InputAction::Write(b"\r".to_vec());
@@ -141,12 +140,16 @@ impl InputAction {
                     NamedKey::Tab => {
                         if ctrl {
                             return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::TAB, mod_val, event_type,
+                                kitty::keycodes::TAB,
+                                mod_val,
+                                event_type,
                             ));
                         }
                         if modifiers.shift_key() {
                             return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::TAB, mod_val, event_type,
+                                kitty::keycodes::TAB,
+                                mod_val,
+                                event_type,
                             ));
                         }
                         return InputAction::Write(b"\t".to_vec());
@@ -154,7 +157,9 @@ impl InputAction {
                     NamedKey::Backspace => {
                         if ctrl {
                             return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::BACKSPACE, mod_val, event_type,
+                                kitty::keycodes::BACKSPACE,
+                                mod_val,
+                                event_type,
                             ));
                         }
                         return InputAction::Write(b"\x7f".to_vec());
@@ -162,7 +167,9 @@ impl InputAction {
                     NamedKey::Escape => {
                         if ctrl || alt {
                             return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::ESCAPE, mod_val, event_type,
+                                kitty::keycodes::ESCAPE,
+                                mod_val,
+                                event_type,
                             ));
                         }
                         return InputAction::Write(b"\x1b".to_vec());
@@ -197,14 +204,18 @@ impl InputAction {
                     if ctrl && !modifiers.shift_key() {
                         let lower = ch.to_ascii_lowercase();
                         return InputAction::Write(kitty::encode_key_event(
-                            lower as u32, mod_val, event_type,
+                            lower as u32,
+                            mod_val,
+                            event_type,
                         ));
                     }
                     // Alt+letter or other modified chars: encode as CSI codepoint;mods u
                     if alt || ctrl || modifiers.super_key() {
                         let lower = ch.to_ascii_lowercase();
                         return InputAction::Write(kitty::encode_key_event(
-                            lower as u32, mod_val, event_type,
+                            lower as u32,
+                            mod_val,
+                            event_type,
                         ));
                     }
                     // Plain text key: send as normal bytes

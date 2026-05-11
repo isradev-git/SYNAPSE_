@@ -292,13 +292,12 @@ pub fn render_frame(
         let layouts = pane_tree.get_layout(pane_rect);
         let dividers = pane_tree.get_dividers(pane_rect);
 
-        let match_set: HashSet<(usize, usize)> = if state.search.active
-            && !state.search.term.is_empty()
-        {
-            build_match_set(&state.search.matches, state.search.term.len())
-        } else {
-            HashSet::new()
-        };
+        let match_set: HashSet<(usize, usize)> =
+            if state.search.active && !state.search.term.is_empty() {
+                build_match_set(&state.search.matches, state.search.term.len())
+            } else {
+                HashSet::new()
+            };
 
         for &(pane_id, rect) in &layouts {
             let pane = find_pane(panes, pane_id);

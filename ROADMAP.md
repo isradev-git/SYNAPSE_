@@ -108,7 +108,8 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 - [x] Doble click: expande desde posición clickeada izq/der hasta separador (whitespace + símbolos)
 - [x] Triple click: selecciona col 0 → cols-1 de la fila
 - [x] Click simple limpia selección previa
-- [ ] Auto-copiar al clipboard en selección por doble/triple click (Unix behavior — pendiente)
+- [x] Auto-copiar al clipboard en selección por doble/triple click (Unix behavior)
+- [x] R-022 marcado como completado (Kitty keyboard protocol)
 
 **Verificar:** doble click selecciona palabra, triple click selecciona línea.
 
@@ -315,15 +316,19 @@ Estado: `[ ]` Pendiente · `[x]` Completado · `[~]` En progreso
 
 ---
 
-### R-022 · Kitty keyboard protocol
+### R-022 · Kitty keyboard protocol ✓
 **Problema:** neovim moderno espera este protocolo para diferenciar `Ctrl+[` de `Escape`, entre otros.
 
-- [ ] En `parser.rs`: manejar `\e[?u` query y `\e[=<flags>u` activación
-- [ ] En `keyboard.rs`: cuando el protocolo esté activo, usar encoding extendido:
-  - Enviar key releases además de presses
-  - Diferenciar `Ctrl+I` de `Tab`, `Ctrl+M` de `Enter`
-  - Enviar modificadores en campos separados
-- [ ] Referencia: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+- [x] En `parser.rs`: manejar `\e[?u` query y `\e[=<flags>u` activación, `\e[>u` push, `\e[<u` pop
+- [x] En `keyboard.rs`: cuando el protocolo esté activo, usar encoding extendido:
+  - [x] Enviar key releases además de presses (flag 2 — report events)
+  - [x] Diferenciar `Ctrl+I` de `Tab`, `Ctrl+M` de `Enter` (flag 1 — disambiguate)
+  - [x] Enviar modificadores en campos separados (flag 8 — report all)
+- [x] `kitty.rs`: struct `KittyKeyboard` con flags, stack push/pop, `encode_key_event()`
+- [x] `input.rs`: `from_key_kitty()`, `encode_kitty_all()`, `encode_kitty_disambiguate()`, `named_to_kitty_keycode()`
+- [x] `render.rs`: drena `pending_kitty_responses` del parser y escribe al PTY
+- [x] 16 tests nuevos (kitty state + parser CSI interception)
+- [x] Referencia: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 
 **Verificar:** neovim detecta el protocolo y reporta soporte. `Ctrl+[` y `Escape` distinguibles.
 

@@ -33,7 +33,7 @@ fn ensure_tab_visible(
     }
 }
 
-fn extract_selection(
+pub(crate) fn extract_selection(
     grid: &luna_terminal::grid::Grid,
     sel: &crate::state::Selection,
     cols: usize,
@@ -113,10 +113,14 @@ pub fn handle_keyboard(
     }
 
     // Handle key repeats for Kitty report-events mode
-    if event.repeat && kitty_active && kitty_flags & luna_terminal::kitty::KITTY_REPORT_EVENTS != 0 {
+    if event.repeat && kitty_active && kitty_flags & luna_terminal::kitty::KITTY_REPORT_EVENTS != 0
+    {
         // Don't process keybinds on repeats — just encode and send
         if !state.search.active && !state.history_search.active {
-            let keybind_handled = state.keybinds.lookup(&event.logical_key, state.modifiers).is_some();
+            let keybind_handled = state
+                .keybinds
+                .lookup(&event.logical_key, state.modifiers)
+                .is_some();
             if !keybind_handled {
                 let action =
                     InputAction::from_key_kitty(event, state.modifiers, kitty_flags, false);

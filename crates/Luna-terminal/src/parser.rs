@@ -101,10 +101,7 @@ impl VteProcessor {
         let mut i = 0;
 
         while i < bytes.len() {
-            if i + 3 < bytes.len()
-                && bytes[i] == 0x1b
-                && bytes[i + 1] == b'['
-            {
+            if i + 3 < bytes.len() && bytes[i] == 0x1b && bytes[i + 1] == b'[' {
                 let marker = bytes[i + 2];
                 if matches!(marker, b'?' | b'=' | b'>' | b'<') {
                     let start = i;
@@ -112,17 +109,12 @@ impl VteProcessor {
 
                     // Collect parameter bytes (0x30-0x3F) and intermediates (0x20-0x2F)
                     let param_start = i;
-                    while i < bytes.len()
-                        && (bytes[i] >= 0x20 && bytes[i] <= 0x3F)
-                    {
+                    while i < bytes.len() && (bytes[i] >= 0x20 && bytes[i] <= 0x3F) {
                         i += 1;
                     }
                     let param_bytes = &bytes[param_start..i];
 
-                    if i < bytes.len()
-                        && bytes[i] >= 0x40
-                        && bytes[i] <= 0x7E
-                    {
+                    if i < bytes.len() && bytes[i] >= 0x40 && bytes[i] <= 0x7E {
                         let final_byte = bytes[i];
                         i += 1;
 
@@ -153,8 +145,7 @@ impl VteProcessor {
     fn handle_kitty_query(&mut self) -> bool {
         let flags = self.modes.borrow().kitty.flags;
         let response = format!("\x1b[?{}u", flags);
-        self.pending_kitty_responses
-            .push(response.into_bytes());
+        self.pending_kitty_responses.push(response.into_bytes());
         true
     }
 
@@ -549,7 +540,8 @@ fn get_param(params: &vte::Params, idx: usize) -> i64 {
 /// If exactly 2 values are present and the second is 1-3, it's treated as mode.
 fn parse_kitty_params(param_bytes: &[u8]) -> (u8, u8) {
     let s = String::from_utf8_lossy(param_bytes);
-    let parts: Vec<u16> = s.split(';')
+    let parts: Vec<u16> = s
+        .split(';')
         .filter_map(|p| p.trim().parse::<u16>().ok())
         .collect();
 

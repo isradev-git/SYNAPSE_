@@ -13,6 +13,7 @@ use luna_ui::{
 };
 
 use crate::{
+    keyboard::extract_selection,
     pane_ops::{active_pane_mut, find_hovered_divider, handle_tab_click},
     state::{AppState, DividerDrag, Selection},
 };
@@ -390,6 +391,8 @@ impl App {
         button_state: winit::event::ElementState,
         button: winit::event::MouseButton,
     ) {
+        let was_press = button_state == winit::event::ElementState::Pressed;
+
         handle_mouse_button(
             button_state,
             button,
@@ -401,6 +404,21 @@ impl App {
             self.cell_h,
             self.margin,
         );
+
+        // Auto-copy to clipboard on double/triple click selection (Unix behavior)
+        if was_press && self.state.click_count >= 2 && self.state.selection.is_some() {
+            if let Some(ref sel) = self.state.selection {
+                let active_id = self.tab_bar.active_tab().active_pane;
+                if let Some(pane) = self.panes.iter().find(|p| p.id == active_id) {
+                    let grid = pane.grid.borrow();
+                    let text = extract_selection(&grid, sel, pane.cols);
+                    drop(grid);
+                    if let Some(ref mut clip) = self.clipboard {
+                        let _ = clip.set_text(text);
+                    }
+                }
+            }
+        }
     }
 
     pub(crate) fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
