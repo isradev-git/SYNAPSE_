@@ -1,12 +1,14 @@
 # AGENTS.md — Luna
 
-> Terminal emulator multiplataforma GPU-accelerated en Rust. Fases 0-6 completadas, en Fase 7.
+> Terminal emulator multiplataforma GPU-accelerated en Rust. 11 fases completadas (T-001 a T-054). Sprint 1: R-022, R-008, R-020, CI Windows.
 
 ## Fuentes de verdad
 
 - `proyecto.md` — arquitectura, stack, paleta de colores, estructuras de datos
-- `tasks.md` — 50 tareas atómicas en 11 fases, orden estricto
-- `documentacion/desarrollo/` — docs de fases completadas (fase-0-scaffolding.md, fase-1-ventana-y-wgpu.md, ..., fase-5-tabs.md, fase-6-split.md)
+- `tasks.md` — 54 tareas atómicas en 11 fases (0-11), orden estricto
+- `ROADMAP.md` — 25 items R-001 a R-025, estado actual de cada uno
+- `documentacion/desarrollo/` — docs de fases completadas
+- `documentacion/desarrollo/fase-12-sprint-1.md` — sprint actual (Kitty keyboard, benchmarks, etc.)
 
 ## Datos clave que un agente erraría sin ayuda
 
@@ -113,6 +115,22 @@ cargo test -p Luna-renderer -- --nocapture  # test con stdout visible
 cargo build --release                       # release con mold linker
 cargo watch -x test                         # hot-reload tests
 ```
+
+## Benchmarking
+
+```sh
+cargo build --release
+RUST_LOG=luna::bench=info ./target/release/luna   # FPS logging
+./build/bench.sh release                          # benchmark script
+```
+
+## Referencia rápida Kitty Keyboard (R-022)
+
+- `crates/Luna-terminal/src/kitty.rs` — estado, encoding, keycodes
+- Pre-scan en `parser.rs` (`preprocess_kitty()`) intercepta `\e[?u` (query), `\e[= u` (set), `\e[> u` (push), `\e[< u` (pop) antes del parser vte
+- Respuestas via `pending_kitty_responses: Vec<Vec<u8>>` en `VteProcessor`; drenadas en `render.rs` loop PTY
+- Flags: `KITTY_DISAMBIGUATE=1`, `KITTY_REPORT_EVENTS=2`, `KITTY_REPORT_ALL=8`
+- Sin esto: neovim no distingue Ctrl+[ de Escape, Ctrl+I de Tab, etc.
 
 ## Métricas objetivo (no negociables)
 
