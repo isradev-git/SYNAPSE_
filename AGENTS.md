@@ -1,6 +1,6 @@
 # AGENTS.md — Luna
 
-> Terminal emulator multiplataforma GPU-accelerated en Rust. 11 fases completadas (T-001 a T-054). Sprint 1: R-022, R-008, R-020, CI Windows.
+> Terminal emulator GPU-accelerated en Rust. Platforms: **Linux + macOS** (no Windows native). Windows via WSL2 only. 13 fases completadas.
 
 ## Fuentes de verdad
 
@@ -9,6 +9,7 @@
 - `ROADMAP.md` — 25 items R-001 a R-025, estado actual de cada uno
 - `documentacion/desarrollo/` — docs de fases completadas
 - `documentacion/desarrollo/fase-12-sprint-1.md` — sprint actual (Kitty keyboard, benchmarks, etc.)
+- `documentacion/desarrollo/fase-13-windows-removal-y-cross-compilation.md` — Windows removal, shader fixes, cargo-xwin
 
 ## Datos clave que un agente erraría sin ayuda
 
@@ -42,6 +43,9 @@ Versiones fijadas en `[workspace.dependencies]` del `Cargo.toml` raíz:
 - `BindGroupLayout` no implementa `Clone` — pasar por referencia
 - `create_surface(window)` requiere `Arc<Window>` (por `raw-window-handle`)
 - `pollster::block_on` para init async (request_adapter, request_device)
+- `Backends::DX11` **no existe** en wgpu 22 (fue eliminado). Solo DX12.
+- Vertex shader: no usar structs como `@location(0)`, usar parámetros planos (`@location(0) pos: vec2<f32>`, etc.). Struct-based vertex input causa `type does not match the varying` en naga.
+- Dynamic array indexing en WGSL (`arr[vertex_index]`) rechazado por naga en backends estrictos. Usar `if/else`. Ver `corner_for_index()` en `cell.wgsl`.
 
 ## APIs cosmic-text 0.12 (no obvias)
 
@@ -92,8 +96,8 @@ Si ninguna condición se cumple: el caché de instancias GPU se re-usa, no se su
 - **Instanced rendering**: un solo draw call por frame, una instancia GPU por celda visible.
 - **PaneTree**: árbol binario de splits (`Leaf | Split { direction, ratio, first, second }`).
 - **Scrollback**: buffer circular, default 100.000 líneas, con `scroll_offset` para viewport scrolling.
-- **Config**: TOML en `~/.config/Luna/config.toml` (Linux/macOS) o `%APPDATA%\Luna\config.toml` (Windows).
-- **Shell detection**: Windows → `cmd.exe`, macOS/Linux → `$SHELL` con fallbacks documentados.
+- **Config**: TOML en `~/.config/Luna/config.toml` (Linux) o `~/Library/Application Support/Luna/config.toml` (macOS).
+- **Shell detection**: `$SHELL` → `/bin/zsh` (macOS) → `/bin/bash` (Linux).
 
 ## Paleta de colores (identidad visual)
 
@@ -114,6 +118,14 @@ cargo test -p Luna-renderer                 # tests de renderer
 cargo test -p Luna-renderer -- --nocapture  # test con stdout visible
 cargo build --release                       # release con mold linker
 cargo watch -x test                         # hot-reload tests
+WINIT_UNIX_BACKEND=x11 ./target/debug/luna  # forzar X11 (WSLg workaround)
+```
+
+## Cross-compilation (solo referencia, no soportado)
+
+```sh
+cargo install cargo-xwin
+cargo xwin build --release -p Luna-app --target x86_64-pc-windows-msvc
 ```
 
 ## Benchmarking
