@@ -24,19 +24,8 @@
       "Bash(cargo metadata *)",
       "Bash(python3 -c \"import json,sys; m=json.load\\(sys.stdin\\); pkgs=[p for p in m['packages'] if p['name']=='winit']; print\\(pkgs[0]['version'] if pkgs else 'not found'\\)\")",
       "Bash(cargo test *)",
-      "Bash(~/.cargo/bin/cargo check *)",
-      "Read(//opt/homebrew/bin/**)",
-      "Read(//usr/local/**)",
-      "Bash(zsh *)",
-      "Skill(commit-commands:commit)",
-      "Bash(~/.cargo/bin/cargo build *)",
-      "Read(//usr/**)",
-      "Read(//opt/**)",
-      "Read(//Applications/**)",
-      "Bash(~/.cargo/bin/cargo test *)",
-      "Bash(export PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin\")",
-      "Bash(cargo --version)",
-      "Bash(xargs ls -la)"
+      "Bash(gh release *)",
+      "Bash(cargo generate-lockfile *)"
     ]
   }
 }
