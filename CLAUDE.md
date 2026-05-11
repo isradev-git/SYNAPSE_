@@ -65,12 +65,17 @@ Single render pass per frame: `draw_frame(cells, ui_rects)` — one `get_current
 
 ## Color palette
 
+Professional dark theme with steel blue accent. Defined in `Theme::luna()` (`crates/Luna-config/src/themes.rs`).
+4 built-in themes: `luna`, `dracula`, `catppuccin-mocha`, `tokyo-night`.
+
 ```
-#ff3d94  cursor, selection, active prompt
-#b5307e  active tab, active pane border
-#6a2a98  inactive tab, separators, tab bar bg
-#3f1c6d  hover, inactive panes
-#210b4b  main background (wgpu clear color)
+#11131a  main background (wgpu clear color)
+#d2d5db  buffer text
+#7098cc  cursor, active pane border (steel blue)
+#181b24  tab bar bg
+#222739  active tab, separators, inactive borders
+#e5e8ee  active UI text
+#737a8c  inactive UI text
 ```
 
 ## Config

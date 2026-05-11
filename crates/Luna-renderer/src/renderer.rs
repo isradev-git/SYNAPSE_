@@ -180,9 +180,9 @@ impl Renderer {
         let mut instances: Vec<CellInstance> = Vec::new();
         let mut x_offset = x;
 
+        let cell_w = self.cell_w;
         for c in text_str.chars() {
             if let Some((swash_image, cache_key)) = self.text.rasterize_glyph(c, font_size) {
-                let advance = swash_image.placement.left as f32 + font_size * 0.6;
                 self.push_glyph_instance(
                     &mut instances,
                     &swash_image,
@@ -192,9 +192,9 @@ impl Renderer {
                     fg,
                     bg,
                 );
-                x_offset += advance;
+                x_offset += cell_w;
             } else {
-                x_offset += font_size * 0.6;
+                x_offset += cell_w;
             }
         }
 

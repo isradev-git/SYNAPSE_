@@ -48,26 +48,26 @@ impl Default for Theme {
 impl Theme {
     pub fn luna() -> Self {
         Self {
-            bg: hex("210b4b"),
-            fg: [1.0, 1.0, 1.0, 1.0],
-            cursor: hex("ff3d94"),
-            selection: [1.0, 0.239, 0.58, 0.4],
-            tab_bar_bg: hex("6a2a98"),
-            tab_active_bg: hex("b5307e"),
-            tab_inactive_bg: hex("6a2a98"),
-            tab_hover_bg: [1.0, 0.239, 0.58, 0.133],
-            tab_text: [1.0, 1.0, 1.0, 1.0],
-            tab_text_inactive: [0.8, 0.8, 0.8, 1.0],
-            tab_button_text: [1.0, 1.0, 1.0, 1.0],
-            tab_separator: hex("3f1c6d"),
-            panel_active_border: hex("b5307e"),
-            panel_inactive_border: hex("3f1c6d"),
-            panel_divider: hex("6a2a98"),
-            search_bar_bg: [0.08, 0.08, 0.12, 0.97],
-            search_highlight: [1.0, 0.84, 0.0, 0.35],
-            search_current: [1.0, 0.45, 0.0, 0.55],
-            search_text: [0.85, 0.85, 0.85, 1.0],
-            search_text_dim: [0.5, 0.5, 0.5, 1.0],
+            bg: hex("11131a"),
+            fg: hex("d2d5db"),
+            cursor: hex("7098cc"),
+            selection: hex("7098cc40"),
+            tab_bar_bg: hex("181b24"),
+            tab_active_bg: hex("222739"),
+            tab_inactive_bg: hex("181b24"),
+            tab_hover_bg: hex("7098cc1a"),
+            tab_text: hex("e5e8ee"),
+            tab_text_inactive: hex("737a8c"),
+            tab_button_text: hex("e5e8ee"),
+            tab_separator: hex("222739"),
+            panel_active_border: hex("7098cc"),
+            panel_inactive_border: hex("222739"),
+            panel_divider: hex("222739"),
+            search_bar_bg: hex("181b24cc"),
+            search_highlight: hex("d4a72c40"),
+            search_current: hex("d4734b80"),
+            search_text: hex("e5e8ee"),
+            search_text_dim: hex("737a8c"),
         }
     }
 
@@ -259,7 +259,9 @@ mod tests {
     #[test]
     fn luna_theme_smoke() {
         let t = Theme::luna();
-        assert_eq!(t.tab_text, [1.0, 1.0, 1.0, 1.0]);
+        assert!((t.bg[3] - 1.0).abs() < 0.001, "bg alpha should be 1.0");
+        assert!(t.tab_text[3] == 1.0, "tab text alpha should be 1.0");
+        assert!(t.cursor[3] == 1.0, "cursor alpha should be 1.0");
     }
 
     #[test]

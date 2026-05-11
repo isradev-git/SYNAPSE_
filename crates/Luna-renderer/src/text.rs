@@ -132,14 +132,31 @@ impl TextShaping {
     }
 
     pub fn cell_metrics(&mut self, font_size: f32) -> (f32, f32) {
-        if let Some((image, _)) = self.rasterize_glyph('W', font_size) {
-            let w = image.placement.width as f32;
-            let h = image.placement.height as f32;
-            if w > 0.0 && h > 0.0 {
-                return (w + 1.0, h + 4.0);
+        let attrs = Attrs::new().family(Family::Name("JetBrains Mono"));
+        let mut buffer = cosmic_text::Buffer::new(
+            &mut self.font_system,
+            cosmic_text::Metrics::new(font_size, font_size * 1.2),
+        );
+        buffer.set_size(&mut self.font_system, None, None);
+        buffer.set_text(
+            &mut self.font_system,
+            "M",
+            attrs,
+            cosmic_text::Shaping::Advanced,
+        );
+        buffer.shape_until_scroll(&mut self.font_system, false);
+
+        let mut cell_w = font_size * 0.6;
+        let mut cell_h = font_size * 1.2;
+
+        for run in buffer.layout_runs() {
+            for glyph in run.glyphs.iter() {
+                cell_w = glyph.w;
+                cell_h = run.line_height;
             }
         }
-        (font_size * 0.6, font_size * 1.2)
+
+        (cell_w, cell_h)
     }
 }
 

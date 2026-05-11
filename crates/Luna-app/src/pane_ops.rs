@@ -219,7 +219,8 @@ impl App {
         self.state.config.font_size = new_size;
         let _ = self.state.config.save();
 
-        (self.cell_w, self.cell_h) = self.renderer.cell_metrics(new_size);
+        let effective = new_size * self.scale_factor;
+        (self.cell_w, self.cell_h) = self.renderer.cell_metrics(effective);
 
         let pane_area = self.layout.pane_area();
         let pane_rect = luna_ui::PaneRect {
@@ -244,5 +245,12 @@ impl App {
                     .resize(new_cols as u16, new_rows as u16);
             }
         }
+    }
+
+    pub(crate) fn handle_scale_factor_change(&mut self) {
+        let current_size = self.state.font_size;
+        self.change_font_size(current_size);
+        self.cached_cell_data.clear();
+        self.cached_ui_rects.clear();
     }
 }

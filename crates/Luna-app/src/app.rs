@@ -39,12 +39,14 @@ pub struct App {
     pub cached_active_tab: usize,
     pub frame_count: u64,
     pub fps_last_print: std::time::Instant,
+    pub scale_factor: f32,
 }
 
 impl App {
     pub fn new() -> Result<(Self, EventLoop<()>), Box<dyn std::error::Error>> {
         let config = luna_config::Config::load();
         let keybinds = luna_config::Keybinds::new();
+        let logical_font_size = config.font_size;
 
         let event_loop = EventLoop::new()?;
 
@@ -66,8 +68,9 @@ impl App {
         let size = renderer.size();
         layout.update(size.width as f32, size.height as f32);
 
-        let initial_font_size = config.font_size;
-        let (cell_w, cell_h) = renderer.cell_metrics(initial_font_size);
+        let scale = window.scale_factor() as f32;
+        let effective_initial_font_size = logical_font_size * scale;
+        let (cell_w, cell_h) = renderer.cell_metrics(effective_initial_font_size);
         let margin = layout.pane_margin();
 
         let pane_area = layout.pane_area();
@@ -83,7 +86,7 @@ impl App {
         let panes = vec![first_pane];
 
         let clipboard = arboard::Clipboard::new().ok();
-        let state = AppState::new(config, keybinds, initial_font_size);
+        let state = AppState::new(config, keybinds, logical_font_size);
         renderer.set_clear_color(state.theme.bg);
 
         Ok((
@@ -103,10 +106,11 @@ impl App {
                 cached_cell_data: Vec::new(),
                 cached_ui_rects: Vec::new(),
                 cached_blink: true,
-                cached_font_size: initial_font_size,
+                cached_font_size: effective_initial_font_size,
                 cached_active_tab: 0,
                 frame_count: 0,
                 fps_last_print: std::time::Instant::now(),
+                scale_factor: scale,
             },
             event_loop,
         ))
@@ -138,6 +142,17 @@ impl App {
             WindowEvent::RedrawRequested => self.render(),
             WindowEvent::KeyboardInput { event, .. } => self.handle_keyboard(event),
             WindowEvent::Focused(focused) => self.handle_focus(focused),
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                mut inner_size_writer,
+            } => {
+                self.scale_factor = scale_factor as f32;
+                let size = self.window.inner_size();
+                if let Err(e) = inner_size_writer.request_inner_size(size) {
+                    tracing::warn!("ScaleFactorChanged size request failed: {:?}", e);
+                }
+                self.handle_scale_factor_change();
+            }
             _ => {}
         }
     }
@@ -153,6 +168,7 @@ impl App {
     }
 
     fn handle_resize(&mut self, size: PhysicalSize<u32>) {
+        self.scale_factor = self.window.scale_factor() as f32;
         self.renderer.resize(size);
         self.layout.update(size.width as f32, size.height as f32);
 

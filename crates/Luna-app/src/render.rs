@@ -208,9 +208,10 @@ pub fn render_frame(
     cached_blink: &mut bool,
     cached_font_size: &mut f32,
     cached_active_tab: &mut usize,
+    effective_font_size: f32,
 ) -> Vec<PaneId> {
     renderer.set_font_ligatures(state.config.font_ligatures);
-    let font_size = state.font_size;
+    let font_size = effective_font_size;
     let mut exited_panes: Vec<PaneId> = Vec::new();
     let mut pty_received = false;
 
@@ -380,7 +381,7 @@ pub fn render_frame(
                 match state.config.cursor_style {
                     luna_config::CursorStyle::Block => {
                         let cell = grid_ref.get(cursor_col, cursor_row);
-                        let cursor_fg = [0.13, 0.04, 0.29, 1.0];
+                        let cursor_fg = [0.067, 0.075, 0.102, 1.0];
                         cached_cell_data.push((cell.c, cx, cy, font_size, cursor_fg, cursor_color));
                     }
                     luna_config::CursorStyle::Beam => {
@@ -640,6 +641,7 @@ impl App {
             self.cursor_blink_on = true;
         }
 
+        let effective_fs = self.state.font_size * self.scale_factor;
         let exited = render_frame(
             &mut self.renderer,
             &self.layout,
@@ -654,6 +656,7 @@ impl App {
             &mut self.cached_blink,
             &mut self.cached_font_size,
             &mut self.cached_active_tab,
+            effective_fs,
         );
 
         for pane_id in exited {

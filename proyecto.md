@@ -53,19 +53,21 @@ Prioridades de diseño, en orden:
 ## Paleta de Colores
 
 ```
-#ff3d94  — Rosa neón        → cursor activo, resaltado de selección, prompt activo
-#b5307e  — Rosa profundo    → borde de panel activo, tab activa
-#6a2a98  — Violeta          → borde de panel inactivo, separadores, tab bar bg
-#3f1c6d  — Violeta oscuro   → fondo de paneles inactivos, hover de elementos
-#210b4b  — Casi negro       → fondo principal de ventana y paneles activos
+#11131a  — Fondo principal (dark blue-black)
+#d2d5db  — Texto del buffer (warm off-white)
+#7098cc  — Cursor, borde de panel activo, acento (steel blue)
+#222739  — Separadores, bordes inactivos, divider
+#181b24  — Barra de tabs, superficies secundarias
+#e5e8ee  — Texto de UI activo (bright gray)
+#737a8c  — Texto de UI inactivo (muted gray)
 ```
 
 Colores auxiliares:
 ```
-#ffffff   — Texto principal del buffer
-#cccccc   — Texto secundario (historial dimmed)
-#ff3d9466 — Selección de texto (rosa con 40% alpha)
-#ff3d9422 — Hover sobre elementos UI
+#7098cc40 — Selección de texto (azul 25% alpha)
+#7098cc1a — Hover sobre elementos UI (azul 10% alpha)
+#d4a72c40 — Highlight de búsqueda (ámbar 25% alpha)
+#d4734b80 — Match actual en búsqueda (naranja 50% alpha)
 ```
 
 Colores ANSI estándar (integrados en el tema):

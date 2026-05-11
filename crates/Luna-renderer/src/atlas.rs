@@ -215,6 +215,22 @@ impl TextureAtlas {
         let x = (rect.u0 * ATLAS_SIZE as f32) as u32;
         let y = (rect.v0 * ATLAS_SIZE as f32) as u32;
 
+        // wgpu requires bytes_per_row to be a multiple of COPY_BYTES_PER_ROW_ALIGNMENT (256)
+        let raw_bytes_per_row = 4 * bitmap_width;
+        let aligned_bytes_per_row =
+            ((raw_bytes_per_row + wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1)
+                / wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+                * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+
+        let padded_size = (aligned_bytes_per_row * bitmap_height) as usize;
+        let mut padded = vec![0u8; padded_size];
+        for row in 0..bitmap_height as usize {
+            let src_start = row * raw_bytes_per_row as usize;
+            let dst_start = row * aligned_bytes_per_row as usize;
+            padded[dst_start..dst_start + raw_bytes_per_row as usize]
+                .copy_from_slice(&bitmap[src_start..src_start + raw_bytes_per_row as usize]);
+        }
+
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &self.texture,
@@ -222,10 +238,10 @@ impl TextureAtlas {
                 origin: wgpu::Origin3d { x, y, z: 0 },
                 aspect: wgpu::TextureAspect::All,
             },
-            bitmap,
+            &padded,
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * bitmap_width),
+                bytes_per_row: Some(aligned_bytes_per_row),
                 rows_per_image: Some(bitmap_height),
             },
             wgpu::Extent3d {

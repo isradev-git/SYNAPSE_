@@ -101,12 +101,17 @@ Si ninguna condición se cumple: el caché de instancias GPU se re-usa, no se su
 
 ## Paleta de colores (identidad visual)
 
+Tema profesional oscuro con acento azul acero. Los colores se definen en `Theme::luna()` (`crates/Luna-config/src/themes.rs`).
+Los 4 temas built-in (`luna`, `dracula`, `catppuccin-mocha`, `tokyo-night`) son intercambiables via `theme = "..."` en `config.toml`.
+
 ```
-#ff3d94  → cursor, selección, prompt activo
-#b5307e  → tab activa, borde de panel activo
-#6a2a98  → tab inactiva, separadores, tab bar bg
-#3f1c6d  → hover, paneles inactivos
-#210b4b  → fondo principal (clear color en render)
+#11131a  → fondo principal (clear color en render)
+#d2d5db  → texto del buffer
+#7098cc  → cursor, borde de panel activo (azul acero)
+#181b24  → tab bar bg
+#222739  → tab activa, separadores, bordes inactivos
+#e5e8ee  → texto UI activo
+#737a8c  → texto UI inactivo
 ```
 
 ## Comandos útiles
