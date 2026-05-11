@@ -12,7 +12,12 @@ pub fn create_pane(id: PaneId, cols: usize, rows: usize) -> Result<Pane, String>
     create_pane_with_cwd(id, cols, rows, None)
 }
 
-pub fn create_pane_with_cwd(id: PaneId, cols: usize, rows: usize, cwd: Option<String>) -> Result<Pane, String> {
+pub fn create_pane_with_cwd(
+    id: PaneId,
+    cols: usize,
+    rows: usize,
+    cwd: Option<String>,
+) -> Result<Pane, String> {
     create_pane_full(id, cols, rows, cwd, None, &[])
 }
 

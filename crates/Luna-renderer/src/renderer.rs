@@ -36,41 +36,36 @@ impl Renderer {
             .create_surface(window.clone())
             .map_err(|e| format!("Failed to create GPU surface: {}", e))?;
 
-        let adapter = match pollster::block_on(instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
+        let adapter =
+            match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
-            },
-        )) {
-            Some(adapter) => adapter,
-            None => match pollster::block_on(instance.request_adapter(
-                &wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::LowPower,
-                    compatible_surface: Some(&surface),
-                    force_fallback_adapter: true,
+            })) {
+                Some(adapter) => adapter,
+                None => match pollster::block_on(instance.request_adapter(
+                    &wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::LowPower,
+                        compatible_surface: Some(&surface),
+                        force_fallback_adapter: true,
+                    },
+                )) {
+                    Some(fallback) => {
+                        tracing::warn!(
+                            "Using software/fallback GPU adapter. Performance may be reduced."
+                        );
+                        fallback
+                    }
+                    None => {
+                        let msg =
+                            "No compatible GPU found.\n\
+                         Luna requires Vulkan (Linux), or Metal (macOS).\n\
+                         On VMs, enable 3D acceleration or GPU passthrough."
+                                .to_string();
+                        return Err(msg);
+                    }
                 },
-            )) {
-                Some(fallback) => {
-                    tracing::warn!("Using software/fallback GPU adapter. Performance may be reduced.");
-                    fallback
-                }
-                None => {
-                    let msg = format!(
-                        "No compatible GPU found.\n\
-                         Luna requires DirectX 12 (Windows), Metal (macOS), or Vulkan (Linux).\n\
-                         On Windows, ensure DirectX 12 compatible drivers are installed.\n\
-                         On VMs, enable 3D acceleration or GPU passthrough.\n\
-                         Log: {}",
-                        std::env::temp_dir()
-                            .join("Luna")
-                            .join("luna.log")
-                            .display()
-                    );
-                    return Err(msg);
-                }
-            },
-        };
+            };
 
         let adapter_info = adapter.get_info();
         tracing::info!(
