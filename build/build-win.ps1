@@ -22,7 +22,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Split-Path -Parent $ScriptDir
 Set-Location $ProjectDir
 
-$Version = "0.1.0"
+$Version = "0.1.2"
 $AppName = "Luna"
 $Profile = if ($Release) { "release" } else { "debug" }
 $TargetDir = "target\$Profile"
