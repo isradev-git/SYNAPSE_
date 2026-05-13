@@ -1,11 +1,10 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use wgpu::{Device, Instance, Queue, Surface, SurfaceConfiguration};
 use winit::window::Window;
 
 use crate::atlas::TextureAtlas;
 use crate::cell::{CellInstance, CellRenderer};
-use crate::text::{ShapedGlyph, TextShaping};
+use crate::text::TextShaping;
 use crate::ui::{UIRect, UIRenderer};
 
 pub struct Renderer {
@@ -20,7 +19,6 @@ pub struct Renderer {
     ui_renderer: UIRenderer,
     text: TextShaping,
     clear_color: wgpu::Color,
-    font_ligatures: bool,
     cell_w: f32,
     cell_h: f32,
 }
@@ -135,14 +133,9 @@ impl Renderer {
             ui_renderer_bg,
             ui_renderer,
             text,
-            font_ligatures: false,
             cell_w: 0.0,
             cell_h: 0.0,
         })
-    }
-
-    pub fn set_font_ligatures(&mut self, enabled: bool) {
-        self.font_ligatures = enabled;
     }
 
     pub fn size(&self) -> winit::dpi::PhysicalSize<u32> {
@@ -181,27 +174,21 @@ impl Renderer {
         y: f32,
         font_size: f32,
         fg: [f32; 4],
-        bg: [f32; 4],
+        _bg: [f32; 4],
     ) {
         let mut instances: Vec<CellInstance> = Vec::new();
         let mut x_offset = x;
 
         let cell_w = self.cell_w;
         for c in text_str.chars() {
-            if let Some((swash_image, cache_key)) = self.text.rasterize_glyph(c, font_size) {
-                self.push_glyph_instance(
-                    &mut instances,
-                    &swash_image,
-                    cache_key,
-                    x_offset,
-                    y,
-                    fg,
-                    bg,
-                );
+            if c == ' ' {
                 x_offset += cell_w;
-            } else {
-                x_offset += cell_w;
+                continue;
             }
+            let key = crate::text::GlyphKey::new(c, font_size, false, false);
+            let bitmap = self.text.rasterize(key);
+            self.push_glyph_instance(&mut instances, &bitmap, key, x_offset, y, fg);
+            x_offset += cell_w;
         }
 
         self.render_instances(&instances, &[], &[]);
@@ -217,51 +204,41 @@ impl Renderer {
         self.render_instances(&[], &[], rects);
     }
 
-    fn swash_to_rgba(image: &cosmic_text::SwashImage) -> Vec<u8> {
-        match &image.content {
-            cosmic_text::SwashContent::Mask => {
-                let mut rgba =
-                    vec![0u8; (image.placement.width * image.placement.height * 4) as usize];
-                for (i, &alpha) in image.data.iter().enumerate() {
-                    rgba[i * 4] = 255;
-                    rgba[i * 4 + 1] = 255;
-                    rgba[i * 4 + 2] = 255;
-                    rgba[i * 4 + 3] = alpha;
-                }
-                rgba
-            }
-            _ => image.data.clone(),
+    fn gray_to_rgba(gray: &[u8]) -> Vec<u8> {
+        let mut rgba = vec![0u8; gray.len() * 4];
+        for (i, &alpha) in gray.iter().enumerate() {
+            rgba[i * 4] = 255;
+            rgba[i * 4 + 1] = 255;
+            rgba[i * 4 + 2] = 255;
+            rgba[i * 4 + 3] = alpha;
         }
+        rgba
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn push_glyph_instance(
         &mut self,
         instances: &mut Vec<CellInstance>,
-        image: &cosmic_text::SwashImage,
-        cache_key: cosmic_text::CacheKey,
+        bitmap: &crate::text::GlyphBitmap,
+        key: crate::text::GlyphKey,
         cell_x: f32,
         cell_y: f32,
         fg: [f32; 4],
-        _bg: [f32; 4],
     ) {
-        let bw = image.placement.width;
-        let bh = image.placement.height;
-        if bw == 0 || bh == 0 {
+        if bitmap.width == 0 || bitmap.height == 0 {
             return;
         }
-        if let Some((uv, is_new)) = self.atlas.get_or_insert(cache_key, bw, bh) {
+        if let Some((uv, is_new)) = self.atlas.get_or_insert(key, bitmap.width, bitmap.height) {
             if is_new {
-                let pixels = Self::swash_to_rgba(image);
-                self.atlas.upload_glyph(&self.queue, uv, &pixels, bw, bh);
+                let rgba = Self::gray_to_rgba(&bitmap.data);
+                self.atlas.upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
             }
             let baseline = cell_y + self.cell_h * 0.8;
             instances.push(CellInstance {
                 cell_pos: [
-                    cell_x + image.placement.left as f32,
-                    baseline - image.placement.top as f32,
+                    cell_x + bitmap.left as f32,
+                    baseline - (bitmap.top + bitmap.height as i32) as f32,
                 ],
-                cell_size: [bw as f32, bh as f32],
+                cell_size: [bitmap.width as f32, bitmap.height as f32],
                 uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
                 fg_color: fg,
                 bg_color: [0.0, 0.0, 0.0, 0.0],
@@ -269,71 +246,21 @@ impl Renderer {
         }
     }
 
-    /// Build instances with ligature-aware text shaping.
-    /// Groups consecutive same-style non-space cells into runs, shapes each run as a
-    /// unit so the font's GSUB rules can apply ligature substitutions, then maps
-    /// the resulting glyphs back to cell positions.
     #[allow(clippy::type_complexity)]
-    fn build_ligature_instances(
+    fn build_simple_instances(
         &mut self,
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
     ) -> Vec<CellInstance> {
-        let cell_w = self.cell_w;
-        let mut instances = Vec::with_capacity(cells.len());
+        let mut instances: Vec<CellInstance> = Vec::with_capacity(cells.len());
 
-        let non_space: Vec<_> = cells.iter().filter(|&&(c, ..)| c != ' ').copied().collect();
-
-        let mut i = 0;
-        while i < non_space.len() {
-            let (_, x0, y0, fs0, fg0, bg0) = non_space[i];
-
-            // Collect a run: consecutive cells, same row + style, x advances by cell_w.
-            let mut run: Vec<(char, f32)> = vec![(non_space[i].0, x0)];
-            let mut j = i + 1;
-            while j < non_space.len() {
-                let (c, x, y, fs, fg, bg) = non_space[j];
-                let prev_x = run.last().unwrap().1;
-                let contiguous = (y - y0).abs() < 0.5
-                    && (fs - fs0).abs() < 0.1
-                    && fg == fg0
-                    && bg == bg0
-                    && (x - prev_x - cell_w).abs() < 1.0;
-                if !contiguous {
-                    break;
-                }
-                run.push((c, x));
-                j += 1;
+        for &(c, x, y, font_size, fg, _bg) in cells {
+            if c == ' ' {
+                continue;
             }
 
-            if run.len() == 1 {
-                let (c, x) = run[0];
-                if let Some((image, cache_key)) = self.text.rasterize_glyph(c, fs0) {
-                    self.push_glyph_instance(&mut instances, &image, cache_key, x, y0, fg0, bg0);
-                }
-            } else {
-                let run_text: String = run.iter().map(|&(c, _)| c).collect();
-                // shape_run takes &mut self, so collect first to avoid borrow conflict
-                let shaped: Vec<ShapedGlyph> = self.text.shape_run(&run_text, fs0);
-                for sg in shaped {
-                    // map byte offset → char index → cell x position
-                    let char_idx = run_text[..sg.src_start].chars().count();
-                    if char_idx >= run.len() {
-                        continue;
-                    }
-                    let cell_x = run[char_idx].1;
-                    self.push_glyph_instance(
-                        &mut instances,
-                        &sg.image,
-                        sg.cache_key,
-                        cell_x,
-                        y0,
-                        fg0,
-                        bg0,
-                    );
-                }
-            }
-
-            i = j;
+            let key = crate::text::GlyphKey::new(c, font_size, false, false);
+            let bitmap = self.text.rasterize(key);
+            self.push_glyph_instance(&mut instances, &bitmap, key, x, y, fg);
         }
 
         instances
@@ -348,47 +275,9 @@ impl Renderer {
     ) {
         self.atlas.begin_frame();
 
-        let instances = if self.font_ligatures && self.cell_w > 0.0 {
-            self.build_ligature_instances(cells)
-        } else {
-            self.build_simple_instances(cells)
-        };
+        let instances = self.build_simple_instances(cells);
 
         self.render_instances(&instances, bg_rects, ui_rects);
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn build_simple_instances(
-        &mut self,
-        cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
-    ) -> Vec<CellInstance> {
-        let mut instances: Vec<CellInstance> = Vec::with_capacity(cells.len());
-        let mut seen: HashMap<(char, u32), (cosmic_text::SwashImage, cosmic_text::CacheKey)> =
-            HashMap::new();
-
-        for &(c, x, y, font_size, fg, bg) in cells {
-            if c == ' ' {
-                continue;
-            }
-
-            let key = (c, font_size.to_bits());
-
-            let (swash_image, cache_key) = if let Some(cached) = seen.get(&key) {
-                (cached.0.clone(), cached.1)
-            } else {
-                match self.text.rasterize_glyph(c, font_size) {
-                    Some(result) => {
-                        seen.insert(key, (result.0.clone(), result.1));
-                        result
-                    }
-                    None => continue,
-                }
-            };
-
-            self.push_glyph_instance(&mut instances, &swash_image, cache_key, x, y, fg, bg);
-        }
-
-        instances
     }
 
     fn render_instances(&mut self, cell_instances: &[CellInstance], bg_rects: &[UIRect], ui_rects: &[UIRect]) {

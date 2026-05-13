@@ -211,7 +211,6 @@ pub fn render_frame(
     cached_active_tab: &mut usize,
     effective_font_size: f32,
 ) -> Vec<PaneId> {
-    renderer.set_font_ligatures(state.config.font_ligatures);
     let font_size = effective_font_size;
     let mut exited_panes: Vec<PaneId> = Vec::new();
     let mut pty_received = false;
