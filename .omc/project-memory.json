@@ -1,0 +1,217 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778660007732,
+  "projectRoot": "/home/glitchbane-server/Documents/luna",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Rust",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy",
+    "devCommand": "cargo run",
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "assets",
+      "docs"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "assets": {
+      "path": "assets",
+      "purpose": "Static assets",
+      "fileCount": 0,
+      "lastAccessed": 1778660007723,
+      "keyFiles": []
+    },
+    "build": {
+      "path": "build",
+      "purpose": "Build output",
+      "fileCount": 4,
+      "lastAccessed": 1778660007727,
+      "keyFiles": [
+        "bench.sh",
+        "build-linux.sh",
+        "build-mac.sh",
+        "build-win.ps1"
+      ]
+    },
+    "crates": {
+      "path": "crates",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778660007728,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 0,
+      "lastAccessed": 1778660007728,
+      "keyFiles": []
+    },
+    "documentacion": {
+      "path": "documentacion",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778660007729,
+      "keyFiles": []
+    },
+    "target": {
+      "path": "target",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1778660007729,
+      "keyFiles": [
+        "CACHEDIR.TAG"
+      ]
+    },
+    "testing": {
+      "path": "testing",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1778660007729,
+      "keyFiles": [
+        "README.md",
+        "run_all.sh"
+      ]
+    },
+    "testing/scripts": {
+      "path": "testing/scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 9,
+      "lastAccessed": 1778660007731,
+      "keyFiles": [
+        "bench_quick.sh",
+        "build_check.sh",
+        "coverage.sh"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "crates/Luna-renderer/src/renderer.rs",
+      "accessCount": 16,
+      "lastAccessed": 1778685413764,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-app/src/render.rs",
+      "accessCount": 15,
+      "lastAccessed": 1778685413243,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-app/src/app.rs",
+      "accessCount": 4,
+      "lastAccessed": 1778685394045,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-renderer/src/text.rs",
+      "accessCount": 4,
+      "lastAccessed": 1778685406855,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-renderer/src/atlas.rs",
+      "accessCount": 4,
+      "lastAccessed": 1778685410112,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-config/src/config.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778685420657,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-app/src/state.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778567384123,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-app/src/mouse.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778567390551,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-renderer/src/shaders/cell.wgsl",
+      "accessCount": 1,
+      "lastAccessed": 1778658734761,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-renderer/src/cell.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778658734894,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-renderer/src/ui.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778659883480,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-config/src/lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778685393385,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-ui/src/lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778685393592,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-terminal/src/lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778685393978,
+      "type": "file"
+    },
+    {
+      "path": "Cargo.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778685425958,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-05-13-luna-v2-rewrite-design.md",
+      "accessCount": 1,
+      "lastAccessed": 1778686408066,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

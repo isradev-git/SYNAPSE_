@@ -205,6 +205,7 @@ pub fn render_frame(
     cursor_blink_on: bool,
     cached_cell_data: &mut CellData,
     cached_ui_rects: &mut Vec<UIRect>,
+    cached_bg_rects: &mut Vec<UIRect>,
     cached_blink: &mut bool,
     cached_font_size: &mut f32,
     cached_active_tab: &mut usize,
@@ -277,6 +278,7 @@ pub fn render_frame(
     if needs_rebuild {
         cached_cell_data.clear();
         cached_ui_rects.clear();
+        cached_bg_rects.clear();
 
         let active_pane_id = tab_bar.active_tab().active_pane;
         let pane_tree = &tab_bar.active_tab().pane_tree;
@@ -366,7 +368,21 @@ pub fn render_frame(
                     cell.bg.bg_rgba()
                 };
 
-                cached_cell_data.push((cell.c, x, y, font_size, cell.fg.fg_rgba(), bg));
+                let is_default_bg = !selection_bg
+                    && !match_is_current
+                    && !match_is_in
+                    && cell.bg == luna_terminal::grid::Color::Default;
+                if !is_default_bg {
+                    cached_bg_rects.push(UIRect {
+                        pos: [x, y],
+                        size: [cell_w, cell_h],
+                        color: bg,
+                    });
+                }
+
+                if cell.c != ' ' {
+                    cached_cell_data.push((cell.c, x, y, font_size, cell.fg.fg_rgba(), bg));
+                }
             }
 
             if is_active
@@ -382,6 +398,11 @@ pub fn render_frame(
                     luna_config::CursorStyle::Block => {
                         let cell = grid_ref.get(cursor_col, cursor_row);
                         let cursor_fg = [0.067, 0.075, 0.102, 1.0];
+                        cached_bg_rects.push(UIRect {
+                            pos: [cx, cy],
+                            size: [cell_w, cell_h],
+                            color: cursor_color,
+                        });
                         cached_cell_data.push((cell.c, cx, cy, font_size, cursor_fg, cursor_color));
                     }
                     luna_config::CursorStyle::Beam => {
@@ -611,7 +632,7 @@ pub fn render_frame(
         pane.grid.borrow_mut().clear_dirty();
     }
 
-    renderer.draw_frame(cached_cell_data, cached_ui_rects);
+    renderer.draw_frame(cached_cell_data, cached_ui_rects, cached_bg_rects);
 
     exited_panes
 }
@@ -653,6 +674,7 @@ impl App {
             self.cursor_blink_on,
             &mut self.cached_cell_data,
             &mut self.cached_ui_rects,
+            &mut self.cached_bg_rects,
             &mut self.cached_blink,
             &mut self.cached_font_size,
             &mut self.cached_active_tab,

@@ -153,17 +153,16 @@ impl TextureAtlas {
         (self.y_offset + self.row_height) as f32 / ATLAS_SIZE as f32
     }
 
-    /// Returns the cached UV rect, updating LRU timestamp. If not cached,
-    /// allocates a new slot and returns it (caller must call `upload_glyph`).
+    /// Returns `(uv, is_new)`. `is_new = true` means caller must call `upload_glyph`.
     pub fn get_or_insert(
         &mut self,
         key: CacheKey,
         bitmap_width: u32,
         bitmap_height: u32,
-    ) -> Option<UvRect> {
+    ) -> Option<(UvRect, bool)> {
         if let Some(entry) = self.cache.get_mut(&key) {
             entry.last_frame = self.frame;
-            return Some(entry.uv);
+            return Some((entry.uv, false));
         }
 
         let rect = self.allocate(bitmap_width, bitmap_height)?;
@@ -174,7 +173,7 @@ impl TextureAtlas {
                 last_frame: self.frame,
             },
         );
-        Some(rect)
+        Some((rect, true))
     }
 
     fn allocate(&mut self, width: u32, height: u32) -> Option<UvRect> {

@@ -69,7 +69,7 @@ impl TextShaping {
                     glyph.font_id,
                     glyph.glyph_id,
                     glyph.font_size,
-                    (glyph.x, glyph.y),
+                    (0.0, 0.0),
                     CacheKeyFlags::empty(),
                 );
                 if let Some(image) = self
@@ -112,7 +112,7 @@ impl TextShaping {
                     glyph.font_id,
                     glyph.glyph_id,
                     glyph.font_size,
-                    (glyph.x, glyph.y),
+                    (0.0, 0.0),
                     CacheKeyFlags::empty(),
                 );
                 if let Some(image) = self
@@ -133,27 +133,25 @@ impl TextShaping {
 
     pub fn cell_metrics(&mut self, font_size: f32) -> (f32, f32) {
         let attrs = Attrs::new().family(Family::Name("JetBrains Mono"));
-        let mut buffer = cosmic_text::Buffer::new(
+        let metrics = cosmic_text::Metrics::new(font_size, font_size * 1.2);
+        let mut buffer = cosmic_text::Buffer::new(&mut self.font_system, metrics);
+        buffer.set_size(
             &mut self.font_system,
-            cosmic_text::Metrics::new(font_size, font_size * 1.2),
+            Some(font_size * 100.0),
+            Some(font_size * 2.0),
         );
-        buffer.set_size(&mut self.font_system, None, None);
-        buffer.set_text(
-            &mut self.font_system,
-            "M",
-            attrs,
-            cosmic_text::Shaping::Advanced,
-        );
+        buffer.set_text(&mut self.font_system, "W", attrs, cosmic_text::Shaping::Advanced);
         buffer.shape_until_scroll(&mut self.font_system, false);
 
         let mut cell_w = font_size * 0.6;
         let mut cell_h = font_size * 1.2;
 
         for run in buffer.layout_runs() {
-            for glyph in run.glyphs.iter() {
+            if let Some(glyph) = run.glyphs.first() {
                 cell_w = glyph.w;
-                cell_h = run.line_height;
             }
+            cell_h = run.line_height;
+            break;
         }
 
         (cell_w, cell_h)
@@ -193,5 +191,59 @@ mod tests {
         // but must return at least one glyph without panicking.
         let glyphs = shaping.shape_run("->", 14.0);
         assert!(!glyphs.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod debug_tests {
+    use super::*;
+    use cosmic_text::{Attrs, Family, Metrics, Shaping, Buffer};
+
+    #[test]
+    fn debug_cell_metrics() {
+        let mut shaping = TextShaping::new();
+        let font_size = 14.0f32;
+        let attrs = Attrs::new().family(Family::Name("JetBrains Mono"));
+        let metrics = Metrics::new(font_size, font_size * 1.2);
+        let mut buffer = Buffer::new(&mut shaping.font_system, metrics);
+        buffer.set_size(&mut shaping.font_system, Some(font_size * 100.0), Some(font_size * 2.0));
+        buffer.set_text(&mut shaping.font_system, "W", attrs, Shaping::Advanced);
+        buffer.shape_until_scroll(&mut shaping.font_system, false);
+        let runs: Vec<_> = buffer.layout_runs().collect();
+        println!("layout_runs count: {}", runs.len());
+        for run in &runs {
+            println!("  line_height={}, glyphs={}", run.line_height, run.glyphs.len());
+            for g in run.glyphs.iter() {
+                println!("    glyph w={}, x={}, font_size={}", g.w, g.x, g.font_size);
+            }
+        }
+        let (w, h) = shaping.cell_metrics(14.0);
+        println!("cell_metrics(14.0) -> w={}, h={}", w, h);
+    }
+}
+
+#[cfg(test)]
+mod pixel_tests {
+    use super::*;
+
+    #[test]
+    fn dump_glyph_pixels() {
+        let mut shaping = TextShaping::new();
+        if let Some((img, _)) = shaping.rasterize_glyph('A', 14.0) {
+            println!("content type: {:?}", img.content);
+            println!("size: {}x{}", img.placement.width, img.placement.height);
+            println!("placement: left={}, top={}", img.placement.left, img.placement.top);
+            println!("data len: {}", img.data.len());
+            // Imprime primeras 5 filas como mapa de caracteres
+            let w = img.placement.width as usize;
+            let h = img.placement.height as usize;
+            for row in 0..h.min(10) {
+                let row_str: String = (0..w).map(|col| {
+                    let alpha = img.data[row * w + col];
+                    if alpha > 200 { '#' } else if alpha > 100 { '+' } else if alpha > 0 { '.' } else { ' ' }
+                }).collect();
+                println!("|{}|", row_str);
+            }
+        }
     }
 }

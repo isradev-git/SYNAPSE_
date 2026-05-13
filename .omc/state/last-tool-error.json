@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"git -C /home/glitchbane-server/Documents/luna add docs/superpowers/specs/2026-05-13-luna-v2-rewrite-design.md && git -C /home/glitchbane-server/Documents/luna commit -m \\\"$(cat <<'EOF'\\ndo...",
+  "error": "Exit code 128\nAuthor identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n  git config --global user.name \"Your Name\"\n\nto set your account's default identity.\nOmit --global to set the identity only in this repository.\n\nfatal: unable to auto-detect email address (got 'glitchbane-server@glitchbane.(none)')",
+  "timestamp": "2026-05-13T15:33:40.878Z",
+  "retry_count": 1
+}

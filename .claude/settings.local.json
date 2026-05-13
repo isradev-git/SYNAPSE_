@@ -25,7 +25,11 @@
       "Bash(python3 -c \"import json,sys; m=json.load\\(sys.stdin\\); pkgs=[p for p in m['packages'] if p['name']=='winit']; print\\(pkgs[0]['version'] if pkgs else 'not found'\\)\")",
       "Bash(cargo test *)",
       "Bash(gh release *)",
-      "Bash(cargo generate-lockfile *)"
+      "Bash(cargo generate-lockfile *)",
+      "Bash(~/.claude/awesome-statusline.sh *)",
+      "Bash(xargs cat)",
+      "Bash(~/.cargo/bin/cargo clippy *)",
+      "mcp__plugin_oh-my-claudecode_t__lsp_document_symbols"
     ]
   }
 }

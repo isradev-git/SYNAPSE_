@@ -16,11 +16,13 @@ pub struct Renderer {
     size: winit::dpi::PhysicalSize<u32>,
     atlas: TextureAtlas,
     cell_renderer: CellRenderer,
+    ui_renderer_bg: UIRenderer,
     ui_renderer: UIRenderer,
     text: TextShaping,
     clear_color: wgpu::Color,
     font_ligatures: bool,
     cell_w: f32,
+    cell_h: f32,
 }
 
 impl Renderer {
@@ -112,6 +114,7 @@ impl Renderer {
         let atlas = TextureAtlas::new(&device);
         let cell_renderer =
             CellRenderer::new(Arc::clone(&device), &atlas.bind_group_layout, config.format);
+        let ui_renderer_bg = UIRenderer::new(Arc::clone(&device), config.format);
         let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
         let text = TextShaping::new();
 
@@ -129,10 +132,12 @@ impl Renderer {
             size,
             atlas,
             cell_renderer,
+            ui_renderer_bg,
             ui_renderer,
             text,
             font_ligatures: false,
             cell_w: 0.0,
+            cell_h: 0.0,
         })
     }
 
@@ -156,6 +161,7 @@ impl Renderer {
     pub fn cell_metrics(&mut self, font_size: f32) -> (f32, f32) {
         let metrics = self.text.cell_metrics(font_size);
         self.cell_w = metrics.0;
+        self.cell_h = metrics.1;
         metrics
     }
 
@@ -198,17 +204,17 @@ impl Renderer {
             }
         }
 
-        self.render_instances(&instances, &[]);
+        self.render_instances(&instances, &[], &[]);
     }
 
     #[allow(clippy::type_complexity)]
     pub fn draw_cells(&mut self, cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])]) {
         let instances = self.build_simple_instances(cells);
-        self.render_instances(&instances, &[]);
+        self.render_instances(&instances, &[], &[]);
     }
 
     pub fn draw_ui_rects(&mut self, rects: &[UIRect]) {
-        self.render_instances(&[], rects);
+        self.render_instances(&[], &[], rects);
     }
 
     fn swash_to_rgba(image: &cosmic_text::SwashImage) -> Vec<u8> {
@@ -237,25 +243,28 @@ impl Renderer {
         cell_x: f32,
         cell_y: f32,
         fg: [f32; 4],
-        bg: [f32; 4],
+        _bg: [f32; 4],
     ) {
         let bw = image.placement.width;
         let bh = image.placement.height;
         if bw == 0 || bh == 0 {
             return;
         }
-        if let Some(uv) = self.atlas.get_or_insert(cache_key, bw, bh) {
-            let pixels = Self::swash_to_rgba(image);
-            self.atlas.upload_glyph(&self.queue, uv, &pixels, bw, bh);
+        if let Some((uv, is_new)) = self.atlas.get_or_insert(cache_key, bw, bh) {
+            if is_new {
+                let pixels = Self::swash_to_rgba(image);
+                self.atlas.upload_glyph(&self.queue, uv, &pixels, bw, bh);
+            }
+            let baseline = cell_y + self.cell_h * 0.8;
             instances.push(CellInstance {
                 cell_pos: [
                     cell_x + image.placement.left as f32,
-                    cell_y - image.placement.top as f32,
+                    baseline - image.placement.top as f32,
                 ],
                 cell_size: [bw as f32, bh as f32],
                 uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
                 fg_color: fg,
-                bg_color: bg,
+                bg_color: [0.0, 0.0, 0.0, 0.0],
             });
         }
     }
@@ -335,6 +344,7 @@ impl Renderer {
         &mut self,
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
         ui_rects: &[UIRect],
+        bg_rects: &[UIRect],
     ) {
         self.atlas.begin_frame();
 
@@ -344,7 +354,7 @@ impl Renderer {
             self.build_simple_instances(cells)
         };
 
-        self.render_instances(&instances, ui_rects);
+        self.render_instances(&instances, bg_rects, ui_rects);
     }
 
     #[allow(clippy::type_complexity)]
@@ -381,8 +391,10 @@ impl Renderer {
         instances
     }
 
-    fn render_instances(&mut self, cell_instances: &[CellInstance], ui_rects: &[UIRect]) {
+    fn render_instances(&mut self, cell_instances: &[CellInstance], bg_rects: &[UIRect], ui_rects: &[UIRect]) {
         self.cell_renderer
+            .update_screen_size(&self.queue, self.size.width, self.size.height);
+        self.ui_renderer_bg
             .update_screen_size(&self.queue, self.size.width, self.size.height);
         self.ui_renderer
             .update_screen_size(&self.queue, self.size.width, self.size.height);
@@ -425,6 +437,13 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
+            // bg layer: selection, search highlights, colored cell backgrounds
+            if !bg_rects.is_empty() {
+                self.ui_renderer_bg
+                    .draw(&mut render_pass, bg_rects, &self.queue);
+            }
+
+            // glyph layer (transparent bg so bitmaps that overflow cell bounds blend correctly)
             self.cell_renderer.draw(
                 &mut render_pass,
                 &self.atlas.bind_group,
@@ -432,6 +451,7 @@ impl Renderer {
                 &self.queue,
             );
 
+            // overlay layer: cursor, tab bar, pane borders
             if !ui_rects.is_empty() {
                 self.ui_renderer
                     .draw(&mut render_pass, ui_rects, &self.queue);
