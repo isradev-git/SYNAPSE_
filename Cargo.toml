@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/Luna-app",
-    "crates/Luna-terminal",
     "crates/Luna-renderer",
     "crates/Luna-ui",
     "crates/Luna-config",
@@ -9,7 +8,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 authors = ["Luna Team"]
@@ -20,9 +19,9 @@ description = "A modern GPU-accelerated terminal emulator"
 [workspace.dependencies]
 winit = "0.30"
 wgpu = "22"
-cosmic-text = "0.12"
+fontdue = "0.9"
+alacritty_terminal = "0.24"
 portable-pty = "0.8"
-vte = "0.13"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
@@ -34,7 +33,6 @@ clap = { version = "4", features = ["derive"] }
 pollster = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"

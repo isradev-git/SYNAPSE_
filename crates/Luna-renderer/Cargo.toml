@@ -13,7 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 wgpu = { workspace = true }
 winit = { workspace = true }
-cosmic-text = { workspace = true }
+fontdue = { workspace = true }
 tracing = { workspace = true }
 pollster = { workspace = true }
 bytemuck = { workspace = true }

@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 tracing = { workspace = true }
-Luna-terminal = { path = "../Luna-terminal" }
+alacritty_terminal = { workspace = true }
+portable-pty = { workspace = true }
 Luna-renderer = { path = "../Luna-renderer" }
 winit = { workspace = true }
