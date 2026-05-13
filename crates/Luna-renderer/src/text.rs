@@ -1,159 +1,82 @@
-use cosmic_text::{Attrs, CacheKey, CacheKeyFlags, Family, FontSystem, SwashCache, SwashImage};
-
 const JETBRAINS_MONO_REGULAR: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf");
-const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf");
+const JETBRAINS_MONO_BOLD: &[u8] =
+    include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf");
 const JETBRAINS_MONO_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf");
 
-pub struct TextShaping {
-    pub font_system: FontSystem,
-    pub swash_cache: SwashCache,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GlyphKey {
+    pub ch: char,
+    pub font_size_bits: u32,
+    pub bold: bool,
+    pub italic: bool,
 }
 
-/// One rasterized glyph from a shaped text run, with its byte range in the source string.
-/// A single `ShapedGlyph` covering more than one source char indicates a ligature.
-pub struct ShapedGlyph {
-    pub image: SwashImage,
-    pub cache_key: CacheKey,
-    /// Byte offset of the first source char this glyph covers.
-    pub src_start: usize,
-    /// Byte offset one past the last source char this glyph covers.
-    pub src_end: usize,
+impl GlyphKey {
+    pub fn new(ch: char, font_size: f32, bold: bool, italic: bool) -> Self {
+        Self {
+            ch,
+            font_size_bits: font_size.to_bits(),
+            bold,
+            italic,
+        }
+    }
+}
+
+pub struct GlyphBitmap {
+    pub width: u32,
+    pub height: u32,
+    pub top: i32,
+    pub left: i32,
+    pub advance_width: f32,
+    pub data: Vec<u8>,
+}
+
+pub struct TextShaping {
+    font_regular: fontdue::Font,
+    font_bold: fontdue::Font,
+    font_italic: fontdue::Font,
 }
 
 impl TextShaping {
     pub fn new() -> Self {
-        let mut font_system = FontSystem::new();
+        let settings = fontdue::FontSettings::default();
+        let font_regular = fontdue::Font::from_bytes(JETBRAINS_MONO_REGULAR, settings)
+            .expect("embedded JetBrains Mono Regular is invalid");
+        let font_bold = fontdue::Font::from_bytes(JETBRAINS_MONO_BOLD, settings)
+            .expect("embedded JetBrains Mono Bold is invalid");
+        let font_italic = fontdue::Font::from_bytes(JETBRAINS_MONO_ITALIC, settings)
+            .expect("embedded JetBrains Mono Italic is invalid");
+        Self { font_regular, font_bold, font_italic }
+    }
 
-        font_system
-            .db_mut()
-            .load_font_data(JETBRAINS_MONO_REGULAR.to_vec());
-
-        font_system
-            .db_mut()
-            .load_font_data(JETBRAINS_MONO_BOLD.to_vec());
-
-        font_system
-            .db_mut()
-            .load_font_data(JETBRAINS_MONO_ITALIC.to_vec());
-
-        let swash_cache = SwashCache::new();
-
-        Self {
-            font_system,
-            swash_cache,
+    fn font(&self, bold: bool, italic: bool) -> &fontdue::Font {
+        match (bold, italic) {
+            (true, _) => &self.font_bold,
+            (_, true) => &self.font_italic,
+            _ => &self.font_regular,
         }
     }
 
-    pub fn rasterize_glyph(&mut self, c: char, font_size: f32) -> Option<(SwashImage, CacheKey)> {
-        let attrs = Attrs::new().family(Family::Name("JetBrains Mono"));
-
-        let mut buffer = cosmic_text::Buffer::new(
-            &mut self.font_system,
-            cosmic_text::Metrics::new(font_size, font_size),
-        );
-        buffer.set_size(&mut self.font_system, Some(font_size), None);
-        buffer.set_text(
-            &mut self.font_system,
-            &c.to_string(),
-            attrs,
-            cosmic_text::Shaping::Advanced,
-        );
-
-        buffer.shape_until_scroll(&mut self.font_system, false);
-
-        for run in buffer.layout_runs() {
-            for glyph in run.glyphs.iter() {
-                let (cache_key, _x, _y) = CacheKey::new(
-                    glyph.font_id,
-                    glyph.glyph_id,
-                    glyph.font_size,
-                    (0.0, 0.0),
-                    CacheKeyFlags::empty(),
-                );
-                if let Some(image) = self
-                    .swash_cache
-                    .get_image_uncached(&mut self.font_system, cache_key)
-                {
-                    return Some((image, cache_key));
-                }
-            }
+    pub fn rasterize(&self, key: GlyphKey) -> GlyphBitmap {
+        let font_size = f32::from_bits(key.font_size_bits);
+        let font = self.font(key.bold, key.italic);
+        let (metrics, data) = font.rasterize(key.ch, font_size);
+        GlyphBitmap {
+            width: metrics.width as u32,
+            height: metrics.height as u32,
+            top: metrics.ymin,
+            left: metrics.xmin,
+            advance_width: metrics.advance_width,
+            data,
         }
-
-        None
     }
 
-    /// Shape an entire text run with ligature support. Returns one `ShapedGlyph` per
-    /// output glyph. A glyph whose `src_start..src_end` spans multiple chars is a ligature.
-    pub fn shape_run(&mut self, text: &str, font_size: f32) -> Vec<ShapedGlyph> {
-        if text.is_empty() {
-            return Vec::new();
-        }
-
-        let attrs = Attrs::new().family(Family::Name("JetBrains Mono"));
-        let mut buffer = cosmic_text::Buffer::new(
-            &mut self.font_system,
-            cosmic_text::Metrics::new(font_size, font_size),
-        );
-        buffer.set_size(&mut self.font_system, None, None);
-        buffer.set_text(
-            &mut self.font_system,
-            text,
-            attrs,
-            cosmic_text::Shaping::Advanced,
-        );
-        buffer.shape_until_scroll(&mut self.font_system, false);
-
-        let mut result = Vec::new();
-        for run in buffer.layout_runs() {
-            for glyph in run.glyphs.iter() {
-                let (cache_key, _x, _y) = CacheKey::new(
-                    glyph.font_id,
-                    glyph.glyph_id,
-                    glyph.font_size,
-                    (0.0, 0.0),
-                    CacheKeyFlags::empty(),
-                );
-                if let Some(image) = self
-                    .swash_cache
-                    .get_image_uncached(&mut self.font_system, cache_key)
-                {
-                    result.push(ShapedGlyph {
-                        image,
-                        cache_key,
-                        src_start: glyph.start,
-                        src_end: glyph.end,
-                    });
-                }
-            }
-        }
-        result
-    }
-
-    pub fn cell_metrics(&mut self, font_size: f32) -> (f32, f32) {
-        let attrs = Attrs::new().family(Family::Name("JetBrains Mono"));
-        let metrics = cosmic_text::Metrics::new(font_size, font_size * 1.2);
-        let mut buffer = cosmic_text::Buffer::new(&mut self.font_system, metrics);
-        buffer.set_size(
-            &mut self.font_system,
-            Some(font_size * 100.0),
-            Some(font_size * 2.0),
-        );
-        buffer.set_text(&mut self.font_system, "W", attrs, cosmic_text::Shaping::Advanced);
-        buffer.shape_until_scroll(&mut self.font_system, false);
-
-        let mut cell_w = font_size * 0.6;
-        let mut cell_h = font_size * 1.2;
-
-        for run in buffer.layout_runs() {
-            if let Some(glyph) = run.glyphs.first() {
-                cell_w = glyph.w;
-            }
-            cell_h = run.line_height;
-            break;
-        }
-
+    pub fn cell_metrics(&self, font_size: f32) -> (f32, f32) {
+        let metrics = self.font_regular.metrics('M', font_size);
+        let cell_w = metrics.advance_width;
+        let cell_h = font_size * 1.2;
         (cell_w, cell_h)
     }
 }
@@ -169,81 +92,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_rasterize_a() {
-        let mut shaping = TextShaping::new();
-        let result = shaping.rasterize_glyph('A', 14.0);
-        assert!(result.is_some(), "Should rasterize 'A' without panic");
+    fn rasterize_ascii_produces_bitmap() {
+        let shaping = TextShaping::new();
+        let key = GlyphKey::new('A', 14.0, false, false);
+        let glyph = shaping.rasterize(key);
+        assert!(glyph.width > 0, "width must be > 0 for 'A'");
+        assert!(glyph.height > 0, "height must be > 0 for 'A'");
+        assert_eq!(
+            glyph.data.len(),
+            (glyph.width * glyph.height) as usize,
+            "bitmap length must equal width*height (grayscale)"
+        );
     }
 
     #[test]
-    fn test_shape_run_single_char() {
-        let mut shaping = TextShaping::new();
-        let glyphs = shaping.shape_run("A", 14.0);
-        assert!(!glyphs.is_empty());
-        assert_eq!(glyphs[0].src_start, 0);
-        assert_eq!(glyphs[0].src_end, 1);
+    fn rasterize_space_is_empty() {
+        let shaping = TextShaping::new();
+        let key = GlyphKey::new(' ', 14.0, false, false);
+        let glyph = shaping.rasterize(key);
+        assert_eq!(glyph.data.len(), 0, "space produces empty bitmap");
     }
 
     #[test]
-    fn test_shape_run_two_chars() {
-        let mut shaping = TextShaping::new();
-        // Two chars — may or may not produce a ligature depending on the font,
-        // but must return at least one glyph without panicking.
-        let glyphs = shaping.shape_run("->", 14.0);
-        assert!(!glyphs.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod debug_tests {
-    use super::*;
-    use cosmic_text::{Attrs, Family, Metrics, Shaping, Buffer};
-
-    #[test]
-    fn debug_cell_metrics() {
-        let mut shaping = TextShaping::new();
-        let font_size = 14.0f32;
-        let attrs = Attrs::new().family(Family::Name("JetBrains Mono"));
-        let metrics = Metrics::new(font_size, font_size * 1.2);
-        let mut buffer = Buffer::new(&mut shaping.font_system, metrics);
-        buffer.set_size(&mut shaping.font_system, Some(font_size * 100.0), Some(font_size * 2.0));
-        buffer.set_text(&mut shaping.font_system, "W", attrs, Shaping::Advanced);
-        buffer.shape_until_scroll(&mut shaping.font_system, false);
-        let runs: Vec<_> = buffer.layout_runs().collect();
-        println!("layout_runs count: {}", runs.len());
-        for run in &runs {
-            println!("  line_height={}, glyphs={}", run.line_height, run.glyphs.len());
-            for g in run.glyphs.iter() {
-                println!("    glyph w={}, x={}, font_size={}", g.w, g.x, g.font_size);
-            }
-        }
+    fn cell_metrics_are_positive() {
+        let shaping = TextShaping::new();
         let (w, h) = shaping.cell_metrics(14.0);
-        println!("cell_metrics(14.0) -> w={}, h={}", w, h);
+        assert!(w > 0.0, "cell width must be > 0");
+        assert!(h > 0.0, "cell height must be > 0");
     }
-}
-
-#[cfg(test)]
-mod pixel_tests {
-    use super::*;
 
     #[test]
-    fn dump_glyph_pixels() {
-        let mut shaping = TextShaping::new();
-        if let Some((img, _)) = shaping.rasterize_glyph('A', 14.0) {
-            println!("content type: {:?}", img.content);
-            println!("size: {}x{}", img.placement.width, img.placement.height);
-            println!("placement: left={}, top={}", img.placement.left, img.placement.top);
-            println!("data len: {}", img.data.len());
-            // Imprime primeras 5 filas como mapa de caracteres
-            let w = img.placement.width as usize;
-            let h = img.placement.height as usize;
-            for row in 0..h.min(10) {
-                let row_str: String = (0..w).map(|col| {
-                    let alpha = img.data[row * w + col];
-                    if alpha > 200 { '#' } else if alpha > 100 { '+' } else if alpha > 0 { '.' } else { ' ' }
-                }).collect();
-                println!("|{}|", row_str);
-            }
-        }
+    fn bold_differs_from_regular() {
+        let shaping = TextShaping::new();
+        let regular = shaping.rasterize(GlyphKey::new('B', 14.0, false, false));
+        let bold = shaping.rasterize(GlyphKey::new('B', 14.0, true, false));
+        assert!(
+            regular.data != bold.data || regular.width != bold.width,
+            "bold and regular bitmaps should differ"
+        );
     }
 }
