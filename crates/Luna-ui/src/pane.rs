@@ -41,6 +41,7 @@ pub struct Pane {
 }
 
 impl Pane {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: PaneId,
         term: Arc<Mutex<Term<EventProxy>>>,

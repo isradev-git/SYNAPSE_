@@ -12,6 +12,7 @@ dependencies = [
  "alacritty_terminal",
  "arboard",
  "clap",
+ "portable-pty",
  "tracing",
  "tracing-subscriber",
  "wgpu",

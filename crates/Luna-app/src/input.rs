@@ -44,6 +44,7 @@ impl InputAction {
 
     /// Kitty keyboard protocol encoding — stubbed for Phase 1.
     /// Phase 2 will reimplement on top of alacritty_terminal's keyboard support.
+    #[allow(dead_code)]
     pub fn from_key_kitty(
         _event: &KeyEvent,
         _modifiers: ModifiersState,

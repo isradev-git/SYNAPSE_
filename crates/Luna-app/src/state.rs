@@ -6,11 +6,13 @@ use luna_ui::splitter::{PaneRect, SplitDirection};
 use winit::keyboard::ModifiersState;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Selection {
     pub start: (usize, usize),
     pub end: (usize, usize),
 }
 
+#[allow(dead_code)]
 impl Selection {
     pub fn new(col: usize, row: usize) -> Self {
         Self {
@@ -204,6 +206,7 @@ pub struct HistorySearchState {
     pub current_match: usize,
 }
 
+#[allow(dead_code)]
 impl HistorySearchState {
     pub fn new() -> Self {
         Self {

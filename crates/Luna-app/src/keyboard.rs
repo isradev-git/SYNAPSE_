@@ -36,6 +36,7 @@ fn ensure_tab_visible(
 
 /// Phase 1 stub: selection extraction will be reimplemented against the
 /// alacritty_terminal grid in Phase 2.
+#[allow(dead_code)]
 pub(crate) fn extract_selection(
     _pane: &Pane,
     _sel: &crate::state::Selection,

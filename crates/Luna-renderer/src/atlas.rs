@@ -207,8 +207,7 @@ impl TextureAtlas {
 
         let raw_bytes_per_row = 4 * bitmap_width;
         let aligned_bytes_per_row =
-            ((raw_bytes_per_row + wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1)
-                / wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            raw_bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
                 * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 
         let padded_size = (aligned_bytes_per_row * bitmap_height) as usize;
@@ -247,6 +246,7 @@ mod tests {
     use super::*;
     use crate::text::GlyphKey;
 
+    #[allow(dead_code)]
     fn make_key(ch: char) -> GlyphKey {
         GlyphKey::new(ch, 14.0, false, false)
     }
