@@ -1,9 +1,8 @@
 use winit::event::KeyEvent;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-use luna_terminal::kitty;
-
 #[derive(Debug)]
+#[allow(dead_code)] // Phase 2: ScrollUp/ScrollDown payloads will be reattached to scrollback.
 pub enum InputAction {
     Write(Vec<u8>),
     ScrollUp(usize),
@@ -43,193 +42,15 @@ impl InputAction {
         Self::from_named_key(&key_ref, modifiers, application_cursor)
     }
 
-    /// Encode a key event using the Kitty keyboard protocol.
-    /// `flags` are the active Kitty progressive enhancement flags.
-    /// `is_release` is true when this is a key release event.
+    /// Kitty keyboard protocol encoding — stubbed for Phase 1.
+    /// Phase 2 will reimplement on top of alacritty_terminal's keyboard support.
     pub fn from_key_kitty(
-        event: &KeyEvent,
-        modifiers: ModifiersState,
-        flags: u8,
-        is_release: bool,
+        _event: &KeyEvent,
+        _modifiers: ModifiersState,
+        _flags: u8,
+        _is_release: bool,
     ) -> Self {
-        let key_ref = event.logical_key.as_ref();
-
-        let mod_val = kitty::encode_modifiers(
-            modifiers.shift_key(),
-            modifiers.alt_key(),
-            modifiers.control_key(),
-            modifiers.super_key(),
-        );
-
-        let event_type = if flags & kitty::KITTY_REPORT_EVENTS != 0 {
-            if is_release {
-                Some(3u8)
-            } else if event.repeat {
-                Some(2u8)
-            } else {
-                Some(1u8)
-            }
-        } else {
-            None
-        };
-
-        // In report-all mode (flag 8), encode ALL keys as escape codes
-        if flags & kitty::KITTY_REPORT_ALL != 0 {
-            return Self::encode_kitty_all(&key_ref, mod_val, event_type);
-        }
-
-        // Disambiguate mode (flag 1)
-        if flags & kitty::KITTY_DISAMBIGUATE != 0 {
-            return Self::encode_kitty_disambiguate(
-                &key_ref, event, modifiers, mod_val, event_type,
-            );
-        }
-
-        // Legacy mode (shouldn't reach here normally)
         InputAction::Ignore
-    }
-
-    /// Report-all mode: every key is sent as a CSI escape code.
-    fn encode_kitty_all(key: &Key<&str>, mod_val: u16, event_type: Option<u8>) -> Self {
-        let keycode = match key {
-            Key::Named(named) => named_to_kitty_keycode(named),
-            Key::Character(c) => {
-                if let Some(ch) = c.chars().next() {
-                    ch as u32
-                } else {
-                    0
-                }
-            }
-            _ => return InputAction::Ignore,
-        };
-
-        if keycode == 0 {
-            return InputAction::Ignore;
-        }
-
-        let bytes = kitty::encode_key_event(keycode, mod_val, event_type);
-        InputAction::Write(bytes)
-    }
-
-    /// Disambiguate mode: escape codes for non-text keys + disambiguated ctrl combos.
-    /// Enter, Tab, Backspace without ctrl still send legacy bytes (spec exceptions).
-    fn encode_kitty_disambiguate(
-        key: &Key<&str>,
-        event: &KeyEvent,
-        modifiers: ModifiersState,
-        mod_val: u16,
-        event_type: Option<u8>,
-    ) -> Self {
-        let ctrl = modifiers.control_key();
-        let alt = modifiers.alt_key();
-
-        match key {
-            Key::Named(named) => {
-                // Enter/Tab/Backspace: legacy bytes unless ctrl is active (disambiguated)
-                match named {
-                    NamedKey::Enter => {
-                        if ctrl {
-                            return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::ENTER,
-                                mod_val,
-                                event_type,
-                            ));
-                        }
-                        return InputAction::Write(b"\r".to_vec());
-                    }
-                    NamedKey::Tab => {
-                        if ctrl {
-                            return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::TAB,
-                                mod_val,
-                                event_type,
-                            ));
-                        }
-                        if modifiers.shift_key() {
-                            return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::TAB,
-                                mod_val,
-                                event_type,
-                            ));
-                        }
-                        return InputAction::Write(b"\t".to_vec());
-                    }
-                    NamedKey::Backspace => {
-                        if ctrl {
-                            return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::BACKSPACE,
-                                mod_val,
-                                event_type,
-                            ));
-                        }
-                        return InputAction::Write(b"\x7f".to_vec());
-                    }
-                    NamedKey::Escape => {
-                        if ctrl || alt {
-                            return InputAction::Write(kitty::encode_key_event(
-                                kitty::keycodes::ESCAPE,
-                                mod_val,
-                                event_type,
-                            ));
-                        }
-                        return InputAction::Write(b"\x1b".to_vec());
-                    }
-                    NamedKey::Space => {
-                        if ctrl {
-                            return InputAction::Write(kitty::encode_key_event(
-                                32, mod_val, event_type,
-                            ));
-                        }
-                        if alt {
-                            return InputAction::Write(kitty::encode_key_event(
-                                32, mod_val, event_type,
-                            ));
-                        }
-                        return InputAction::Write(b" ".to_vec());
-                    }
-                    _ => {
-                        let keycode = named_to_kitty_keycode(named);
-                        if keycode > 0 {
-                            return InputAction::Write(kitty::encode_key_event(
-                                keycode, mod_val, event_type,
-                            ));
-                        }
-                    }
-                }
-                InputAction::Ignore
-            }
-            Key::Character(c) => {
-                if let Some(ch) = c.chars().next() {
-                    // Ctrl+letter combos: disambiguate as CSI codepoint;5u
-                    if ctrl && !modifiers.shift_key() {
-                        let lower = ch.to_ascii_lowercase();
-                        return InputAction::Write(kitty::encode_key_event(
-                            lower as u32,
-                            mod_val,
-                            event_type,
-                        ));
-                    }
-                    // Alt+letter or other modified chars: encode as CSI codepoint;mods u
-                    if alt || ctrl || modifiers.super_key() {
-                        let lower = ch.to_ascii_lowercase();
-                        return InputAction::Write(kitty::encode_key_event(
-                            lower as u32,
-                            mod_val,
-                            event_type,
-                        ));
-                    }
-                    // Plain text key: send as normal bytes
-                    if let Some(text) = event.text.as_deref() {
-                        if !text.is_empty() {
-                            return InputAction::Write(text.as_bytes().to_vec());
-                        }
-                    }
-                    return InputAction::Write(c.as_bytes().to_vec());
-                }
-                InputAction::Ignore
-            }
-            _ => InputAction::Ignore,
-        }
     }
 
     fn from_named_key(
@@ -384,46 +205,5 @@ impl InputAction {
             NamedKey::F12 => InputAction::Write(b"\x1b[24~".to_vec()),
             _ => InputAction::Ignore,
         }
-    }
-}
-
-/// Map a winit NamedKey to a Kitty functional key code.
-/// Returns 0 if the key has no kitty mapping.
-fn named_to_kitty_keycode(named: &NamedKey) -> u32 {
-    use kitty::keycodes;
-    match named {
-        NamedKey::Enter => keycodes::ENTER,
-        NamedKey::Tab => keycodes::TAB,
-        NamedKey::Backspace => keycodes::BACKSPACE,
-        NamedKey::Escape => keycodes::ESCAPE,
-        NamedKey::Insert => keycodes::INSERT,
-        NamedKey::Delete => keycodes::DELETE,
-        NamedKey::ArrowLeft => keycodes::LEFT,
-        NamedKey::ArrowRight => keycodes::RIGHT,
-        NamedKey::ArrowUp => keycodes::UP,
-        NamedKey::ArrowDown => keycodes::DOWN,
-        NamedKey::PageUp => keycodes::PAGE_UP,
-        NamedKey::PageDown => keycodes::PAGE_DOWN,
-        NamedKey::Home => keycodes::HOME,
-        NamedKey::End => keycodes::END,
-        NamedKey::F1 => keycodes::F1,
-        NamedKey::F2 => keycodes::F2,
-        NamedKey::F3 => keycodes::F3,
-        NamedKey::F4 => keycodes::F4,
-        NamedKey::F5 => keycodes::F5,
-        NamedKey::F6 => keycodes::F6,
-        NamedKey::F7 => keycodes::F7,
-        NamedKey::F8 => keycodes::F8,
-        NamedKey::F9 => keycodes::F9,
-        NamedKey::F10 => keycodes::F10,
-        NamedKey::F11 => keycodes::F11,
-        NamedKey::F12 => keycodes::F12,
-        NamedKey::CapsLock => keycodes::CAPS_LOCK,
-        NamedKey::ScrollLock => keycodes::SCROLL_LOCK,
-        NamedKey::NumLock => keycodes::NUM_LOCK,
-        NamedKey::PrintScreen => keycodes::PRINT_SCREEN,
-        NamedKey::Pause => keycodes::PAUSE,
-        NamedKey::ContextMenu => keycodes::MENU,
-        _ => 0,
     }
 }

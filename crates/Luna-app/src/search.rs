@@ -5,33 +5,21 @@ use winit::{
     keyboard::{Key, NamedKey},
 };
 
-use luna_ui::{pane::Pane, tab_bar::TabBar};
+use luna_ui::pane::{EventProxy, Pane};
+use luna_ui::tab_bar::TabBar;
 
 use crate::{
     pane_ops::active_pane_mut,
     state::{AppState, SearchMatch},
 };
 
-pub fn find_matches(grid: &luna_terminal::grid::Grid, term: &str) -> Vec<SearchMatch> {
-    let mut matches = Vec::new();
-    if term.is_empty() {
-        return matches;
-    }
-    let term_lower = term.to_lowercase();
-    let lines = grid.all_lines();
-    for (row, line) in lines.iter().enumerate() {
-        let line_str: String = line.iter().collect();
-        let line_lower = line_str.to_lowercase();
-        let mut start = 0;
-        while let Some(pos) = line_lower[start..].find(&term_lower) {
-            matches.push(SearchMatch {
-                col: start + pos,
-                row,
-            });
-            start += pos + 1;
-        }
-    }
-    matches
+/// Phase 1 stub: scrollback search will be reimplemented on top of
+/// alacritty_terminal's grid in Phase 2.
+pub fn find_matches(
+    _term: &alacritty_terminal::term::Term<EventProxy>,
+    _term_str: &str,
+) -> Vec<SearchMatch> {
+    Vec::new()
 }
 
 pub fn build_match_set(matches: &[SearchMatch], term_len: usize) -> HashSet<(usize, usize)> {
@@ -49,34 +37,16 @@ pub fn update_search_matches(state: &mut AppState, tab_bar: &TabBar, panes: &[Pa
         .iter()
         .find(|p| p.id == tab_bar.active_tab().active_pane)
         .unwrap();
-    let grid = pane.grid.borrow();
-    state.search.matches = find_matches(&grid, &state.search.term);
+    let term = pane.term.lock().unwrap();
+    state.search.matches = find_matches(&term, &state.search.term);
     state.search.current_match = 0;
     if state.search.matches.is_empty() || state.search.current_match >= state.search.matches.len() {
         state.search.current_match = 0;
     }
 }
 
-pub fn scroll_to_current_match(state: &AppState, tab_bar: &TabBar, panes: &[Pane]) {
-    if state.search.matches.is_empty() {
-        return;
-    }
-    let current = &state.search.matches[state.search.current_match];
-    let pane = panes
-        .iter()
-        .find(|p| p.id == tab_bar.active_tab().active_pane)
-        .unwrap();
-    let mut grid = pane.grid.borrow_mut();
-    let sb_len = grid.scrollback_len();
-    let grid_rows = grid.rows();
-
-    if current.row < sb_len {
-        let target = current.row.saturating_sub(grid_rows / 2);
-        grid.set_scroll_offset(target);
-    } else {
-        grid.scroll_to_bottom();
-    }
-}
+/// Phase 1 stub: scrollback scrolling not yet wired through alacritty_terminal.
+pub fn scroll_to_current_match(_state: &AppState, _tab_bar: &TabBar, _panes: &[Pane]) {}
 
 pub fn handle_search_input(
     key: &Key,
@@ -148,7 +118,7 @@ pub fn handle_history_search_input(
         Key::Named(NamedKey::Enter) => {
             if let Some(text) = state.history_search.current_text().map(|s| s.to_string()) {
                 let pane = active_pane_mut(panes, tab_bar);
-                let _ = pane.pty_session.pty.write(text.as_bytes());
+                pane.write_to_pty(text.as_bytes());
             }
             state.history_search.deactivate();
         }

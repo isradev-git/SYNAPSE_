@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use alacritty_terminal::vte::ansi::Color as TermColor;
 use luna_config::Theme;
 use luna_renderer::{renderer::Renderer, ui::UIRect};
 use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
@@ -7,6 +8,57 @@ use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL
 use crate::{app::CellData, pane_ops::find_pane, search::build_match_set, state::AppState};
 
 const TAB_FONT_SIZE: f32 = 12.0;
+
+fn xterm256_to_rgba(idx: u8) -> [f32; 4] {
+    let rgb: [u8; 3] = match idx {
+        0 => [0, 0, 0],
+        1 => [128, 0, 0],
+        2 => [0, 128, 0],
+        3 => [128, 128, 0],
+        4 => [0, 0, 128],
+        5 => [128, 0, 128],
+        6 => [0, 128, 128],
+        7 => [192, 192, 192],
+        8 => [128, 128, 128],
+        9 => [255, 0, 0],
+        10 => [0, 255, 0],
+        11 => [255, 255, 0],
+        12 => [0, 0, 255],
+        13 => [255, 0, 255],
+        14 => [0, 255, 255],
+        15 => [255, 255, 255],
+        16..=231 => {
+            let n = idx - 16;
+            let b = (n % 6) * 51;
+            let g = ((n / 6) % 6) * 51;
+            let r = (n / 36) * 51;
+            [r, g, b]
+        }
+        232..=255 => {
+            let v = (idx - 232) * 10 + 8;
+            [v, v, v]
+        }
+    };
+    [
+        rgb[0] as f32 / 255.0,
+        rgb[1] as f32 / 255.0,
+        rgb[2] as f32 / 255.0,
+        1.0,
+    ]
+}
+
+fn term_color_to_rgba(color: TermColor, fallback: [f32; 4]) -> [f32; 4] {
+    match color {
+        TermColor::Spec(rgb) => [
+            rgb.r as f32 / 255.0,
+            rgb.g as f32 / 255.0,
+            rgb.b as f32 / 255.0,
+            1.0,
+        ],
+        TermColor::Named(_) => fallback,
+        TermColor::Indexed(idx) => xterm256_to_rgba(idx),
+    }
+}
 
 pub fn build_tab_bar_ui_rects(
     layout: &Layout,
@@ -212,39 +264,13 @@ pub fn render_frame(
     effective_font_size: f32,
 ) -> Vec<PaneId> {
     let font_size = effective_font_size;
-    let mut exited_panes: Vec<PaneId> = Vec::new();
-    let mut pty_received = false;
 
-    for pane in panes.iter_mut() {
-        loop {
-            match pane.pty_session.rx.try_recv() {
-                Ok(Some(data)) => {
-                    pane.processor.process(&data);
-                    pty_received = true;
-                    // Write any kitty protocol responses back to PTY
-                    let responses = pane.processor.drain_kitty_responses();
-                    for resp in responses {
-                        let _ = pane.pty_session.pty.write(&resp);
-                    }
-                }
-                Ok(None) => {
-                    let responses = pane.processor.drain_kitty_responses();
-                    for resp in responses {
-                        let _ = pane.pty_session.pty.write(&resp);
-                    }
-                    exited_panes.push(pane.id);
-                    break;
-                }
-                Err(_) => {
-                    let responses = pane.processor.drain_kitty_responses();
-                    for resp in responses {
-                        let _ = pane.pty_session.pty.write(&resp);
-                    }
-                    break;
-                }
-            }
-        }
-    }
+    // PTY parsing happens on per-pane reader threads. We just check the
+    // dirty flag here to know whether to rebuild the frame.
+    let pty_received = panes.iter_mut().any(|pane| pane.is_dirty());
+
+    // Phase 1: pane-exit detection through alacritty_terminal is not wired up.
+    let exited_panes: Vec<PaneId> = Vec::new();
 
     for tab in tab_bar.tabs.iter_mut() {
         if let Some(p) = panes.iter().find(|p| p.id == tab.active_pane) {
@@ -259,7 +285,6 @@ pub fn render_frame(
         }
     }
 
-    let any_grid_dirty = panes.iter().any(|p| p.grid.borrow().has_frame_dirty());
     let font_changed = (*cached_font_size - font_size).abs() > 0.01;
     let blink_changed = *cached_blink != cursor_blink_on;
     let tab_changed = tab_bar.active != *cached_active_tab;
@@ -267,7 +292,6 @@ pub fn render_frame(
     let first_frame = cached_cell_data.is_empty();
 
     let needs_rebuild = pty_received
-        || any_grid_dirty
         || font_changed
         || blink_changed
         || tab_changed
@@ -294,7 +318,7 @@ pub fn render_frame(
         let layouts = pane_tree.get_layout(pane_rect);
         let dividers = pane_tree.get_dividers(pane_rect);
 
-        let match_set: HashSet<(usize, usize)> =
+        let _match_set: HashSet<(usize, usize)> =
             if state.search.active && !state.search.term.is_empty() {
                 build_match_set(&state.search.matches, state.search.term.len())
             } else {
@@ -302,12 +326,10 @@ pub fn render_frame(
             };
 
         for &(pane_id, rect) in &layouts {
-            let pane = find_pane(panes, pane_id);
-            if pane.is_none() {
-                continue;
-            }
-            let pane = pane.unwrap();
-            let grid_ref = pane.grid.borrow();
+            let pane = match find_pane(panes, pane_id) {
+                Some(p) => p,
+                None => continue,
+            };
 
             let content_x = rect.x + margin;
             let content_y = rect.y + margin;
@@ -317,92 +339,82 @@ pub fn render_frame(
             let pane_cols = ((content_w) / cell_w).max(1.0) as usize;
             let pane_rows = ((content_h) / cell_h).max(1.0) as usize;
 
-            let cursor_col = grid_ref.cursor_col();
-            let cursor_row = grid_ref.cursor_row();
-            let scrollback_len = grid_ref.scrollback_len();
-            let scroll_offset = grid_ref.scroll_offset();
-            let sb_visible =
-                ((scroll_offset + pane_rows).min(scrollback_len)).saturating_sub(scroll_offset);
-            let scrolled = scroll_offset > 0;
             let is_active = pane_id == active_pane_id;
 
-            for (col, vrow, cell) in grid_ref.visible_cells_bounded(pane_rows, pane_cols) {
-                if !scrolled && col == cursor_col && vrow == cursor_row {
-                    continue;
-                }
-                if cell.c == ' ' && cell.bg == luna_terminal::grid::Color::Default {
-                    continue;
-                }
+            // Snapshot grid contents and cursor under the lock, then release it.
+            let (cells, cursor_col, cursor_row): (
+                Vec<(usize, i32, char, TermColor, TermColor)>,
+                usize,
+                i32,
+            ) = {
+                let term = match pane.term.lock() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                let grid = term.grid();
+                let cursor_point = grid.cursor.point;
+                let cursor_col = cursor_point.column.0;
+                let cursor_row = cursor_point.line.0;
 
+                let mut buf = Vec::with_capacity(pane_cols * pane_rows);
+                for indexed in grid.display_iter() {
+                    let col = indexed.point.column.0;
+                    let row_val = indexed.point.line.0;
+                    if row_val < 0 || row_val as usize >= pane_rows {
+                        continue;
+                    }
+                    if col >= pane_cols {
+                        continue;
+                    }
+                    buf.push((col, row_val, indexed.c, indexed.fg, indexed.bg));
+                }
+                (buf, cursor_col, cursor_row)
+            };
+
+            for (col, row_val, ch, fg_c, bg_c) in cells {
                 let x = content_x + col as f32 * cell_w;
-                let y = content_y + vrow as f32 * cell_h;
+                let y = content_y + row_val as f32 * cell_h;
 
-                let global_row = if vrow < sb_visible {
-                    scroll_offset + vrow
+                let fg = term_color_to_rgba(fg_c, state.theme.fg);
+                let bg = term_color_to_rgba(bg_c, state.theme.bg);
+
+                let is_cursor =
+                    is_active && col == cursor_col && row_val == cursor_row && cursor_blink_on;
+
+                let (final_fg, final_bg) = if is_cursor {
+                    ([0.067, 0.075, 0.102, 1.0], state.theme.cursor)
                 } else {
-                    scrollback_len + vrow - sb_visible
-                };
-                let selection_bg = is_active
-                    && state
-                        .selection
-                        .as_ref()
-                        .is_some_and(|s| s.contains(col, vrow));
-                let match_is_current = state.search.active
-                    && !state.search.term.is_empty()
-                    && !state.search.matches.is_empty()
-                    && {
-                        let cm = &state.search.matches[state.search.current_match];
-                        cm.row == global_row
-                            && col >= cm.col
-                            && col < cm.col + state.search.term.len()
-                    };
-                let match_is_in = match_set.contains(&(col, global_row));
-                let bg = if selection_bg {
-                    state.theme.selection
-                } else if match_is_current {
-                    state.theme.search_current
-                } else if match_is_in {
-                    state.theme.search_highlight
-                } else {
-                    cell.bg.bg_rgba()
+                    (fg, bg)
                 };
 
-                let is_default_bg = !selection_bg
-                    && !match_is_current
-                    && !match_is_in
-                    && cell.bg == luna_terminal::grid::Color::Default;
-                if !is_default_bg {
+                let bg_is_default = !is_cursor && matches!(bg_c, TermColor::Named(_));
+
+                if !bg_is_default {
                     cached_bg_rects.push(UIRect {
                         pos: [x, y],
                         size: [cell_w, cell_h],
-                        color: bg,
+                        color: final_bg,
                     });
                 }
 
-                if cell.c != ' ' {
-                    cached_cell_data.push((cell.c, x, y, font_size, cell.fg.fg_rgba(), bg));
+                if ch != ' ' {
+                    cached_cell_data.push((ch, x, y, font_size, final_fg, final_bg));
                 }
             }
 
+            // Cursor styles (beam / underline). The block style is drawn inline above.
             if is_active
-                && !scrolled
-                && cursor_col < pane_cols
-                && cursor_row < pane_rows
                 && cursor_blink_on
+                && cursor_row >= 0
+                && (cursor_row as usize) < pane_rows
+                && cursor_col < pane_cols
             {
                 let cx = content_x + cursor_col as f32 * cell_w;
                 let cy = content_y + cursor_row as f32 * cell_h;
                 let cursor_color = state.theme.cursor;
                 match state.config.cursor_style {
                     luna_config::CursorStyle::Block => {
-                        let cell = grid_ref.get(cursor_col, cursor_row);
-                        let cursor_fg = [0.067, 0.075, 0.102, 1.0];
-                        cached_bg_rects.push(UIRect {
-                            pos: [cx, cy],
-                            size: [cell_w, cell_h],
-                            color: cursor_color,
-                        });
-                        cached_cell_data.push((cell.c, cx, cy, font_size, cursor_fg, cursor_color));
+                        // Block cursor is rendered via the per-cell pass above.
                     }
                     luna_config::CursorStyle::Beam => {
                         cached_ui_rects.push(UIRect {
@@ -420,7 +432,6 @@ pub fn render_frame(
                     }
                 }
             }
-            drop(grid_ref);
 
             let border_color = if is_active {
                 state.theme.panel_active_border
@@ -626,11 +637,6 @@ pub fn render_frame(
         *cached_active_tab = tab_bar.active;
     }
 
-    for pane in panes.iter_mut() {
-        pane.grid.borrow_mut().clear_frame_dirty();
-        pane.grid.borrow_mut().clear_dirty();
-    }
-
     renderer.draw_frame(cached_cell_data, cached_ui_rects, cached_bg_rects);
 
     exited_panes
@@ -688,10 +694,9 @@ impl App {
     }
 
     fn handle_pane_exit(&mut self, pane_id: luna_ui::PaneId) {
-        if let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) {
-            let _ = pane.pty_session.pty.kill();
-        }
-
+        // Phase 1: exited_panes is always empty so this path is unused; the
+        // implementation is kept so we can wire alacritty exit events later
+        // without redoing the tab/pane rebalancing logic.
         let tab_idx = self
             .tab_bar
             .tabs

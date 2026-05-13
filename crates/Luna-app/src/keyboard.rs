@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use winit::{event::KeyEvent, window::Window};
 
+use alacritty_terminal::term::TermMode;
 use luna_config::Action;
 use luna_ui::{layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::TabBar};
 
@@ -33,52 +34,28 @@ fn ensure_tab_visible(
     }
 }
 
+/// Phase 1 stub: selection extraction will be reimplemented against the
+/// alacritty_terminal grid in Phase 2.
 pub(crate) fn extract_selection(
-    grid: &luna_terminal::grid::Grid,
-    sel: &crate::state::Selection,
-    cols: usize,
+    _pane: &Pane,
+    _sel: &crate::state::Selection,
+    _cols: usize,
 ) -> String {
-    let (start, end) = sel.normalized();
-    let mut result = String::new();
+    String::new()
+}
 
-    for vrow in start.1..=end.1 {
-        let line_start = if vrow == start.1 { start.0 } else { 0 };
-        let line_end = if vrow == end.1 {
-            end.0.min(cols - 1)
-        } else {
-            cols - 1
-        };
+fn bracketed_paste_active(pane: &Pane) -> bool {
+    pane.term
+        .lock()
+        .map(|t| t.mode().contains(TermMode::BRACKETED_PASTE))
+        .unwrap_or(false)
+}
 
-        for col in line_start..=line_end {
-            let cell = match grid.get_visible(col, vrow) {
-                Some(c) => c,
-                None => continue,
-            };
-
-            if cell.c == '\0'
-                || cell
-                    .flags
-                    .contains(luna_terminal::grid::CellFlags::INVISIBLE)
-            {
-                result.push(' ');
-            } else {
-                result.push(cell.c);
-            }
-        }
-
-        if vrow < end.1 {
-            while result.ends_with(' ') {
-                result.pop();
-            }
-            result.push('\n');
-        }
-    }
-
-    while result.ends_with(' ') || result.ends_with('\n') {
-        result.pop();
-    }
-
-    result
+fn app_cursor_active(pane: &Pane) -> bool {
+    pane.term
+        .lock()
+        .map(|t| t.mode().contains(TermMode::APP_CURSOR))
+        .unwrap_or(false)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -94,42 +71,12 @@ pub fn handle_keyboard(
     clipboard: &mut Option<arboard::Clipboard>,
     window: &Arc<Window>,
 ) -> PostKeyAction {
-    // Get active pane's kitty flags
-    let kitty_flags = find_pane(panes, tab_bar.active_tab().active_pane)
-        .map(|p| p.modes.borrow().kitty.flags)
-        .unwrap_or(0);
-    let kitty_active = kitty_flags > 0;
+    // Kitty keyboard protocol is Phase 2 — these stubs keep the legacy path active.
+    let kitty_flags: u8 = 0;
+    let kitty_active = false;
 
-    // Handle key releases for Kitty report-events mode
+    // Ignore key releases entirely for the legacy path.
     if event.state == winit::event::ElementState::Released {
-        if kitty_active && kitty_flags & luna_terminal::kitty::KITTY_REPORT_EVENTS != 0 {
-            let action = InputAction::from_key_kitty(event, state.modifiers, kitty_flags, true);
-            if let InputAction::Write(bytes) = action {
-                let pane = active_pane_mut(panes, tab_bar);
-                let _ = pane.pty_session.pty.write(&bytes);
-            }
-        }
-        return PostKeyAction::None;
-    }
-
-    // Handle key repeats for Kitty report-events mode
-    if event.repeat && kitty_active && kitty_flags & luna_terminal::kitty::KITTY_REPORT_EVENTS != 0
-    {
-        // Don't process keybinds on repeats — just encode and send
-        if !state.search.active && !state.history_search.active {
-            let keybind_handled = state
-                .keybinds
-                .lookup(&event.logical_key, state.modifiers)
-                .is_some();
-            if !keybind_handled {
-                let action =
-                    InputAction::from_key_kitty(event, state.modifiers, kitty_flags, false);
-                if let InputAction::Write(bytes) = action {
-                    let pane = active_pane_mut(panes, tab_bar);
-                    let _ = pane.pty_session.pty.write(&bytes);
-                }
-            }
-        }
         return PostKeyAction::None;
     }
 
@@ -159,21 +106,11 @@ pub fn handle_keyboard(
                 }
             }
             Some(Action::HistorySearch) => {
-                state.history_search.activate();
-                if let Some(pane) = find_pane(panes, tab_bar.active_tab().active_pane) {
-                    let grid = pane.grid.borrow();
-                    let lines = grid.all_lines();
-                    state.history_search.build_history(&lines);
-                    state.history_search.update_filter();
-                }
+                // Phase 2: rebuild history from alacritty grid scrollback.
             }
             Some(Action::ClearScreen) => {
                 let pane = active_pane_mut(panes, tab_bar);
-                let mut grid = pane.grid.borrow_mut();
-                let last_row = grid.rows() - 1;
-                grid.clear_region(0, last_row);
-                grid.set_cursor(0, 0);
-                let _ = pane.pty_session.pty.write(b"\x0c");
+                pane.write_to_pty(b"\x0c");
             }
             Some(Action::NewTab) => {
                 let pane_area = layout.pane_area();
@@ -196,11 +133,7 @@ pub fn handle_keyboard(
             Some(Action::CloseTab) => {
                 if let Some(closed) = tab_bar.close_tab(tab_bar.active) {
                     let closed_panes = closed.pane_tree.all_panes();
-                    for pane in panes.iter_mut() {
-                        if closed_panes.contains(&pane.id) {
-                            let _ = pane.pty_session.pty.kill();
-                        }
-                    }
+                    // Dropping the panes drops their PTY writers/masters and ends the children.
                     panes.retain(|p| !closed_panes.contains(&p.id));
                 }
                 let n = tab_bar.tabs.len();
@@ -331,9 +264,7 @@ pub fn handle_keyboard(
                 } else {
                     let active_id = tab_bar.active_tab().active_pane;
                     if let Some(removed) = tab_bar.active_tab_mut().pane_tree.close(active_id) {
-                        if let Some(pane) = panes.iter_mut().find(|p| p.id == removed) {
-                            let _ = pane.pty_session.pty.kill();
-                        }
+                        // Dropping the Pane closes its PTY writer/master.
                         panes.retain(|p| p.id != removed);
                         let remaining = tab_bar.active_tab().pane_tree.all_panes();
                         if !remaining.is_empty() {
@@ -384,26 +315,19 @@ pub fn handle_keyboard(
                 }
             }
             Some(Action::Copy) => {
-                let pane = active_pane_mut(panes, tab_bar);
-                let grid_ref = pane.grid.borrow();
-                if let Some(ref sel) = state.selection {
-                    let text = extract_selection(&grid_ref, sel, pane.cols);
-                    if let Some(ref mut clip) = clipboard {
-                        let _ = clip.set_text(text);
-                    }
-                }
+                // Phase 1: copy needs grid-aware selection extraction (Phase 2).
             }
             Some(Action::Paste) => {
                 if let Some(ref mut clip) = clipboard {
                     if let Ok(text) = clip.get_text() {
                         let pane = active_pane_mut(panes, tab_bar);
-                        let bracketed = pane.modes.borrow().bracketed_paste;
+                        let bracketed = bracketed_paste_active(pane);
                         if bracketed {
-                            let _ = pane.pty_session.pty.write(b"\x1b[200~");
+                            pane.write_to_pty(b"\x1b[200~");
                         }
-                        let _ = pane.pty_session.pty.write(text.as_bytes());
+                        pane.write_to_pty(text.as_bytes());
                         if bracketed {
-                            let _ = pane.pty_session.pty.write(b"\x1b[201~");
+                            pane.write_to_pty(b"\x1b[201~");
                         }
                     }
                 }
@@ -429,7 +353,7 @@ pub fn handle_keyboard(
                         });
                     let cmd = format!("{} {}\r", editor, config_path.display());
                     let pane = active_pane_mut(panes, tab_bar);
-                    let _ = pane.pty_session.pty.write(cmd.as_bytes());
+                    pane.write_to_pty(cmd.as_bytes());
                 }
                 return PostKeyAction::ThemeChange;
             }
@@ -441,77 +365,37 @@ pub fn handle_keyboard(
             return PostKeyAction::None;
         }
 
-        if kitty_active {
-            let action = InputAction::from_key_kitty(event, state.modifiers, kitty_flags, false);
-            if let InputAction::Write(bytes) = action {
-                let pane = active_pane_mut(panes, tab_bar);
-                let _ = pane.pty_session.pty.write(&bytes);
-            }
-            return PostKeyAction::None;
-        }
+        let _ = (kitty_flags, kitty_active);
 
         let app_cursor = find_pane(panes, tab_bar.active_tab().active_pane)
-            .map(|p| p.modes.borrow().application_cursor)
+            .map(app_cursor_active)
             .unwrap_or(false);
         let action = InputAction::from_key(event, state.modifiers, app_cursor);
         match action {
             InputAction::Write(bytes) => {
-                if bytes != b"\x1b[5~" && bytes != b"\x1b[6~" {
-                    active_pane_mut(panes, tab_bar)
-                        .grid
-                        .borrow_mut()
-                        .scroll_to_bottom();
-                }
                 let pane = active_pane_mut(panes, tab_bar);
-                if let Err(e) = pane.pty_session.pty.write(&bytes) {
-                    eprintln!("PTY write error: {}", e);
-                }
+                pane.write_to_pty(&bytes);
             }
-            InputAction::ScrollUp(lines) => {
-                active_pane_mut(panes, tab_bar)
-                    .grid
-                    .borrow_mut()
-                    .scroll_up(lines);
-            }
-            InputAction::ScrollDown(lines) => {
-                active_pane_mut(panes, tab_bar)
-                    .grid
-                    .borrow_mut()
-                    .scroll_down(lines);
-            }
-            InputAction::ScrollToTop => {
-                active_pane_mut(panes, tab_bar)
-                    .grid
-                    .borrow_mut()
-                    .scroll_to_top();
-            }
-            InputAction::ScrollToBottom => {
-                active_pane_mut(panes, tab_bar)
-                    .grid
-                    .borrow_mut()
-                    .scroll_to_bottom();
+            InputAction::ScrollUp(_)
+            | InputAction::ScrollDown(_)
+            | InputAction::ScrollToTop
+            | InputAction::ScrollToBottom => {
+                // Phase 2: scrollback scrolling.
             }
             InputAction::Copy => {
-                let pane = active_pane_mut(panes, tab_bar);
-                let grid_ref = pane.grid.borrow();
-                if let Some(ref sel) = state.selection {
-                    let text = extract_selection(&grid_ref, sel, pane.cols);
-                    if let Some(ref mut clip) = clipboard {
-                        let _ = clip.set_text(text);
-                    }
-                }
+                // Phase 2: selection extraction.
             }
             InputAction::Paste => {
                 if let Some(ref mut clip) = clipboard {
                     if let Ok(text) = clip.get_text() {
                         let pane = active_pane_mut(panes, tab_bar);
-                        let bracketed = pane.modes.borrow().bracketed_paste;
+                        let bracketed = bracketed_paste_active(pane);
                         if bracketed {
-                            let _ = pane.pty_session.pty.write(b"\x1b[200~");
+                            pane.write_to_pty(b"\x1b[200~");
                         }
-                        let _ = pane.pty_session.pty.write(text.as_bytes());
+                        pane.write_to_pty(text.as_bytes());
                         if bracketed {
-                            let _ = pane.pty_session.pty.write(b"\x1b[201~");
+                            pane.write_to_pty(b"\x1b[201~");
                         }
                     }
                 }

@@ -7,6 +7,8 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
+use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::term::TermMode;
 use luna_renderer::renderer::Renderer;
 use luna_renderer::ui::UIRect;
 use luna_ui::{
@@ -14,8 +16,27 @@ use luna_ui::{
     pane::{Pane, PaneId},
     tab_bar::{Tab, TabBar, TabId},
 };
+use portable_pty::PtySize;
 
 use crate::{pane_ops::create_pane, state::AppState};
+
+/// Local Dimensions impl used when resizing a `Term`.
+struct TermSize {
+    cols: usize,
+    rows: usize,
+}
+
+impl Dimensions for TermSize {
+    fn total_lines(&self) -> usize {
+        self.rows + 10_000
+    }
+    fn screen_lines(&self) -> usize {
+        self.rows
+    }
+    fn columns(&self) -> usize {
+        self.cols
+    }
+}
 
 pub type CellData = Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>;
 
@@ -161,10 +182,15 @@ impl App {
 
     fn handle_focus(&mut self, focused: bool) {
         let active_id = self.tab_bar.active_tab().active_pane;
-        if let Some(pane) = self.panes.iter_mut().find(|p| p.id == active_id) {
-            if pane.modes.borrow().focus_events {
+        if let Some(pane) = self.panes.iter().find(|p| p.id == active_id) {
+            let send_focus = pane
+                .term
+                .lock()
+                .map(|t| t.mode().contains(TermMode::FOCUS_IN_OUT))
+                .unwrap_or(false);
+            if send_focus {
                 let seq: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
-                let _ = pane.pty_session.pty.write(seq);
+                pane.write_to_pty(seq);
             }
         }
     }
@@ -191,11 +217,20 @@ impl App {
                 if new_cols != pane.cols || new_rows != pane.rows {
                     pane.cols = new_cols;
                     pane.rows = new_rows;
-                    pane.grid.borrow_mut().resize(new_cols, new_rows);
-                    let _ = pane
-                        .pty_session
-                        .pty
-                        .resize(new_cols as u16, new_rows as u16);
+                    if let Ok(mut term) = pane.term.lock() {
+                        term.resize(TermSize {
+                            cols: new_cols,
+                            rows: new_rows,
+                        });
+                    }
+                    if let Ok(master) = pane.pty_master.lock() {
+                        let _ = master.resize(PtySize {
+                            rows: new_rows as u16,
+                            cols: new_cols as u16,
+                            pixel_width: 0,
+                            pixel_height: 0,
+                        });
+                    }
                 }
             }
         }

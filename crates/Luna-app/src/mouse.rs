@@ -6,15 +6,14 @@ use winit::{
     window::{CursorIcon, Window},
 };
 
-use luna_terminal::MouseReportMode;
+use alacritty_terminal::term::TermMode;
 use luna_ui::{
     layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection, SCROLL_BTN_W,
     TAB_BAR_HEIGHT,
 };
 
 use crate::{
-    keyboard::extract_selection,
-    pane_ops::{active_pane_mut, find_hovered_divider, handle_tab_click},
+    pane_ops::{find_hovered_divider, handle_tab_click},
     state::{AppState, DividerDrag, Selection},
 };
 
@@ -64,6 +63,19 @@ fn encode_mouse_event(col: usize, row: usize, btn: u8, pressed: bool, sgr: bool)
     }
 }
 
+/// Return `(mouse_reporting_active, sgr_encoding)` for the active pane.
+fn active_pane_mouse_modes(panes: &[Pane], active_id: luna_ui::PaneId) -> (bool, bool) {
+    if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+        if let Ok(term) = pane.term.lock() {
+            let mode = term.mode();
+            let mouse_active = mode.intersects(TermMode::MOUSE_MODE);
+            let sgr = mode.contains(TermMode::SGR_MOUSE);
+            return (mouse_active, sgr);
+        }
+    }
+    (false, false)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn handle_scroll(
     delta: MouseScrollDelta,
@@ -85,18 +97,9 @@ pub fn handle_scroll(
     };
 
     let active_id = tab_bar.active_tab().active_pane;
-    let mode;
-    let sgr;
-    if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
-        let modes = pane.modes.borrow();
-        mode = modes.mouse_report;
-        sgr = modes.mouse_sgr;
-    } else {
-        mode = MouseReportMode::None;
-        sgr = false;
-    }
+    let (mouse_active, sgr) = active_pane_mouse_modes(panes, active_id);
 
-    if mode != MouseReportMode::None && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
+    if mouse_active && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
         if let Some((col, row)) = cursor_to_pane_cell(
             state.cursor_x,
             state.cursor_y,
@@ -109,20 +112,21 @@ pub fn handle_scroll(
             let btn = if is_up { 64u8 } else { 65u8 };
             for _ in 0..lines {
                 let bytes = encode_mouse_event(col, row, btn, true, sgr);
-                if let Some(pane) = panes.iter_mut().find(|p| p.id == active_id) {
-                    let _ = pane.pty_session.pty.write(&bytes);
+                if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+                    pane.write_to_pty(&bytes);
                 }
             }
         }
         return;
     }
 
-    let pane = active_pane_mut(panes, tab_bar);
-    let mut grid_mut = pane.grid.borrow_mut();
-    if is_up {
-        grid_mut.scroll_down(lines);
-    } else {
-        grid_mut.scroll_up(lines);
+    // Phase 1: no in-app scrollback yet — forward as PageUp/PageDown so apps
+    // and shells that support it respond.
+    if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+        let bytes: &[u8] = if is_up { b"\x1b[5~" } else { b"\x1b[6~" };
+        for _ in 0..lines {
+            pane.write_to_pty(bytes);
+        }
     }
 }
 
@@ -143,18 +147,9 @@ pub fn handle_mouse_button(
 
     // Mouse reporting: intercept clicks for apps like vim/htop when Shift not held
     {
-        let mode;
-        let sgr;
-        if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
-            let modes = pane.modes.borrow();
-            mode = modes.mouse_report;
-            sgr = modes.mouse_sgr;
-        } else {
-            mode = MouseReportMode::None;
-            sgr = false;
-        }
+        let (mouse_active, sgr) = active_pane_mouse_modes(panes, active_id);
 
-        if mode != MouseReportMode::None && !shift_held && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
+        if mouse_active && !shift_held && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
             if let Some((col, row)) = cursor_to_pane_cell(
                 state.cursor_x,
                 state.cursor_y,
@@ -172,8 +167,8 @@ pub fn handle_mouse_button(
                 };
                 let pressed = button_state == ElementState::Pressed;
                 let bytes = encode_mouse_event(col, row, btn, pressed, sgr);
-                if let Some(pane) = panes.iter_mut().find(|p| p.id == active_id) {
-                    let _ = pane.pty_session.pty.write(&bytes);
+                if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+                    pane.write_to_pty(&bytes);
                 }
             }
             return;
@@ -200,46 +195,8 @@ pub fn handle_mouse_button(
                 if y < TAB_BAR_HEIGHT as f64 {
                     handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset);
                 } else if click >= 2 {
-                    // Double / triple click selection
-                    let col = ((x - margin as f64) / cell_w as f64).floor().max(0.0) as usize;
-                    let vrow = ((y - TAB_BAR_HEIGHT as f64 - margin as f64) / cell_h as f64)
-                        .floor()
-                        .max(0.0) as usize;
-                    if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
-                        let grid = pane.grid.borrow();
-                        let cols = grid.cols();
-                        let rows = grid.rows();
-                        if click == 3 {
-                            // Triple click → whole line
-                            let end_col = cols.saturating_sub(1);
-                            let mut sel = Selection::new(0, vrow);
-                            sel.update_end(end_col, vrow);
-                            state.selection = Some(sel);
-                        } else {
-                            // Double click → word
-                            let is_sep = |c: char| {
-                                c == ' '
-                                    || c == '\t'
-                                    || c == '\0'
-                                    || "()[]{}\"'`/\\|;,.<>!@#$%^&*+-=~".contains(c)
-                            };
-                            let char_at = |c: usize| {
-                                grid.get_visible(c, vrow).map(|cell| cell.c).unwrap_or(' ')
-                            };
-
-                            let mut start = col;
-                            while start > 0 && !is_sep(char_at(start - 1)) {
-                                start -= 1;
-                            }
-                            let mut end = col;
-                            while end + 1 < cols && end < rows && !is_sep(char_at(end + 1)) {
-                                end += 1;
-                            }
-                            let mut sel = Selection::new(start, vrow);
-                            sel.update_end(end, vrow);
-                            state.selection = Some(sel);
-                        }
-                    }
+                    // Phase 1: double/triple click selection deferred —
+                    // alacritty_terminal grid access for word detection comes in Phase 2.
                     state.selecting = false;
                 } else if state.hover_divider {
                     let pane_area = layout.pane_area();
@@ -391,8 +348,6 @@ impl App {
         button_state: winit::event::ElementState,
         button: winit::event::MouseButton,
     ) {
-        let was_press = button_state == winit::event::ElementState::Pressed;
-
         handle_mouse_button(
             button_state,
             button,
@@ -404,21 +359,8 @@ impl App {
             self.cell_h,
             self.margin,
         );
-
-        // Auto-copy to clipboard on double/triple click selection (Unix behavior)
-        if was_press && self.state.click_count >= 2 && self.state.selection.is_some() {
-            if let Some(ref sel) = self.state.selection {
-                let active_id = self.tab_bar.active_tab().active_pane;
-                if let Some(pane) = self.panes.iter().find(|p| p.id == active_id) {
-                    let grid = pane.grid.borrow();
-                    let text = extract_selection(&grid, sel, pane.cols);
-                    drop(grid);
-                    if let Some(ref mut clip) = self.clipboard {
-                        let _ = clip.set_text(text);
-                    }
-                }
-            }
-        }
+        // Phase 1: auto-copy on multi-click is deferred until selection
+        // extraction is reimplemented against the alacritty grid.
     }
 
     pub(crate) fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
