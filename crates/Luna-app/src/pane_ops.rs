@@ -1,12 +1,35 @@
-use luna_ui::{
-    layout::Layout,
-    pane::{Pane, PaneId},
-    splitter::PaneRect,
-    tab_bar::TabBar,
-    SCROLL_BTN_W, TAB_BAR_HEIGHT,
-};
+use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+
+use alacritty_terminal::event::Event;
+use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::term::{Config as TermConfig, Term};
+use alacritty_terminal::vte::ansi::{Processor, StdSyncHandler};
+use luna_ui::pane::{EventProxy, Pane, PaneId};
+use luna_ui::{layout::Layout, splitter::PaneRect, tab_bar::TabBar, SCROLL_BTN_W, TAB_BAR_HEIGHT};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 const CLOSE_BTN_W: f32 = 16.0;
+
+/// Minimal `Dimensions` impl used to construct a fresh `Term`.
+struct TermSize {
+    cols: usize,
+    rows: usize,
+}
+
+impl Dimensions for TermSize {
+    fn total_lines(&self) -> usize {
+        // visible rows + scrollback
+        self.rows + 10_000
+    }
+    fn screen_lines(&self) -> usize {
+        self.rows
+    }
+    fn columns(&self) -> usize {
+        self.cols
+    }
+}
 
 pub fn create_pane(id: PaneId, cols: usize, rows: usize) -> Result<Pane, String> {
     create_pane_with_cwd(id, cols, rows, None)
@@ -29,24 +52,97 @@ pub fn create_pane_full(
     shell_override: Option<&str>,
     shell_args: &[String],
 ) -> Result<Pane, String> {
-    use luna_terminal::grid::Grid;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    // 1. Open a PTY pair sized to the current pane geometry.
+    let pty_system = native_pty_system();
+    let pty_pair = pty_system
+        .openpty(PtySize {
+            rows: rows as u16,
+            cols: cols as u16,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| format!("openpty failed: {e}"))?;
 
-    let grid = Rc::new(RefCell::new(Grid::new(cols, rows)));
-    let mut shell_config = luna_terminal::shell::detect_shell();
-    if let Some(cwd) = cwd {
-        shell_config.cwd = Some(cwd);
-    }
-    if let Some(prog) = shell_override {
-        if !prog.is_empty() {
-            shell_config.program = prog.to_string();
-            shell_config.args = shell_args.to_vec();
+    // 2. Build the shell command, applying overrides and cwd.
+    let shell = match shell_override {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()),
+    };
+    let mut cmd = CommandBuilder::new(&shell);
+    if shell_override.is_some() {
+        for arg in shell_args {
+            cmd.arg(arg);
         }
     }
-    let pty_handle = luna_terminal::pty::PtyHandle::spawn(cols as u16, rows as u16, &shell_config)?;
-    let pty_session = luna_terminal::pty::PtyHandle::start_reader(pty_handle);
-    Ok(Pane::new(id, pty_session, grid, cols, rows))
+    if let Some(cwd) = cwd {
+        cmd.cwd(cwd);
+    }
+
+    // 3. Spawn the child on the slave side. The child handle is dropped — the
+    //    OS reaps the process when the PTY is closed.
+    let _child = pty_pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("spawn_command failed: {e}"))?;
+
+    // 4. Pull a reader + writer out of the master, but keep the master itself
+    //    so we can resize the PTY later.
+    let pty_reader = pty_pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("try_clone_reader failed: {e}"))?;
+    let pty_writer = pty_pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("take_writer failed: {e}"))?;
+    let pty_master = pty_pair.master;
+
+    // 5. Event channel for alacritty_terminal -> Luna events.
+    let (event_tx, event_rx) = mpsc::sync_channel::<Event>(256);
+    let proxy = EventProxy::new(event_tx);
+
+    // 6. Construct the terminal.
+    let size = TermSize { cols, rows };
+    let term = Term::new(TermConfig::default(), &size, proxy);
+    let term = Arc::new(Mutex::new(term));
+
+    let dirty = Arc::new(AtomicBool::new(false));
+
+    // 7. Spin up the reader thread: PTY bytes -> VTE parser -> Term handler.
+    let term_reader = Arc::clone(&term);
+    let dirty_reader = Arc::clone(&dirty);
+    std::thread::Builder::new()
+        .name(format!("luna-pty-{}", id.0))
+        .spawn(move || {
+            let mut reader = pty_reader;
+            let mut buf = [0u8; 4096];
+            let mut processor: Processor<StdSyncHandler> = Processor::new();
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if let Ok(mut term) = term_reader.lock() {
+                            for &byte in &buf[..n] {
+                                processor.advance(&mut *term, byte);
+                            }
+                        }
+                        dirty_reader.store(true, Ordering::Release);
+                    }
+                }
+            }
+        })
+        .map_err(|e| format!("failed to spawn pty reader thread: {e}"))?;
+
+    Ok(Pane::new(
+        id,
+        term,
+        Box::new(pty_writer),
+        pty_master,
+        event_rx,
+        dirty,
+        cols,
+        rows,
+    ))
 }
 
 pub fn find_pane(panes: &[Pane], id: PaneId) -> Option<&Pane> {
@@ -182,12 +278,9 @@ pub fn handle_tab_click(
     let close_start = tab_start_x + tab_w - CLOSE_BTN_W as f64;
     if x >= close_start && tab_count > 1 {
         if let Some(closed) = tab_bar.close_tab(actual_idx) {
+            // Dropping the Pane drops pty_writer + pty_master, which closes the
+            // PTY and lets the child process terminate on its next read/write.
             let closed_panes = closed.pane_tree.all_panes();
-            for pane in panes.iter_mut() {
-                if closed_panes.contains(&pane.id) {
-                    let _ = pane.pty_session.pty.kill();
-                }
-            }
             panes.retain(|p| !closed_panes.contains(&p.id));
         }
         let new_count = tab_bar.tabs.len();
@@ -238,11 +331,20 @@ impl App {
             if let Some(pane) = self.panes.iter_mut().find(|p| p.id == *pane_id) {
                 pane.cols = new_cols;
                 pane.rows = new_rows;
-                pane.grid.borrow_mut().resize(new_cols, new_rows);
-                let _ = pane
-                    .pty_session
-                    .pty
-                    .resize(new_cols as u16, new_rows as u16);
+                if let Ok(mut term) = pane.term.lock() {
+                    term.resize(TermSize {
+                        cols: new_cols,
+                        rows: new_rows,
+                    });
+                }
+                if let Ok(master) = pane.pty_master.lock() {
+                    let _ = master.resize(PtySize {
+                        rows: new_rows as u16,
+                        cols: new_cols as u16,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    });
+                }
             }
         }
     }

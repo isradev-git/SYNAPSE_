@@ -1,10 +1,11 @@
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::term::Term;
+use portable_pty::MasterPty;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PaneId(pub u64);
@@ -30,6 +31,7 @@ pub struct Pane {
     pub id: PaneId,
     pub term: Arc<Mutex<Term<EventProxy>>>,
     pub pty_writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     pub event_rx: mpsc::Receiver<Event>,
     pub dirty: Arc<AtomicBool>,
     pub cols: usize,
@@ -43,6 +45,7 @@ impl Pane {
         id: PaneId,
         term: Arc<Mutex<Term<EventProxy>>>,
         pty_writer: Box<dyn Write + Send>,
+        pty_master: Box<dyn MasterPty + Send>,
         event_rx: mpsc::Receiver<Event>,
         dirty: Arc<AtomicBool>,
         cols: usize,
@@ -52,6 +55,7 @@ impl Pane {
             id,
             term,
             pty_writer: Arc::new(Mutex::new(pty_writer)),
+            pty_master: Arc::new(Mutex::new(pty_master)),
             event_rx,
             dirty,
             cols,

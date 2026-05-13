@@ -16,6 +16,7 @@ Luna-renderer = { path = "../Luna-renderer" }
 Luna-ui = { path = "../Luna-ui" }
 Luna-config = { path = "../Luna-config" }
 alacritty_terminal = { workspace = true }
+portable-pty = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 tracing = { workspace = true }
