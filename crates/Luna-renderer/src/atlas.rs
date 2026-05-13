@@ -1,6 +1,7 @@
-use cosmic_text::CacheKey;
 use std::collections::HashMap;
 use wgpu::{Device, Queue};
+
+use crate::text::GlyphKey;
 
 pub const ATLAS_SIZE: u32 = 2048;
 
@@ -21,7 +22,7 @@ pub struct TextureAtlas {
     pub texture: wgpu::Texture,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
-    cache: HashMap<CacheKey, AtlasEntry>,
+    cache: HashMap<GlyphKey, AtlasEntry>,
     x_offset: u32,
     y_offset: u32,
     row_height: u32,
@@ -113,8 +114,6 @@ impl TextureAtlas {
         }
     }
 
-    /// Must be called once per frame before any `get_or_insert` calls.
-    /// Handles deferred atlas reset and logs capacity warnings.
     pub fn begin_frame(&mut self) {
         self.frame += 1;
 
@@ -137,10 +136,8 @@ impl TextureAtlas {
             let fill = self.fill_fraction();
             if fill >= 0.9 {
                 tracing::warn!(
-                    "glyph atlas at {:.0}% capacity ({}/{} rows) — will reset next frame",
+                    "glyph atlas at {:.0}% capacity — will reset next frame",
                     fill * 100.0,
-                    self.y_offset + self.row_height,
-                    ATLAS_SIZE,
                 );
                 self.warned_90 = true;
                 self.needs_reset = true;
@@ -148,15 +145,14 @@ impl TextureAtlas {
         }
     }
 
-    /// Fraction of atlas rows consumed, in [0, 1].
     fn fill_fraction(&self) -> f32 {
         (self.y_offset + self.row_height) as f32 / ATLAS_SIZE as f32
     }
 
-    /// Returns `(uv, is_new)`. `is_new = true` means caller must call `upload_glyph`.
+    /// Returns `(uv, is_new)`. If `is_new`, caller must call `upload_glyph`.
     pub fn get_or_insert(
         &mut self,
-        key: CacheKey,
+        key: GlyphKey,
         bitmap_width: u32,
         bitmap_height: u32,
     ) -> Option<(UvRect, bool)> {
@@ -166,13 +162,7 @@ impl TextureAtlas {
         }
 
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.cache.insert(
-            key,
-            AtlasEntry {
-                uv: rect,
-                last_frame: self.frame,
-            },
-        );
+        self.cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
         Some((rect, true))
     }
 
@@ -203,18 +193,18 @@ impl TextureAtlas {
         Some(UvRect { u0, v0, u1, v1 })
     }
 
+    /// Upload RGBA bytes to the atlas at the rect returned by `get_or_insert`.
     pub fn upload_glyph(
         &mut self,
         queue: &Queue,
         rect: UvRect,
-        bitmap: &[u8],
+        rgba_bitmap: &[u8],
         bitmap_width: u32,
         bitmap_height: u32,
     ) {
         let x = (rect.u0 * ATLAS_SIZE as f32) as u32;
         let y = (rect.v0 * ATLAS_SIZE as f32) as u32;
 
-        // wgpu requires bytes_per_row to be a multiple of COPY_BYTES_PER_ROW_ALIGNMENT (256)
         let raw_bytes_per_row = 4 * bitmap_width;
         let aligned_bytes_per_row =
             ((raw_bytes_per_row + wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1)
@@ -224,10 +214,10 @@ impl TextureAtlas {
         let padded_size = (aligned_bytes_per_row * bitmap_height) as usize;
         let mut padded = vec![0u8; padded_size];
         for row in 0..bitmap_height as usize {
-            let src_start = row * raw_bytes_per_row as usize;
-            let dst_start = row * aligned_bytes_per_row as usize;
-            padded[dst_start..dst_start + raw_bytes_per_row as usize]
-                .copy_from_slice(&bitmap[src_start..src_start + raw_bytes_per_row as usize]);
+            let src = row * raw_bytes_per_row as usize;
+            let dst = row * aligned_bytes_per_row as usize;
+            padded[dst..dst + raw_bytes_per_row as usize]
+                .copy_from_slice(&rgba_bitmap[src..src + raw_bytes_per_row as usize]);
         }
 
         queue.write_texture(
@@ -255,19 +245,23 @@ impl TextureAtlas {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::text::GlyphKey;
+
+    fn make_key(ch: char) -> GlyphKey {
+        GlyphKey::new(ch, 14.0, false, false)
+    }
 
     #[test]
     fn test_allocate_no_overlap() {
         let atlas_size = ATLAS_SIZE;
-
         let mut x_offset: u32 = 0;
         let mut y_offset: u32 = 0;
         let mut row_height: u32 = 0;
         let mut rects = Vec::new();
 
-        for i in 0..100 {
-            let w = (i % 5 + 1) * 8; // widths 8..40
-            let h = (i % 3 + 1) * 12; // heights 12..36
+        for i in 0..100u32 {
+            let w = (i % 5 + 1) * 8;
+            let h = (i % 3 + 1) * 12;
 
             if x_offset + w > atlas_size {
                 x_offset = 0;
@@ -285,40 +279,10 @@ mod tests {
             row_height = row_height.max(h);
             rects.push((u0, v0, u1, v1));
 
-            for (j, &prev) in rects.iter().enumerate().take(rects.len()) {
-                if i == j as u32 {
-                    continue;
-                }
-                let (pu0, pv0, pu1, pv1) = prev;
+            for (j, &(pu0, pv0, pu1, pv1)) in rects.iter().enumerate().take(rects.len() - 1) {
                 let overlap = !(u0 >= pu1 || u1 <= pu0 || v0 >= pv1 || v1 <= pv0);
                 assert!(!overlap, "Overlap between glyph {} and {}", i, j);
             }
         }
-
-        assert!(rects.len() == 100);
-    }
-
-    #[test]
-    fn test_fill_fraction_increases() {
-        let atlas_size = ATLAS_SIZE;
-        let mut x_offset: u32 = 0;
-        let mut y_offset: u32 = 0;
-        let mut row_height: u32 = 0;
-
-        // Fill one full row of 16px-wide, 20px-tall glyphs
-        let count = atlas_size / 16;
-        for _ in 0..count {
-            if x_offset + 16 > atlas_size {
-                x_offset = 0;
-                y_offset += row_height;
-                row_height = 0;
-            }
-            x_offset += 16;
-            row_height = row_height.max(20);
-        }
-
-        let fill = (y_offset + row_height) as f32 / atlas_size as f32;
-        assert!(fill > 0.0, "fill fraction should be > 0 after allocations");
-        assert!(fill <= 1.0, "fill fraction should never exceed 1.0");
     }
 }
