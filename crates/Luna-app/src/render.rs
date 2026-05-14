@@ -665,7 +665,7 @@ pub fn render_frame(
             state.tab_scroll_offset,
             &state.theme,
         );
-        cached_ui_rects.extend(tab_ui);
+        cached_bg_rects.extend(tab_ui);
 
         for tab_cell in
             build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset, &state.theme)
