@@ -9,11 +9,14 @@ struct ScreenUniform {
 
 @group(0) @binding(0) var<uniform> screen: ScreenUniform;
 
+// Z-order for TriangleStrip: TL, TR, BL, BR.
+// CW order (TL,TR,BR,BL) produces a bowtie that only covers half the rect,
+// which is what made tabs look like triangular pennants.
 fn corner_for_index(idx: u32) -> vec2<f32> {
-    if (idx == 0u) { return vec2(0.0, 0.0); }
-    if (idx == 1u) { return vec2(1.0, 0.0); }
-    if (idx == 2u) { return vec2(1.0, 1.0); }
-    return vec2(0.0, 1.0);
+    if (idx == 0u) { return vec2(0.0, 0.0); } // top-left
+    if (idx == 1u) { return vec2(1.0, 0.0); } // top-right
+    if (idx == 2u) { return vec2(0.0, 1.0); } // bottom-left
+    return vec2(1.0, 1.0);                    // bottom-right
 }
 
 @vertex

@@ -192,7 +192,7 @@ impl Renderer {
             }
             let key = crate::text::GlyphKey::new(c, font_size, false, false);
             let bitmap = self.text.rasterize(key);
-            self.push_glyph_instance(&mut instances, &bitmap, key, x_offset, y, fg);
+            self.push_glyph_instance(&mut instances, &bitmap, key, x_offset, y, font_size, fg);
             x_offset += cell_w;
         }
 
@@ -227,6 +227,7 @@ impl Renderer {
         key: crate::text::GlyphKey,
         cell_x: f32,
         cell_y: f32,
+        font_size: f32,
         fg: [f32; 4],
     ) {
         if bitmap.width == 0 || bitmap.height == 0 {
@@ -237,7 +238,13 @@ impl Renderer {
                 let rgba = Self::gray_to_rgba(&bitmap.data);
                 self.atlas.upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
             }
-            let baseline = cell_y + self.cell_h * 0.8;
+            // Baseline must be derived from the *per-glyph* font size, not
+            // the cached cell_h (which reflects the main buffer's font size).
+            // Using the global cell_h here meant tab bar glyphs (12pt) were
+            // placed with the offset for 14pt cells, drifting them down and
+            // creating phantom shapes outside the tab.
+            let line_h = font_size * 1.2;
+            let baseline = cell_y + line_h * 0.8;
             instances.push(CellInstance {
                 cell_pos: [
                     cell_x + bitmap.left as f32,
@@ -265,7 +272,7 @@ impl Renderer {
 
             let key = crate::text::GlyphKey::new(c, font_size, false, false);
             let bitmap = self.text.rasterize(key);
-            self.push_glyph_instance(&mut instances, &bitmap, key, x, y, fg);
+            self.push_glyph_instance(&mut instances, &bitmap, key, x, y, font_size, fg);
         }
 
         instances
