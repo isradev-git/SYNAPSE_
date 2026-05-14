@@ -47,6 +47,47 @@ fn xterm256_to_rgba(idx: u8) -> [f32; 4] {
     ]
 }
 
+fn named_color_to_rgba(
+    nc: alacritty_terminal::vte::ansi::NamedColor,
+    fg: [f32; 4],
+    bg: [f32; 4],
+) -> [f32; 4] {
+    use alacritty_terminal::vte::ansi::NamedColor::*;
+    // Standard xterm 16-color ANSI palette.
+    match nc {
+        Black => [0.000, 0.000, 0.000, 1.0],
+        Red => [0.800, 0.000, 0.000, 1.0],
+        Green => [0.306, 0.604, 0.024, 1.0],
+        Yellow => [0.769, 0.627, 0.000, 1.0],
+        Blue => [0.204, 0.396, 0.643, 1.0],
+        Magenta => [0.459, 0.314, 0.482, 1.0],
+        Cyan => [0.024, 0.596, 0.604, 1.0],
+        White => [0.827, 0.843, 0.812, 1.0],
+        BrightBlack => [0.333, 0.341, 0.325, 1.0],
+        BrightRed => [0.937, 0.161, 0.161, 1.0],
+        BrightGreen => [0.541, 0.886, 0.204, 1.0],
+        BrightYellow => [0.988, 0.914, 0.310, 1.0],
+        BrightBlue => [0.447, 0.624, 0.812, 1.0],
+        BrightMagenta => [0.678, 0.498, 0.659, 1.0],
+        BrightCyan => [0.204, 0.886, 0.886, 1.0],
+        BrightWhite => [0.933, 0.933, 0.925, 1.0],
+        // Semantic aliases — use the caller-supplied fg/bg.
+        Foreground | BrightForeground | DimForeground => fg,
+        Background => bg,
+        // Dim variants: darken the normal color by ~50%.
+        DimBlack => [0.000, 0.000, 0.000, 1.0],
+        DimRed => [0.400, 0.000, 0.000, 1.0],
+        DimGreen => [0.153, 0.302, 0.012, 1.0],
+        DimYellow => [0.385, 0.314, 0.000, 1.0],
+        DimBlue => [0.102, 0.198, 0.322, 1.0],
+        DimMagenta => [0.230, 0.157, 0.241, 1.0],
+        DimCyan => [0.012, 0.298, 0.302, 1.0],
+        DimWhite => [0.414, 0.422, 0.406, 1.0],
+        // Cursor / other terminal-managed colors: fall back to fg.
+        Cursor => fg,
+    }
+}
+
 fn term_color_to_rgba(color: TermColor, fallback: [f32; 4]) -> [f32; 4] {
     match color {
         TermColor::Spec(rgb) => [
@@ -55,7 +96,7 @@ fn term_color_to_rgba(color: TermColor, fallback: [f32; 4]) -> [f32; 4] {
             rgb.b as f32 / 255.0,
             1.0,
         ],
-        TermColor::Named(_) => fallback,
+        TermColor::Named(nc) => named_color_to_rgba(nc, fallback, [0.067, 0.075, 0.102, 1.0]),
         TermColor::Indexed(idx) => xterm256_to_rgba(idx),
     }
 }

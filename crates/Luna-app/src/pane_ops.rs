@@ -115,12 +115,14 @@ pub fn create_pane_full(
         .name(format!("luna-pty-{}", id.0))
         .spawn(move || {
             let mut reader = pty_reader;
-            let mut buf = [0u8; 4096];
+            let mut buf = [0u8; 1024];
             let mut processor: Processor<StdSyncHandler> = Processor::new();
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
+                        // Phase 2: parse outside the lock using a staging queue (alacritty pattern).
+                        // Phase 1 mitigation: 1 KiB chunks limit lock hold duration.
                         if let Ok(mut term) = term_reader.lock() {
                             for &byte in &buf[..n] {
                                 processor.advance(&mut *term, byte);

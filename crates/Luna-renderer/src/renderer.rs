@@ -121,9 +121,9 @@ impl Renderer {
             device,
             queue,
             clear_color: wgpu::Color {
-                r: 33.0 / 255.0,
-                g: 11.0 / 255.0,
-                b: 75.0 / 255.0,
+                r: 17.0 / 255.0,
+                g: 19.0 / 255.0,
+                b: 26.0 / 255.0,
                 a: 1.0,
             },
             config,
