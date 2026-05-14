@@ -55,3 +55,8 @@
 {"t":0,"agent":"system","event":"skill_invoked","skill_name":"superpowers:finishing-a-development-branch"}
 {"t":0,"agent":"a832b95","agent_type":"unknown","event":"agent_stop","success":true}
 {"t":0,"agent":"a889456","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a2b4488","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"ae7733c","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a34271b","agent_type":"general-purpose","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a34271b","agent_type":"general-purpose","event":"agent_stop","success":true,"duration_ms":48954}
+{"t":0,"agent":"a7db495","agent_type":"unknown","event":"agent_stop","success":true}
