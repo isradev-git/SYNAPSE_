@@ -89,11 +89,16 @@ impl Renderer {
 
         let size = window.inner_size();
         let caps = surface.get_capabilities(&adapter);
+        // We store colors in sRGB-encoded floats (e.g. 0x11/255.0 = 0.0667) and
+        // write them directly from the shader. If the surface is sRGB, wgpu
+        // does an automatic linear→sRGB conversion at present time, which
+        // brightens everything because it assumes the shader output was linear.
+        // Prefer a non-sRGB (UNORM) format so what we write is what gets shown.
         let format = caps
             .formats
             .iter()
             .copied()
-            .find(|f| f.is_srgb())
+            .find(|f| !f.is_srgb())
             .unwrap_or(caps.formats[0]);
 
         let config = SurfaceConfiguration {

@@ -152,7 +152,12 @@ pub fn build_tab_bar_ui_rects(
             });
         }
 
-        if vis_i > 0 {
+        // Separator between tabs: skip the one adjacent to the active tab,
+        // because the active tab's darker background creates a visual
+        // "notch" / triangular cut that looks like a bowtie. The contrast
+        // between tab_active_bg and tab_inactive_bg already separates them
+        // visually without needing a line.
+        if vis_i > 0 && i != tab_bar.active && (i - 1) != tab_bar.active {
             rects.push(UIRect {
                 pos: [x, 4.0],
                 size: [1.0, layout.tab_bar_height - 8.0],
@@ -474,31 +479,37 @@ pub fn render_frame(
                 }
             }
 
-            let border_color = if is_active {
-                state.theme.panel_active_border
-            } else {
-                state.theme.panel_inactive_border
-            };
-            cached_ui_rects.push(UIRect {
-                pos: [rect.x, rect.y],
-                size: [rect.w, 1.0],
-                color: border_color,
-            });
-            cached_ui_rects.push(UIRect {
-                pos: [rect.x, rect.y + rect.h - 1.0],
-                size: [rect.w, 1.0],
-                color: border_color,
-            });
-            cached_ui_rects.push(UIRect {
-                pos: [rect.x, rect.y],
-                size: [1.0, rect.h],
-                color: border_color,
-            });
-            cached_ui_rects.push(UIRect {
-                pos: [rect.x + rect.w - 1.0, rect.y],
-                size: [1.0, rect.h],
-                color: border_color,
-            });
+            // Only draw pane borders when there's more than one pane in the
+            // active tab. With a single pane the borders just duplicate the
+            // window edge and the top border draws a cyan line right below
+            // the tab bar — which looks like a stray UI element.
+            if layouts.len() > 1 {
+                let border_color = if is_active {
+                    state.theme.panel_active_border
+                } else {
+                    state.theme.panel_inactive_border
+                };
+                cached_ui_rects.push(UIRect {
+                    pos: [rect.x, rect.y],
+                    size: [rect.w, 1.0],
+                    color: border_color,
+                });
+                cached_ui_rects.push(UIRect {
+                    pos: [rect.x, rect.y + rect.h - 1.0],
+                    size: [rect.w, 1.0],
+                    color: border_color,
+                });
+                cached_ui_rects.push(UIRect {
+                    pos: [rect.x, rect.y],
+                    size: [1.0, rect.h],
+                    color: border_color,
+                });
+                cached_ui_rects.push(UIRect {
+                    pos: [rect.x + rect.w - 1.0, rect.y],
+                    size: [1.0, rect.h],
+                    color: border_color,
+                });
+            }
         }
 
         for info in &dividers {

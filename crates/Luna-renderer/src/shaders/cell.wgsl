@@ -13,11 +13,16 @@ struct ScreenUniform {
 @group(0) @binding(1) var atlas_sampler: sampler;
 @group(1) @binding(0) var<uniform> screen: ScreenUniform;
 
+// TriangleStrip with 4 vertices needs Z-order: TL, TR, BL, BR.
+// That produces two triangles (TL,TR,BL) and (TR,BL,BR) covering the quad.
+// The previous CW order (TL,TR,BR,BL) produced a bowtie — two crossed
+// triangles that mirrored half the glyph and made cached UV regions
+// from other glyphs visible (atlas-leak / pixelated text).
 fn corner_for_index(idx: u32) -> vec2<f32> {
-    if (idx == 0u) { return vec2(0.0, 0.0); }
-    if (idx == 1u) { return vec2(1.0, 0.0); }
-    if (idx == 2u) { return vec2(1.0, 1.0); }
-    return vec2(0.0, 1.0);
+    if (idx == 0u) { return vec2(0.0, 0.0); } // top-left
+    if (idx == 1u) { return vec2(1.0, 0.0); } // top-right
+    if (idx == 2u) { return vec2(0.0, 1.0); } // bottom-left
+    return vec2(1.0, 1.0);                    // bottom-right
 }
 
 @vertex
@@ -50,7 +55,12 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let atlas_color = textureSample(atlas, atlas_sampler, in.uv);
-    let alpha = atlas_color.a;
-    return mix(in.bg_color, in.fg_color, alpha);
+    // atlas stores glyph coverage in the alpha channel (RGBA where rgb=1,1,1
+    // and a = coverage). The pipeline uses PREMULTIPLIED_ALPHA_BLENDING, so
+    // the output must be premultiplied: rgb already multiplied by a.
+    let coverage = textureSample(atlas, atlas_sampler, in.uv).a;
+    // Composite fg over bg manually, then premultiply.
+    let composed_rgb = mix(in.bg_color.rgb * in.bg_color.a, in.fg_color.rgb, coverage);
+    let composed_a = mix(in.bg_color.a, 1.0, coverage);
+    return vec4(composed_rgb, composed_a);
 }
