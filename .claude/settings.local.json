@@ -29,7 +29,25 @@
       "Bash(~/.claude/awesome-statusline.sh *)",
       "Bash(xargs cat)",
       "Bash(~/.cargo/bin/cargo clippy *)",
-      "mcp__plugin_oh-my-claudecode_t__lsp_document_symbols"
+      "mcp__plugin_oh-my-claudecode_t__lsp_document_symbols",
+      "Bash(cargo fetch *)",
+      "Read(//home/glitchbane-server/.cargo/bin/**)",
+      "Read(//root/.cargo/bin/**)",
+      "Bash(/home/glitchbane-server/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin/cargo fetch *)",
+      "Bash(export PATH=\"/home/glitchbane-server/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin:/home/glitchbane-server/.cargo/bin:$PATH\")",
+      "Bash(export RUSTUP_HOME=\"/home/glitchbane-server/.rustup\")",
+      "Bash(export CARGO_HOME=\"/home/glitchbane-server/.cargo\")",
+      "Bash(export PATH=\"$HOME/.cargo/bin:$PATH\")",
+      "mcp__plugin_oh-my-claudecode_t__lsp_diagnostics",
+      "Bash(/home/glitchbane-server/.cargo/bin/cargo build *)",
+      "Bash(awk -F'-->' '{print $2}')",
+      "Bash(awk '{print $1}')",
+      "Bash(/home/glitchbane-server/.cargo/bin/cargo fmt *)",
+      "Bash(~/.cargo/bin/cargo build *)",
+      "Bash(find ~/.cargo/registry/src/index.crates.io-*/alacritty_terminal-0.24.2/src -name \"*.rs\")",
+      "Bash(~/.cargo/bin/cargo test *)",
+      "Bash(grep -v '\\\\.d$')",
+      "Bash(grep -v '\\\\.rlib$')"
     ]
   }
 }
