@@ -6,6 +6,8 @@ use winit::{
     window::{CursorIcon, Window},
 };
 
+use alacritty_terminal::index::{Column, Line, Point, Side};
+use alacritty_terminal::selection::{Selection as TermSelection, SelectionType};
 use alacritty_terminal::term::TermMode;
 use luna_ui::{
     layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection, SCROLL_BTN_W,
@@ -14,7 +16,7 @@ use luna_ui::{
 
 use crate::{
     pane_ops::{find_hovered_divider, handle_tab_click},
-    state::{AppState, DividerDrag, Selection},
+    state::{AppState, DividerDrag},
 };
 
 fn cursor_to_pane_cell(
@@ -120,13 +122,13 @@ pub fn handle_scroll(
         return;
     }
 
-    // Phase 1: no in-app scrollback yet — forward as PageUp/PageDown so apps
-    // and shells that support it respond.
     if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
-        let bytes: &[u8] = if is_up { b"\x1b[5~" } else { b"\x1b[6~" };
-        for _ in 0..lines {
-            pane.write_to_pty(bytes);
-        }
+        let scroll = if is_up {
+            alacritty_terminal::grid::Scroll::Delta(lines as i32)
+        } else {
+            alacritty_terminal::grid::Scroll::Delta(-(lines as i32))
+        };
+        pane.scroll_viewport(scroll);
     }
 }
 
@@ -194,11 +196,7 @@ pub fn handle_mouse_button(
 
                 if y < TAB_BAR_HEIGHT as f64 {
                     handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset);
-                } else if click >= 2 {
-                    // Phase 1: double/triple click selection deferred —
-                    // alacritty_terminal grid access for word detection comes in Phase 2.
-                    state.selecting = false;
-                } else if state.hover_divider {
+                } else if state.hover_divider && click == 1 {
                     let pane_area = layout.pane_area();
                     let pane_rect = PaneRect {
                         x: pane_area.0,
@@ -216,8 +214,27 @@ pub fn handle_mouse_button(
                         state.selecting = false;
                     }
                 } else {
-                    state.selection = None;
-                    state.selecting = true;
+                    let sel_type = match click {
+                        3.. => SelectionType::Lines,
+                        2 => SelectionType::Semantic,
+                        _ => SelectionType::Simple,
+                    };
+                    if let Some((col, row)) = cursor_to_pane_cell(
+                        x, y, tab_bar, layout, cell_w, cell_h, margin,
+                    ) {
+                        if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+                            if let Ok(mut term) = pane.term.lock() {
+                                term.selection = Some(TermSelection::new(
+                                    sel_type,
+                                    Point::new(Line(row as i32), Column(col)),
+                                    Side::Left,
+                                ));
+                            }
+                            pane.dirty.store(true, std::sync::atomic::Ordering::Release);
+                        }
+                    }
+                    // Only drag-extend on single click; double/triple selects word/line immediately.
+                    state.selecting = click == 1;
                 }
             }
             ElementState::Released => {
@@ -234,6 +251,7 @@ pub fn handle_cursor_moved(
     scale_factor: f64,
     state: &mut AppState,
     tab_bar: &mut TabBar,
+    panes: &[Pane],
     layout: &Layout,
     window: &Arc<Window>,
     cell_w: f32,
@@ -312,17 +330,18 @@ pub fn handle_cursor_moved(
     if state.selecting {
         let x = state.cursor_x;
         let y = state.cursor_y;
-
-        let pane_top = TAB_BAR_HEIGHT as f64;
-        let col = ((x - margin as f64) / cell_w as f64).floor().max(0.0) as usize;
-        let viewport_row = ((y - pane_top - margin as f64) / cell_h as f64)
-            .floor()
-            .max(0.0) as usize;
-
-        if let Some(ref mut sel) = state.selection {
-            sel.update_end(col, viewport_row);
-        } else {
-            state.selection = Some(Selection::new(col, viewport_row));
+        if let Some((col, row)) =
+            cursor_to_pane_cell(x, y, tab_bar, layout, cell_w, cell_h, margin)
+        {
+            let active_id = tab_bar.active_tab().active_pane;
+            if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+                if let Ok(mut term) = pane.term.lock() {
+                    if let Some(sel) = term.selection.as_mut() {
+                        sel.update(Point::new(Line(row as i32), Column(col)), Side::Right);
+                    }
+                }
+                pane.dirty.store(true, std::sync::atomic::Ordering::Release);
+            }
         }
     }
 }
@@ -369,6 +388,7 @@ impl App {
             self.window.scale_factor(),
             &mut self.state,
             &mut self.tab_bar,
+            &self.panes,
             &self.layout,
             &self.window,
             self.cell_w,

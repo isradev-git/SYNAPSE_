@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "bash-defensive-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "autoskills-registry",
+      "computedHash": "1f566c2d9c3b50a784b05d08f6b08ebfeb31f038e4d4173f2d488484edb058a6"
+    },
     "bash-linux": {
       "source": "sickn33/antigravity-awesome-skills",
       "sourceType": "github",
@@ -21,9 +26,8 @@
     },
     "rust-best-practices": {
       "source": "apollographql/skills",
-      "sourceType": "github",
-      "skillPath": "skills/rust-best-practices/SKILL.md",
-      "computedHash": "fd336f2f772eb46ddf8658de5f9dd8faa1f35615b316665307fc82eeb4b2e658"
+      "sourceType": "autoskills-registry",
+      "computedHash": "5f3890a1ccc7df4c47b7fd14600e2ddd629c513d58118ab668260f4d5d6b30d5"
     },
     "ui-ux-pro-max": {
       "source": "nextlevelbuilder/ui-ux-pro-max-skill",

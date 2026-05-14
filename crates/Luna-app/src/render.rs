@@ -311,12 +311,14 @@ pub fn render_frame(
 ) -> Vec<PaneId> {
     let font_size = effective_font_size;
 
-    // PTY parsing happens on per-pane reader threads. We just check the
-    // dirty flag here to know whether to rebuild the frame.
-    let pty_received = panes.iter_mut().any(|pane| pane.is_dirty());
+    // Drain event channels: pick up exit signals and title updates, then
+    // check the dirty flag for PTY output.
+    let exited_panes: Vec<PaneId> = panes
+        .iter_mut()
+        .filter_map(|p| if p.poll_events() { Some(p.id) } else { None })
+        .collect();
 
-    // Phase 1: pane-exit detection through alacritty_terminal is not wired up.
-    let exited_panes: Vec<PaneId> = Vec::new();
+    let pty_received = panes.iter_mut().any(|pane| pane.is_dirty());
 
     for tab in tab_bar.tabs.iter_mut() {
         if let Some(p) = panes.iter().find(|p| p.id == tab.active_pane) {
@@ -387,11 +389,12 @@ pub fn render_frame(
 
             let is_active = pane_id == active_pane_id;
 
-            // Snapshot grid contents and cursor under the lock, then release it.
-            let (cells, cursor_col, cursor_row): (
+            // Snapshot grid contents, cursor, and selection range under the lock.
+            let (cells, cursor_col, cursor_row, sel_range): (
                 Vec<(usize, i32, char, TermColor, TermColor)>,
                 usize,
                 i32,
+                Option<alacritty_terminal::selection::SelectionRange>,
             ) = {
                 let term = match pane.term.lock() {
                     Ok(t) => t,
@@ -401,6 +404,8 @@ pub fn render_frame(
                 let cursor_point = grid.cursor.point;
                 let cursor_col = cursor_point.column.0;
                 let cursor_row = cursor_point.line.0;
+
+                let sel_range = term.selection.as_ref().and_then(|s| s.to_range(&*term));
 
                 let mut buf = Vec::with_capacity(pane_cols * pane_rows);
                 for indexed in grid.display_iter() {
@@ -414,7 +419,7 @@ pub fn render_frame(
                     }
                     buf.push((col, row_val, indexed.c, indexed.fg, indexed.bg));
                 }
-                (buf, cursor_col, cursor_row)
+                (buf, cursor_col, cursor_row, sel_range)
             };
 
             for (col, row_val, ch, fg_c, bg_c) in cells {
@@ -427,13 +432,24 @@ pub fn render_frame(
                 let is_cursor =
                     is_active && col == cursor_col && row_val == cursor_row && cursor_blink_on;
 
+                let in_selection = is_active
+                    && sel_range.as_ref().map(|r| {
+                        r.contains(alacritty_terminal::index::Point::new(
+                            alacritty_terminal::index::Line(row_val),
+                            alacritty_terminal::index::Column(col),
+                        ))
+                    }).unwrap_or(false);
+
                 let (final_fg, final_bg) = if is_cursor {
                     ([0.067, 0.075, 0.102, 1.0], state.theme.cursor)
+                } else if in_selection {
+                    (fg, [0.259, 0.522, 0.957, 0.5])
                 } else {
                     (fg, bg)
                 };
 
-                let bg_is_default = !is_cursor && matches!(bg_c, TermColor::Named(_));
+                let bg_is_default =
+                    !is_cursor && !in_selection && matches!(bg_c, TermColor::Named(_));
 
                 if !bg_is_default {
                     cached_bg_rects.push(UIRect {

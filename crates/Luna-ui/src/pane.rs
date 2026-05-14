@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
+use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::Term;
 use portable_pty::MasterPty;
 
@@ -72,8 +73,29 @@ impl Pane {
         }
     }
 
+    pub fn scroll_viewport(&self, scroll: Scroll) {
+        if let Ok(mut term) = self.term.lock() {
+            term.scroll_display(scroll);
+        }
+        self.dirty.store(true, Ordering::Release);
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.dirty.swap(false, Ordering::AcqRel)
+    }
+
+    /// Drain all pending events from the channel. Updates title on Event::Title.
+    /// Returns true if Event::Exit was received (process died).
+    pub fn poll_events(&mut self) -> bool {
+        let mut exited = false;
+        while let Ok(event) = self.event_rx.try_recv() {
+            match event {
+                Event::Exit => exited = true,
+                Event::Title(title) => self.title = title,
+                _ => {}
+            }
+        }
+        exited
     }
 
     pub fn title(&self) -> String {

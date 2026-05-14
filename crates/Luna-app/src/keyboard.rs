@@ -34,16 +34,6 @@ fn ensure_tab_visible(
     }
 }
 
-/// Phase 1 stub: selection extraction will be reimplemented against the
-/// alacritty_terminal grid in Phase 2.
-#[allow(dead_code)]
-pub(crate) fn extract_selection(
-    _pane: &Pane,
-    _sel: &crate::state::Selection,
-    _cols: usize,
-) -> String {
-    String::new()
-}
 
 fn bracketed_paste_active(pane: &Pane) -> bool {
     pane.term
@@ -316,7 +306,16 @@ pub fn handle_keyboard(
                 }
             }
             Some(Action::Copy) => {
-                // Phase 1: copy needs grid-aware selection extraction (Phase 2).
+                let active_id = tab_bar.active_tab().active_pane;
+                if let Some(pane) = find_pane(panes, active_id) {
+                    if let Ok(term) = pane.term.lock() {
+                        if let Some(text) = term.selection_to_string() {
+                            if let Some(ref mut clip) = clipboard {
+                                let _ = clip.set_text(text);
+                            }
+                        }
+                    }
+                }
             }
             Some(Action::Paste) => {
                 if let Some(ref mut clip) = clipboard {
@@ -377,11 +376,21 @@ pub fn handle_keyboard(
                 let pane = active_pane_mut(panes, tab_bar);
                 pane.write_to_pty(&bytes);
             }
-            InputAction::ScrollUp(_)
-            | InputAction::ScrollDown(_)
-            | InputAction::ScrollToTop
-            | InputAction::ScrollToBottom => {
-                // Phase 2: scrollback scrolling.
+            InputAction::ScrollUp(n) => {
+                let pane = active_pane_mut(panes, tab_bar);
+                pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(n as i32));
+            }
+            InputAction::ScrollDown(n) => {
+                let pane = active_pane_mut(panes, tab_bar);
+                pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(-(n as i32)));
+            }
+            InputAction::ScrollToTop => {
+                let pane = active_pane_mut(panes, tab_bar);
+                pane.scroll_viewport(alacritty_terminal::grid::Scroll::Top);
+            }
+            InputAction::ScrollToBottom => {
+                let pane = active_pane_mut(panes, tab_bar);
+                pane.scroll_viewport(alacritty_terminal::grid::Scroll::Bottom);
             }
             InputAction::Copy => {
                 // Phase 2: selection extraction.
