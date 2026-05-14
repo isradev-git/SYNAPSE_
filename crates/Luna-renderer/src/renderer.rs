@@ -220,6 +220,7 @@ impl Renderer {
         rgba
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_glyph_instance(
         &mut self,
         instances: &mut Vec<CellInstance>,

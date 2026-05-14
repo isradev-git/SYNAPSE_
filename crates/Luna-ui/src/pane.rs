@@ -90,7 +90,7 @@ impl Pane {
         let mut exited = false;
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
-                Event::Exit => exited = true,
+                Event::Exit | Event::ChildExit(_) => exited = true,
                 Event::Title(title) => self.title = title,
                 _ => {}
             }

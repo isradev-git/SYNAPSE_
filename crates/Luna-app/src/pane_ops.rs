@@ -12,10 +12,10 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 const CLOSE_BTN_W: f32 = 16.0;
 
-/// Minimal `Dimensions` impl used to construct a fresh `Term`.
-struct TermSize {
-    cols: usize,
-    rows: usize,
+/// Minimal `Dimensions` impl used to construct and resize a `Term`.
+pub(crate) struct TermSize {
+    pub(crate) cols: usize,
+    pub(crate) rows: usize,
 }
 
 impl Dimensions for TermSize {

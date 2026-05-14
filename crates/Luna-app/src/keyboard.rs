@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use winit::{event::KeyEvent, window::Window};
 
+use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::TermMode;
 use luna_config::Action;
 use luna_ui::{layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::TabBar};
@@ -97,7 +98,26 @@ pub fn handle_keyboard(
                 }
             }
             Some(Action::HistorySearch) => {
-                // Phase 2: rebuild history from alacritty grid scrollback.
+                if state.history_search.active {
+                    state.history_search.next_match();
+                } else {
+                    let active_id = tab_bar.active_tab().active_pane;
+                    if let Some(pane) = find_pane(panes, active_id) {
+                        if let Ok(term) = pane.term.lock() {
+                            let grid = term.grid();
+                            let history_size = grid.history_size();
+                            let screen_lines = grid.screen_lines();
+                            let mut lines_buf: Vec<Vec<char>> = Vec::new();
+                            for line_idx in (-(history_size as i32))..(screen_lines as i32) {
+                                let row = &grid[alacritty_terminal::index::Line(line_idx)];
+                                let line: Vec<char> = row.into_iter().map(|cell| cell.c).collect();
+                                lines_buf.push(line);
+                            }
+                            state.history_search.activate();
+                            state.history_search.build_history(&lines_buf);
+                        }
+                    }
+                }
             }
             Some(Action::ClearScreen) => {
                 let pane = active_pane_mut(panes, tab_bar);

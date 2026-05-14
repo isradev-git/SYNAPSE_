@@ -7,7 +7,6 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::TermMode;
 use luna_renderer::renderer::Renderer;
 use luna_renderer::ui::UIRect;
@@ -18,25 +17,7 @@ use luna_ui::{
 };
 use portable_pty::PtySize;
 
-use crate::{pane_ops::create_pane, state::AppState};
-
-/// Local Dimensions impl used when resizing a `Term`.
-struct TermSize {
-    cols: usize,
-    rows: usize,
-}
-
-impl Dimensions for TermSize {
-    fn total_lines(&self) -> usize {
-        self.rows + 10_000
-    }
-    fn screen_lines(&self) -> usize {
-        self.rows
-    }
-    fn columns(&self) -> usize {
-        self.cols
-    }
-}
+use crate::{pane_ops::{create_pane, TermSize}, state::AppState};
 
 pub type CellData = Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>;
 
