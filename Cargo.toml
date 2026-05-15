@@ -4,6 +4,7 @@ members = [
     "crates/SYNAPSE_-renderer",
     "crates/SYNAPSE_-ui",
     "crates/SYNAPSE_-config",
+    "crates/SYNAPSE_-suggest",
 ]
 resolver = "2"
 

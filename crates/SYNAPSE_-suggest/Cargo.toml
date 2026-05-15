@@ -1,0 +1,11 @@
+[package]
+name = "SYNAPSE_-suggest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "synapse_suggest"
+path = "src/lib.rs"

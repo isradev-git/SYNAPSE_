@@ -15,6 +15,7 @@ path = "src/main.rs"
 SYNAPSE_-renderer = { path = "../SYNAPSE_-renderer" }
 SYNAPSE_-ui = { path = "../SYNAPSE_-ui" }
 SYNAPSE_-config = { path = "../SYNAPSE_-config" }
+SYNAPSE_-suggest = { path = "../SYNAPSE_-suggest" }
 alacritty_terminal = { workspace = true }
 portable-pty = { workspace = true }
 winit = { workspace = true }

@@ -337,7 +337,7 @@ pub fn render_frame(
     let font_changed = (*cached_font_size - font_size).abs() > 0.01;
     let blink_changed = *cached_blink != cursor_blink_on;
     let tab_changed = tab_bar.active != *cached_active_tab;
-    let ui_active = state.selecting || state.search.active || state.history_search.active;
+    let ui_active = state.selecting || state.search.active || state.history_search.active || state.suggest.ghost.is_some();
     let first_frame = cached_cell_data.is_empty();
 
     let needs_rebuild = pty_received
@@ -496,6 +496,24 @@ pub fn render_frame(
                             size: [cell_w, 2.0],
                             color: cursor_color,
                         });
+                    }
+                }
+            }
+
+            // Ghost text overlay — fish-shell style suggestion after cursor.
+            if is_active && cursor_row >= 0 && (cursor_row as usize) < pane_rows {
+                if let Some(suffix) = state.suggest.ghost_suffix() {
+                    let [r, g, b, _] = state.theme.fg;
+                    let ghost_fg = [r, g, b, 0.4];
+                    let transparent = [0.0, 0.0, 0.0, 0.0];
+                    let cy = content_y + cursor_row as f32 * cell_h;
+                    for (j, c) in suffix.chars().enumerate() {
+                        let col = cursor_col + j;
+                        if col >= pane_cols {
+                            break;
+                        }
+                        let cx = content_x + col as f32 * cell_w;
+                        cached_cell_data.push((c, cx, cy, font_size, ghost_fg, transparent));
                     }
                 }
             }

@@ -402,13 +402,50 @@ pub fn handle_keyboard(
                                 if let Some(ref mut clip) = clipboard {
                                     let _ = clip.set_text(text);
                                 }
+                                state.suggest.clear();
                                 return PostKeyAction::None;
                             }
                         }
                     }
                 }
+
+                // Ghost text: Tab or Right → accept full suggestion.
+                if state.suggest.has_ghost() {
+                    let bslice = bytes.as_slice();
+                    if bslice == b"\t" || bslice == b"\x1b[C" || bslice == b"\x1bOC" {
+                        let suffix_opt = state.suggest.ghost_suffix_owned();
+                        if let Some(suffix) = suffix_opt {
+                            let pane = active_pane_mut(panes, tab_bar);
+                            pane.write_to_pty(suffix.as_bytes());
+                        }
+                        state.suggest.clear();
+                        return PostKeyAction::None;
+                    }
+                    // Shift+Right → accept next word.
+                    if bslice == b"\x1b[1;2C" {
+                        let word_opt = state.suggest.next_word_owned();
+                        if let Some(word) = word_opt {
+                            let pane = active_pane_mut(panes, tab_bar);
+                            pane.write_to_pty(word.as_bytes());
+                            state.suggest.prefix.push_str(&word);
+                            let new_ghost = state.suggester.query(&state.suggest.prefix)
+                                .map(|s| s.to_string());
+                            state.suggest.ghost = new_ghost;
+                        }
+                        return PostKeyAction::None;
+                    }
+                }
+
                 let pane = active_pane_mut(panes, tab_bar);
                 pane.write_to_pty(&bytes);
+
+                // Update suggestion prefix and re-query trie.
+                let needs_query = state.suggest.update(&bytes);
+                if needs_query {
+                    let new_ghost = state.suggester.query(&state.suggest.prefix)
+                        .map(|s| s.to_string());
+                    state.suggest.ghost = new_ghost;
+                }
             }
             InputAction::ScrollUp(n) => {
                 let pane = active_pane_mut(panes, tab_bar);

@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use synapse_config::{Config, Keybinds, Theme};
+use synapse_suggest::Suggester;
 use synapse_ui::pane::PaneId;
 use synapse_ui::splitter::{PaneRect, SplitDirection};
 use winit::keyboard::ModifiersState;
@@ -102,6 +103,78 @@ impl SearchState {
     }
 }
 
+pub struct SuggestState {
+    pub prefix: String,
+    pub ghost: Option<String>,
+}
+
+impl SuggestState {
+    pub fn new() -> Self {
+        Self { prefix: String::new(), ghost: None }
+    }
+
+    pub fn clear(&mut self) {
+        self.prefix.clear();
+        self.ghost = None;
+    }
+
+    pub fn has_ghost(&self) -> bool {
+        self.ghost_suffix().is_some()
+    }
+
+    pub fn ghost_suffix(&self) -> Option<&str> {
+        let ghost = self.ghost.as_deref()?;
+        if ghost.len() > self.prefix.len() {
+            Some(&ghost[self.prefix.len()..])
+        } else {
+            None
+        }
+    }
+
+    pub fn ghost_suffix_owned(&self) -> Option<String> {
+        self.ghost_suffix().map(|s| s.to_string())
+    }
+
+    pub fn next_word_owned(&self) -> Option<String> {
+        let suffix = self.ghost_suffix()?;
+        if suffix.is_empty() {
+            return None;
+        }
+        let end = suffix.find(' ').map(|i| i + 1).unwrap_or(suffix.len());
+        Some(suffix[..end].to_string())
+    }
+
+    /// Update prefix from raw PTY bytes. Returns true if re-query is needed.
+    pub fn update(&mut self, bytes: &[u8]) -> bool {
+        match bytes {
+            [0x7f] | [0x08] => {
+                self.prefix.pop();
+                self.ghost = None;
+                true
+            }
+            [0x0d] | [0x0a] | [0x03] | [0x15] => {
+                self.clear();
+                false
+            }
+            [0x1b, ..] => {
+                self.ghost = None;
+                false
+            }
+            bytes => {
+                if !bytes.is_empty() && bytes.iter().all(|&b| (0x20..=0x7e).contains(&b)) {
+                    if let Ok(s) = std::str::from_utf8(bytes) {
+                        self.prefix.push_str(s);
+                        self.ghost = None;
+                        return true;
+                    }
+                }
+                self.ghost = None;
+                false
+            }
+        }
+    }
+}
+
 pub struct AppState {
     pub config: Config,
     pub keybinds: Keybinds,
@@ -117,6 +190,8 @@ pub struct AppState {
     pub click_count: u8,
     pub search: SearchState,
     pub history_search: HistorySearchState,
+    pub suggest: SuggestState,
+    pub suggester: Suggester,
     pub font_size: f32,
     pub fullscreen: bool,
     pub tab_scroll_offset: usize,
@@ -125,6 +200,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(config: Config, keybinds: Keybinds, font_size: f32) -> Self {
         let theme = Theme::load(&config.theme, synapse_config::Config::config_dir());
+        let suggester = synapse_suggest::load_suggester();
         Self {
             config,
             keybinds,
@@ -140,6 +216,8 @@ impl AppState {
             click_count: 0,
             search: SearchState::new(),
             history_search: HistorySearchState::new(),
+            suggest: SuggestState::new(),
+            suggester,
             font_size,
             fullscreen: false,
             tab_scroll_offset: 0,

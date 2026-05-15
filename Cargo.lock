@@ -8,6 +8,7 @@ version = "0.2.0"
 dependencies = [
  "SYNAPSE_-config",
  "SYNAPSE_-renderer",
+ "SYNAPSE_-suggest",
  "SYNAPSE_-ui",
  "alacritty_terminal",
  "arboard",
@@ -39,6 +40,10 @@ dependencies = [
  "wgpu",
  "winit",
 ]
+
+[[package]]
+name = "SYNAPSE_-suggest"
+version = "0.2.0"
 
 [[package]]
 name = "SYNAPSE_-ui"
