@@ -393,6 +393,20 @@ pub fn handle_keyboard(
         let action = InputAction::from_key(event, state.modifiers, app_cursor);
         match action {
             InputAction::Write(bytes) => {
+                // Ctrl+C (byte 3) with active selection → copy to clipboard instead of ^C
+                if bytes.as_slice() == [3] {
+                    let active_id = tab_bar.active_tab().active_pane;
+                    if let Some(pane) = find_pane(panes, active_id) {
+                        if let Ok(term) = pane.term.lock() {
+                            if let Some(text) = term.selection_to_string() {
+                                if let Some(ref mut clip) = clipboard {
+                                    let _ = clip.set_text(text);
+                                }
+                                return PostKeyAction::None;
+                            }
+                        }
+                    }
+                }
                 let pane = active_pane_mut(panes, tab_bar);
                 pane.write_to_pty(&bytes);
             }
@@ -413,7 +427,16 @@ pub fn handle_keyboard(
                 pane.scroll_viewport(alacritty_terminal::grid::Scroll::Bottom);
             }
             InputAction::Copy => {
-                // Phase 2: selection extraction.
+                let active_id = tab_bar.active_tab().active_pane;
+                if let Some(pane) = find_pane(panes, active_id) {
+                    if let Ok(term) = pane.term.lock() {
+                        if let Some(text) = term.selection_to_string() {
+                            if let Some(ref mut clip) = clipboard {
+                                let _ = clip.set_text(text);
+                            }
+                        }
+                    }
+                }
             }
             InputAction::Paste => {
                 if let Some(ref mut clip) = clipboard {

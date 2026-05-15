@@ -257,4 +257,43 @@ mod tests {
         assert_eq!(bar.next_pane_id(), PaneId(11));
         assert_eq!(bar.next_pane_id(), PaneId(12));
     }
+
+    #[test]
+    fn test_tab_initial_pane_id() {
+        let initial = make_tab(0, 7);
+        let bar = TabBar::new(initial);
+        assert_eq!(bar.tabs[0].active_pane, PaneId(7));
+    }
+
+    #[test]
+    fn test_close_middle_tab_active_before() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.new_tab();
+        bar.new_tab();
+        bar.active = 0;
+        bar.close_tab(1);
+        assert_eq!(bar.tabs.len(), 2);
+        assert_eq!(bar.active, 0);
+    }
+
+    #[test]
+    fn test_multiple_new_tabs_count() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        for _ in 0..4 {
+            bar.new_tab();
+        }
+        assert_eq!(bar.tabs.len(), 5);
+    }
+
+    #[test]
+    fn test_set_title_then_clear() {
+        let initial = make_tab(0, 0);
+        let mut bar = TabBar::new(initial);
+        bar.set_title(TabId(0), "bash".into());
+        assert_eq!(bar.tabs[0].title, "bash");
+        bar.set_title(TabId(0), "".into());
+        assert_eq!(bar.tabs[0].title, "");
+    }
 }

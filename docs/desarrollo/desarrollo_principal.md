@@ -39,7 +39,7 @@ Marca cada paso con `[x]` al completarlo.
 - [x] Guardar scroll_offset por pane
 - [x] Leer desde `term.grid()` con offset aplicado (no solo display_iter)
 - [x] Scroll con rueda del ratón (ya llega `handle_scroll` en app.rs)
-- [ ] Indicador visual de posición en scrollback (opcional)
+- [x] Indicador visual de posición en scrollback (opcional)
 
 ### 2.2 Detección de salida de pane
 - [x] Conectar eventos `Event::Exit` de alacritty_terminal EventProxy
@@ -57,7 +57,7 @@ Marca cada paso con `[x]` al completarlo.
 - [x] Mouse click → inicio de selección
 - [x] Mouse drag → extender selección
 - [x] `Action::Copy` (Ctrl+Shift+C) → extraer texto del grid y copiar al clipboard
-- [ ] `InputAction::Copy` (Ctrl+C cuando hay selección) → copiar
+- [x] `InputAction::Copy` (Ctrl+C cuando hay selección) → copiar
 - [x] Double-click → seleccionar palabra
 - [x] Triple-click → seleccionar línea
 
@@ -65,9 +65,9 @@ Marca cada paso con `[x]` al completarlo.
 - [x] Conectar handler para OSC 0 y OSC 2 (título de ventana/tab)
 - [x] Implementar `EventListener::send_event` para `Event::Title(String)`
 - [x] Actualizar `pane.title` desde el evento en el render loop
-- [ ] Conectar OSC 7 para CWD tracking (`file://host/path`) — alacritty_terminal 0.24 no expone evento CwdChanged; requiere hook custom
-- [ ] Actualizar `pane.cwd` desde OSC 7
-- [ ] Verificar que `build_tab_bar_text()` muestra el título correcto
+- [ ] Conectar OSC 7 para CWD tracking (`file://host/path`) — alacritty_terminal 0.24 no expone evento CwdChanged; requiere hook custom (BLOQUEADO)
+- [ ] Actualizar `pane.cwd` desde OSC 7 (BLOQUEADO, depende de OSC 7)
+- [x] Verificar que `build_tab_bar_text()` muestra el título correcto
 
 ### 2.5 History Search (Ctrl+R)
 - [x] Implementar `Action::HistorySearch` en `keyboard.rs` (hoy stub vacío)
@@ -79,10 +79,10 @@ Marca cada paso con `[x]` al completarlo.
 
 ### 2.6 Deuda técnica
 - [x] Consolidar `TermSize` duplicado (`app.rs:24` y `pane_ops.rs:16`) en un solo lugar
-- [ ] PTY reader: parsear bytes fuera del lock (patrón alacritty: staging queue)
+- [x] PTY reader: parsear bytes fuera del lock (patrón alacritty: staging queue)
 - [x] Limpiar comentarios "Phase 1 stub" una vez implementados
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` limpio
-- [ ] Cobertura de tests ≥80 tests workspace
+- [x] Cobertura de tests ≥80 tests workspace
 
 ---
 

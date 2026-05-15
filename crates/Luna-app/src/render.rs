@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::vte::ansi::Color as TermColor;
 use luna_config::Theme;
 use luna_renderer::{renderer::Renderer, ui::UIRect};
@@ -390,11 +391,13 @@ pub fn render_frame(
             let is_active = pane_id == active_pane_id;
 
             // Snapshot grid contents, cursor, and selection range under the lock.
-            let (cells, cursor_col, cursor_row, sel_range): (
+            let (cells, cursor_col, cursor_row, sel_range, display_offset, history_size): (
                 Vec<(usize, i32, char, TermColor, TermColor)>,
                 usize,
                 i32,
                 Option<alacritty_terminal::selection::SelectionRange>,
+                usize,
+                usize,
             ) = {
                 let term = match pane.term.lock() {
                     Ok(t) => t,
@@ -406,6 +409,8 @@ pub fn render_frame(
                 let cursor_row = cursor_point.line.0;
 
                 let sel_range = term.selection.as_ref().and_then(|s| s.to_range(&*term));
+                let display_offset = grid.display_offset();
+                let history_size = grid.history_size();
 
                 let mut buf = Vec::with_capacity(pane_cols * pane_rows);
                 for indexed in grid.display_iter() {
@@ -419,7 +424,7 @@ pub fn render_frame(
                     }
                     buf.push((col, row_val, indexed.c, indexed.fg, indexed.bg));
                 }
-                (buf, cursor_col, cursor_row, sel_range)
+                (buf, cursor_col, cursor_row, sel_range, display_offset, history_size)
             };
 
             for (col, row_val, ch, fg_c, bg_c) in cells {
@@ -493,6 +498,21 @@ pub fn render_frame(
                         });
                     }
                 }
+            }
+
+            // Scrollback position indicator: slim thumb on the right edge
+            // when the viewport is scrolled above the bottom of history.
+            if display_offset > 0 && history_size > 0 {
+                let total_rows = (pane_rows + history_size) as f32;
+                let thumb_h = (content_h * pane_rows as f32 / total_rows).max(8.0);
+                let scroll_frac = (display_offset as f32 / history_size as f32).min(1.0);
+                let travel = content_h - thumb_h;
+                let thumb_y = content_y + travel * (1.0 - scroll_frac);
+                cached_ui_rects.push(UIRect {
+                    pos: [rect.x + rect.w - 4.0, thumb_y],
+                    size: [3.0, thumb_h],
+                    color: [0.44, 0.56, 0.78, 0.55],
+                });
             }
 
             // Only draw pane borders when there's more than one pane in the

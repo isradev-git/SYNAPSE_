@@ -209,4 +209,37 @@ mod tests {
         assert!(w >= 80.0);
         assert!(w <= 200.0);
     }
+
+    #[test]
+    fn test_update_sets_dimensions() {
+        let mut layout = Layout::new();
+        layout.update(1920.0, 1080.0);
+        assert_eq!(layout.window_width, 1920.0);
+        assert_eq!(layout.window_height, 1080.0);
+    }
+
+    #[test]
+    fn test_pane_area_height_minus_tabbar() {
+        let layout = layout_1280x800();
+        let (_x, _y, _w, h) = layout.pane_area();
+        assert_eq!(h, layout.window_height - layout.tab_bar_height);
+    }
+
+    #[test]
+    fn test_tab_visible_range_zero_tabs() {
+        let layout = layout_1280x800();
+        let (start, end, show_left, show_right) = layout.tab_visible_range(0, 0);
+        assert_eq!(start, 0);
+        assert_eq!(end, 0);
+        assert!(!show_left);
+        assert!(!show_right);
+    }
+
+    #[test]
+    fn test_scrolled_tab_width_no_scroll_buttons() {
+        let layout = layout_1280x800();
+        // available = 1280 - 56 = 1224, per 3 tabs = 408, clamped to max 200
+        let w = layout.scrolled_tab_width(3, false, false);
+        assert_eq!(w, 200.0);
+    }
 }

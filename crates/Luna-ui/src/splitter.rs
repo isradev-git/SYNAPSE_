@@ -490,4 +490,66 @@ mod tests {
         let layouts = tree.get_layout(rect);
         assert_eq!(layouts.len(), 4);
     }
+
+    #[test]
+    fn test_split_horizontal() {
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        let result = tree.split(PaneId(1), PaneId(2), SplitDirection::Horizontal);
+        assert!(result.is_ok());
+        assert_eq!(tree.all_panes().len(), 2);
+        assert!(matches!(
+            tree,
+            PaneTree::Split { direction: SplitDirection::Horizontal, .. }
+        ));
+    }
+
+    #[test]
+    fn test_layout_single_pane_full_rect() {
+        let tree = PaneTree::Leaf(PaneId(1));
+        let rect = PaneRect { x: 10.0, y: 20.0, w: 800.0, h: 600.0 };
+        let layouts = tree.get_layout(rect);
+        assert_eq!(layouts.len(), 1);
+        assert_eq!(layouts[0].0, PaneId(1));
+        let r = layouts[0].1;
+        assert_eq!(r.x, 10.0);
+        assert_eq!(r.y, 20.0);
+        assert_eq!(r.w, 800.0);
+        assert_eq!(r.h, 600.0);
+    }
+
+    #[test]
+    fn test_layout_two_pane_area_preserved() {
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical).unwrap();
+        let rect = PaneRect { x: 0.0, y: 0.0, w: 1000.0, h: 600.0 };
+        let layouts = tree.get_layout(rect);
+        let total: f32 = layouts.iter().map(|(_, r)| r.w * r.h).sum();
+        assert!((total - 1000.0 * 600.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_close_first_pane_in_split() {
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical).unwrap();
+        let removed = tree.close(PaneId(1));
+        assert_eq!(removed, Some(PaneId(1)));
+        assert_eq!(tree.all_panes(), vec![PaneId(2)]);
+        assert!(matches!(tree, PaneTree::Leaf(_)));
+    }
+
+    #[test]
+    fn test_get_dividers_two_panes() {
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical).unwrap();
+        let rect = PaneRect { x: 0.0, y: 0.0, w: 800.0, h: 600.0 };
+        let dividers = tree.get_dividers(rect);
+        assert_eq!(dividers.len(), 1);
+    }
+
+    #[test]
+    fn test_all_panes_single_leaf() {
+        let tree = PaneTree::Leaf(PaneId(42));
+        let panes = tree.all_panes();
+        assert_eq!(panes, vec![PaneId(42)]);
+    }
 }

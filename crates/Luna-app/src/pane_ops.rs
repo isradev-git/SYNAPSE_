@@ -117,15 +117,24 @@ pub fn create_pane_full(
             let mut reader = pty_reader;
             let mut buf = [0u8; 1024];
             let mut processor: Processor<StdSyncHandler> = Processor::new();
+            // Staging queue: accumulate bytes when the term lock is contended,
+            // process them on the next iteration that acquires the lock.
+            let mut staging: Vec<u8> = Vec::new();
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        // Phase 2: parse outside the lock using a staging queue (alacritty pattern).
-                        // Phase 1 mitigation: 1 KiB chunks limit lock hold duration.
-                        if let Ok(mut term) = term_reader.lock() {
-                            for &byte in &buf[..n] {
-                                processor.advance(&mut *term, byte);
+                        staging.extend_from_slice(&buf[..n]);
+                        match term_reader.try_lock() {
+                            Ok(mut term) => {
+                                for &byte in &staging {
+                                    processor.advance(&mut *term, byte);
+                                }
+                                staging.clear();
+                            }
+                            Err(_) => {
+                                // Render thread holds the lock; bytes stay in
+                                // staging and are processed on the next read.
                             }
                         }
                         dirty_reader.store(true, Ordering::Release);
