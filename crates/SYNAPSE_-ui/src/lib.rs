@@ -5,6 +5,7 @@ pub mod tab_bar;
 pub mod theme;
 
 pub use layout::SCROLL_BTN_W;
+pub use pane::KkpCommand;
 pub use pane::Pane;
 pub use pane::PaneId;
 pub use splitter::DividerInfo;

@@ -17,7 +17,11 @@ use synapse_ui::{
 };
 use portable_pty::PtySize;
 
-use crate::{pane_ops::{create_pane, TermSize}, state::AppState};
+use crate::{
+    image_protocol::ImageStore,
+    pane_ops::{create_pane, TermSize},
+    state::AppState,
+};
 
 pub type CellData = Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>;
 
@@ -43,6 +47,7 @@ pub struct App {
     pub frame_count: u64,
     pub fps_last_print: std::time::Instant,
     pub scale_factor: f32,
+    pub image_store: ImageStore,
 }
 
 impl App {
@@ -115,6 +120,7 @@ impl App {
                 frame_count: 0,
                 fps_last_print: std::time::Instant::now(),
                 scale_factor: scale,
+                image_store: ImageStore::new(),
             },
             event_loop,
         ))
@@ -215,5 +221,9 @@ impl App {
                 }
             }
         }
+        // 4.4: clear caches so the first frame after resize is rebuilt clean.
+        self.cached_cell_data.clear();
+        self.cached_ui_rects.clear();
+        self.cached_bg_rects.clear();
     }
 }

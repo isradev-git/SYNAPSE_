@@ -319,7 +319,12 @@ pub fn render_frame(
         .filter_map(|p| if p.poll_events() { Some(p.id) } else { None })
         .collect();
 
-    let pty_received = panes.iter_mut().any(|pane| pane.is_dirty());
+    // 4.3: drain dirty for all panes but only trigger rebuild for active-tab panes.
+    let active_ids: HashSet<PaneId> = tab_bar.active_tab().pane_tree.all_panes().into_iter().collect();
+    let pty_received = panes.iter_mut().fold(false, |acc, pane| {
+        let dirty = pane.is_dirty();
+        acc || (dirty && active_ids.contains(&pane.id))
+    });
 
     for tab in tab_bar.tabs.iter_mut() {
         if let Some(p) = panes.iter().find(|p| p.id == tab.active_pane) {
@@ -743,16 +748,26 @@ pub fn render_frame(
         *cached_active_tab = tab_bar.active;
     }
 
-    renderer.draw_frame(cached_cell_data, cached_ui_rects, cached_bg_rects);
+    renderer.draw_frame_with_options(cached_cell_data, cached_ui_rects, cached_bg_rects, state.config.font_ligatures);
 
     exited_panes
 }
 
 use crate::app::App;
+use crate::image_protocol::parse_apc;
 use crate::pane_ops::create_pane;
 
 impl App {
     pub(crate) fn render(&mut self) {
+        // Drain APC image sequences from all panes into the image store.
+        for pane in self.panes.iter_mut() {
+            while let Ok(raw) = pane.apc_rx.try_recv() {
+                if let Some(cmd) = parse_apc(&raw) {
+                    self.image_store.process(cmd);
+                }
+            }
+        }
+
         self.frame_count += 1;
         let now = std::time::Instant::now();
         let elapsed = now.duration_since(self.fps_last_print);

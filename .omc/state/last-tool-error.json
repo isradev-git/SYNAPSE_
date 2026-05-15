@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"source ~/.cargo/env && cargo clippy --workspace --all-targets -- -D warnings 2>&1\",\"timeout\":120000,\"description\":\"Run clippy workspace-wide with warnings as errors\"}",
-  "error": "Exit code 101\n    Checking Luna-renderer v0.2.0 (/home/glitchbane-server/Documents/luna/crates/Luna-renderer)\nerror: this function has too many arguments (8/7)\n   --> crates/Luna-renderer/src/renderer.rs:223:5\n    |\n223 | /     fn push_glyph_instance(\n224 | |         &mut self,\n225 | |         instances: &mut Vec<CellInstance>,\n226 | |         bitmap: &crate::text::GlyphBitmap,\n...   |\n231 | |         fg: [f32; 4],\n232 | |     ) {\n    | |_____^\n    |\n    = help: for further information visit htt...",
-  "timestamp": "2026-05-14T15:29:38.145Z",
-  "retry_count": 1
+  "tool_input_preview": "{\"command\":\"~/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings 2>&1\",\"timeout\":60000,\"description\":\"Clippy check workspace\"}",
+  "error": "Exit code 101\n    Checking SYNAPSE_-renderer v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-renderer)\n    Checking SYNAPSE_-config v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-config)\n    Checking SYNAPSE_-suggest v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-suggest)\n    Checking SYNAPSE_-ui v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-ui)\n    Checking SYNAPSE_-app v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_...",
+  "timestamp": "2026-05-15T08:23:40.953Z",
+  "retry_count": 2
 }

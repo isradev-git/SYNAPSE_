@@ -42,16 +42,118 @@ impl InputAction {
         Self::from_named_key(&key_ref, modifiers, application_cursor)
     }
 
-    /// Kitty keyboard protocol encoding — stubbed for Phase 1.
-    /// Phase 2 will reimplement on top of alacritty_terminal's keyboard support.
-    #[allow(dead_code)]
+    /// Kitty keyboard protocol encoding (Level 1+).
+    /// Sends CSI u sequences for printable keys with modifiers, disambiguating
+    /// Ctrl+letter from control characters and enabling modifier reporting for
+    /// named keys. Falls back to legacy sequences for unhandled cases.
     pub fn from_key_kitty(
-        _event: &KeyEvent,
-        _modifiers: ModifiersState,
-        _flags: u8,
-        _is_release: bool,
+        event: &KeyEvent,
+        modifiers: ModifiersState,
+        flags: u8,
+        is_release: bool,
     ) -> Self {
-        InputAction::Ignore
+        let report_all_keys = flags & 1 != 0;
+        let report_releases = flags & 2 != 0;
+        let report_all_mods = flags & 4 != 0;
+
+        // Ignore releases unless the app requested them.
+        if is_release && !report_releases {
+            return InputAction::Ignore;
+        }
+
+        let ctrl = modifiers.control_key();
+        let shift = modifiers.shift_key();
+        let alt = modifiers.alt_key();
+
+        // Modifier value: (shift | alt<<1 | ctrl<<2 | super<<3) + 1
+        let mod_bits: u32 =
+            (shift as u32) | ((alt as u32) << 1) | ((ctrl as u32) << 2);
+        let mods = mod_bits + 1;
+        let event_type: u32 = if is_release { 3 } else { 1 };
+
+        // CSI u helper: `ESC [ <cp> ; <mods> ; <event> u`
+        // Trailing fields omitted when they equal their defaults (mods=1, event=1).
+        let csi_u = |cp: u32| -> Vec<u8> {
+            if mods == 1 && event_type == 1 && !report_all_mods {
+                if report_all_keys {
+                    format!("\x1b[{cp};1u").into_bytes()
+                } else {
+                    // No modifiers, press only — use legacy path
+                    Vec::new()
+                }
+            } else if event_type == 1 && !report_releases {
+                format!("\x1b[{cp};{mods}u").into_bytes()
+            } else {
+                format!("\x1b[{cp};{mods};{event_type}u").into_bytes()
+            }
+        };
+
+        use winit::keyboard::{Key, NamedKey};
+        match &event.logical_key {
+            Key::Named(named) => {
+                // KKP codepoints for named keys (from kitty's specification).
+                let (cp, legacy): (Option<u32>, Option<InputAction>) = match named {
+                    NamedKey::Escape => (Some(27), Some(InputAction::Write(b"\x1b".to_vec()))),
+                    NamedKey::Enter => (Some(13), Some(InputAction::Write(b"\r".to_vec()))),
+                    NamedKey::Tab => (Some(9), Some(InputAction::Write(b"\t".to_vec()))),
+                    NamedKey::Backspace => (Some(127), Some(InputAction::Write(b"\x7f".to_vec()))),
+                    NamedKey::Insert => (Some(57348), None),
+                    NamedKey::Delete => (Some(57349), None),
+                    NamedKey::ArrowLeft => (Some(57350), None),
+                    NamedKey::ArrowRight => (Some(57351), None),
+                    NamedKey::ArrowUp => (Some(57352), None),
+                    NamedKey::ArrowDown => (Some(57353), None),
+                    NamedKey::PageUp => (Some(57354), None),
+                    NamedKey::PageDown => (Some(57355), None),
+                    NamedKey::Home => (Some(57356), None),
+                    NamedKey::End => (Some(57357), None),
+                    NamedKey::F1 => (Some(57376), None),
+                    NamedKey::F2 => (Some(57377), None),
+                    NamedKey::F3 => (Some(57378), None),
+                    NamedKey::F4 => (Some(57379), None),
+                    NamedKey::F5 => (Some(57380), None),
+                    NamedKey::F6 => (Some(57381), None),
+                    NamedKey::F7 => (Some(57382), None),
+                    NamedKey::F8 => (Some(57383), None),
+                    NamedKey::F9 => (Some(57384), None),
+                    NamedKey::F10 => (Some(57385), None),
+                    NamedKey::F11 => (Some(57386), None),
+                    NamedKey::F12 => (Some(57387), None),
+                    _ => (None, None),
+                };
+
+                if let Some(cp) = cp {
+                    let bytes = csi_u(cp);
+                    if !bytes.is_empty() {
+                        return InputAction::Write(bytes);
+                    }
+                    // No modifiers + not reporting all keys → use legacy for basic named keys.
+                    if let Some(leg) = legacy {
+                        return leg;
+                    }
+                }
+
+                // Fall back to legacy for anything unhandled.
+                Self::from_key(event, modifiers, false)
+            }
+            Key::Character(c) => {
+                if let Some(ch) = c.chars().next() {
+                    let cp = ch as u32;
+                    // Only use CSI u when there are modifiers (Ctrl/Alt) that would
+                    // otherwise be ambiguous in the legacy encoding.
+                    if ctrl || alt || report_all_keys {
+                        let bytes = csi_u(cp);
+                        if !bytes.is_empty() {
+                            return InputAction::Write(bytes);
+                        }
+                    }
+                    // No modifiers: send the character as-is (legacy path is correct).
+                    return InputAction::Write(c.as_bytes().to_vec());
+                }
+                InputAction::Ignore
+            }
+            _ => Self::from_key(event, modifiers, false),
+        }
     }
 
     fn from_named_key(

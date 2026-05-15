@@ -33,6 +33,9 @@ bitflags = "2"
 clap = { version = "4", features = ["derive"] }
 pollster = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
+rustybuzz = "0.14"
+base64 = "0.22"
+png = "0.17"
 
 [profile.dist]
 inherits = "release"

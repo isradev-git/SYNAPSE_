@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use wgpu::{Device, Queue};
 
-use crate::text::GlyphKey;
+use crate::text::{GlyphKey, ShapedGlyphKey};
 
 pub const ATLAS_SIZE: u32 = 2048;
 
@@ -23,6 +23,7 @@ pub struct TextureAtlas {
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
     cache: HashMap<GlyphKey, AtlasEntry>,
+    shaped_cache: HashMap<ShapedGlyphKey, AtlasEntry>,
     x_offset: u32,
     y_offset: u32,
     row_height: u32,
@@ -105,6 +106,7 @@ impl TextureAtlas {
             bind_group_layout,
             bind_group,
             cache: HashMap::new(),
+            shaped_cache: HashMap::new(),
             x_offset: 0,
             y_offset: 0,
             row_height: 0,
@@ -118,8 +120,9 @@ impl TextureAtlas {
         self.frame += 1;
 
         if self.needs_reset {
-            let evicted = self.cache.len();
+            let evicted = self.cache.len() + self.shaped_cache.len();
             self.cache.clear();
+            self.shaped_cache.clear();
             self.x_offset = 0;
             self.y_offset = 0;
             self.row_height = 0;
@@ -163,6 +166,22 @@ impl TextureAtlas {
 
         let rect = self.allocate(bitmap_width, bitmap_height)?;
         self.cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
+        Some((rect, true))
+    }
+
+    /// Same as `get_or_insert` but keyed by shaped glyph ID (for ligatures).
+    pub fn get_or_insert_shaped(
+        &mut self,
+        key: ShapedGlyphKey,
+        bitmap_width: u32,
+        bitmap_height: u32,
+    ) -> Option<(UvRect, bool)> {
+        if let Some(entry) = self.shaped_cache.get_mut(&key) {
+            entry.last_frame = self.frame;
+            return Some((entry.uv, false));
+        }
+        let rect = self.allocate(bitmap_width, bitmap_height)?;
+        self.shaped_cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
         Some((rect, true))
     }
 

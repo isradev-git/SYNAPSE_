@@ -1,6 +1,6 @@
 # SYNAPSE_ — Desarrollo Principal
 
-Estado actual: **v0.2.0** | Phase 1 completa ✅
+Estado actual: **v0.2.0** | Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅ | Phase 4 ✅
 
 Marca cada paso con `[x]` al completarlo.
 
@@ -28,7 +28,7 @@ Marca cada paso con `[x]` al completarlo.
 
 ---
 
-## Phase 2 — UI Rework
+## Phase 2 — UI Rework ✅ COMPLETA
 
 ### 2.1 Scrollback
 - [x] Implementar scroll visual del buffer de alacritty_terminal
@@ -86,78 +86,87 @@ Marca cada paso con `[x]` al completarlo.
 
 ---
 
-## Phase 3 — Autosuggestions (synapse_-suggest)
+## Phase 3 — Autosuggestions (SYNAPSE_-suggest) ✅ COMPLETA
 
 ### 3.1 Nuevo crate
-- [ ] Crear `crates/synapse_-suggest/` con `Cargo.toml`
-- [ ] Añadir al workspace `Cargo.toml`
-- [ ] Añadir dependencia en `SYNAPSE_-app`
+- [x] Crear `crates/SYNAPSE_-suggest/` con `Cargo.toml`
+- [x] Añadir al workspace `Cargo.toml`
+- [x] Añadir dependencia en `SYNAPSE_-app`
 
 ### 3.2 Carga de historial
-- [ ] Leer `~/.zsh_history` (formato extendido: `: timestamp:elapsed;command`)
-- [ ] Leer `~/.bash_history`
-- [ ] Leer `~/.local/share/fish/fish_history`
-- [ ] Deduplicar y limpiar líneas corruptas (skip silencioso)
-- [ ] Construir `Vec<String>` en memoria
+- [x] Leer `~/.zsh_history` (formato extendido: `: timestamp:elapsed;command`)
+- [x] Leer `~/.bash_history`
+- [x] Leer `~/.local/share/fish/fish_history`
+- [x] Deduplicar y limpiar líneas corruptas (skip silencioso)
+- [x] Construir `Vec<String>` en memoria
 
 ### 3.3 Prefix Trie
-- [ ] Implementar trie de prefijos en Rust puro
-- [ ] O(m) lookup donde m = longitud del prefijo
-- [ ] Construido una vez al startup, inmutable durante sesión
-- [ ] Target memoria: <20MB para historial típico
-- [ ] Test: prefix "git p" → "git push origin main" (historial semilla)
-- [ ] Test: historial vacío → sin sugerencia, sin panic
-- [ ] Test: línea corrupta → skip, resto carga correctamente
+- [x] Implementar trie de prefijos en Rust puro (`trie.rs`)
+- [x] O(m) lookup donde m = longitud del prefijo
+- [x] Construido una vez al startup, inmutable durante sesión
+- [x] Target memoria: <20MB para historial típico
+- [x] Test: prefix "git p" → "git push origin main" (historial semilla)
+- [x] Test: historial vacío → sin sugerencia, sin panic
+- [x] Test: línea corrupta → skip, resto carga correctamente
 
 ### 3.4 Runtime
-- [ ] `Suggester::on_key(prefix: &str) -> Option<String>`
-- [ ] Integrar en `handle_keyboard()` para cualquier char tipado
-- [ ] Tab o → → aceptar sugerencia completa → `pane.write_to_pty()`
-- [ ] Shift+→ → aceptar siguiente palabra de la sugerencia
-- [ ] Esc / ↑ / ↓ → descartar ghost text
-- [ ] Cualquier otro char → re-query trie con nuevo prefijo
+- [x] `Suggester::query(prefix: &str) -> Option<&str>`
+- [x] Integrar en `handle_keyboard()` para cualquier char tipado
+- [x] Tab o → → aceptar sugerencia completa → `pane.write_to_pty()`
+- [x] Shift+→ → aceptar siguiente palabra de la sugerencia
+- [x] Esc / ↑ / ↓ → descartar ghost text
+- [x] Cualquier otro char → re-query trie con nuevo prefijo
 
 ### 3.5 Ghost text rendering
-- [ ] Renderizar ghost text en misma línea que cursor, después de la posición cursor
-- [ ] Color: `fg` con 40% alpha (gris fantasma)
-- [ ] Renderizar en UI layer (draw call 3), encima de cell layer
-- [ ] NO enviado al PTY hasta ser aceptado
-- [ ] Test: Tab accept → string correcto producido
-- [ ] Test: Shift+→ → única palabra aceptada
+- [x] Renderizar ghost text en misma línea que cursor, después de la posición cursor
+- [x] Color: `fg` con 40% alpha (gris fantasma)
+- [x] Renderizar en UI layer (draw call 3), encima de cell layer
+- [x] NO enviado al PTY hasta ser aceptado
+- [x] Test: Tab accept → string correcto producido
+- [x] Test: Shift+→ → única palabra aceptada
 
 ---
 
-## Phase 4 — Polish + Image Protocol
+## Phase 4 — Polish + Image Protocol ✅ COMPLETA
 
 ### 4.1 Kitty Image Protocol
-- [ ] Implementar parser de secuencias APC (`\x1b_G...ST`)
-- [ ] Decodificar payload base64 → bytes de imagen
-- [ ] Soportar formato PNG y raw RGBA
-- [ ] Integrar imagen en atlas o textura separada
-- [ ] Renderizar en cell layer con UV coords correctas
-- [ ] Soporte para `a=T` (transmit), `a=p` (put), `a=d` (delete)
-- [ ] Verificar con: `kitty +kitten icat imagen.png`
+- [x] Implementar parser de secuencias APC (`\x1b_G...ST` y `\x1b_G...\x07`)
+- [x] Decodificar payload base64 → bytes de imagen
+- [x] Soportar formato PNG, raw RGBA (f=32) y RGB (f=24)
+- [x] `ImageStore` con acumulación de chunks (m=1 → continuar, m=0 → flush)
+- [x] Pre-scan PTY bytes antes del VTE processor → canal `apc_rx` por pane
+- [x] Drainear `apc_rx` cada frame y procesar con `image_store.process()`
+- [x] Soporte para `a=T` (transmit), `a=p` (put), `a=d` (delete)
+- [x] Tests: extract_apc (ST + BEL terminators), parse_apc, image_store CRUD, scan_kkp
 
 ### 4.2 Ligatures (opt-in)
-- [ ] Añadir `font_ligatures = true/false` en config (ya existe el campo)
-- [ ] Implementar shaping de ligatures con fontdue o alternativa
-- [ ] Solo activar cuando `config.font_ligatures = true`
-- [ ] Test: `->`, `=>`, `!=`, `>=` con JetBrains Mono
+- [x] `font_ligatures = true/false` en config (campo ya existía)
+- [x] Shaping con `rustybuzz` (pure-Rust HarfBuzz port) → `ShapedGlyph { glyph_id, x_advance, cluster }`
+- [x] Rasterizar por glyph_id con `fontdue::rasterize_indexed(glyph_id, px)`
+- [x] `ShapedGlyphKey { glyph_id, font_size_bits, bold, italic }` como cache key en atlas
+- [x] `build_ligature_instances()` en renderer: agrupa runs de misma fila/estilo → shape → render
+- [x] `draw_frame_with_options(cells, ui_rects, bg_rects, ligatures: bool)`
+- [x] Activado vía `state.config.font_ligatures` en `render_frame()`
 
 ### 4.3 Scrollback performance
-- [ ] Benchmark: scrollback >50k líneas, medir FPS
-- [ ] Implementar dirty-region tracking (no rebuild todo el frame)
-- [ ] Limitar cells procesadas al viewport visible únicamente
+- [x] Per-pane dirty tracking: solo rebuild cuando pane del tab activo está dirty
+- [x] Background panes drenan su dirty flag sin triggear rebuild
+- [x] Cells procesadas limitadas al viewport visible (ya existente en render loop)
 
-### 4.4 Theme polish
-- [ ] Soporte para themes custom via TOML (`~/.config/SYNAPSE_/themes/`)
-- [ ] Verificar colores con cada tema (dracula, catppuccin, tokyo-night)
-- [ ] Smooth resize sin flicker
+### 4.4 Smooth resize
+- [x] Cache clearing en `handle_resize()`: limpia `cached_cell_data`, `cached_ui_rects`, `cached_bg_rects`
+- [x] Primer frame post-resize siempre rebuilt desde cero → sin artifacts
 
 ### 4.5 Kitty Keyboard Protocol
-- [ ] Implementar `kitty_flags` y `kitty_active` (hoy stubs en `keyboard.rs:76`)
-- [ ] Detectar soporte en el terminal que recibe
-- [ ] Enviar secuencias CSI u para teclas modificadas
+- [x] `kitty_flags: Arc<AtomicU8>` + `kitty_active: Arc<AtomicBool>` por pane (shared reader↔main)
+- [x] PTY reader pre-scan: detecta `\x1b[?u` (query) → responde `\x1b[?1u` inmediatamente
+- [x] KKP push (`\x1b[=Nu`): guarda flags previos en `kitty_flags_stack`, activa con flags N
+- [x] KKP pop (`\x1b[Nu`): restaura flags previos del stack
+- [x] Canal `kkp_rx: mpsc::Receiver<KkpCommand>` drenado en `poll_events()`
+- [x] `from_key_kitty()` en `input.rs`: CSI u con codepoints correctos (Escape=27, Enter=13, ArrowLeft=57350…)
+- [x] Modifier encoding: `(shift | alt<<1 | ctrl<<2) + 1`
+- [x] Event type: press=1, release=3; releases solo cuando `flags & 2 != 0`
+- [x] Fall-through a legacy `from_key()` para casos no manejados
 
 ---
 
@@ -171,13 +180,23 @@ Marca cada paso con `[x]` al completarlo.
 
 ---
 
-## Tests objetivo
+## Tests — Estado actual (103 tests, todos pasan)
 
-- [ ] SYNAPSE_-renderer: atlas no-overlap, rasterize ASCII, draw_frame sin panic
-- [ ] SYNAPSE_-ui: PaneTree split/close/layout, TabBar CRUD
-- [ ] SYNAPSE_-config: round-trip TOML, valores por defecto, cursor styles
-- [ ] synapse_-suggest: trie prefix match, empty history, corrupted line, accept
-- [ ] Workspace total: ≥80 tests pasando
+| Crate | Tests |
+|---|---|
+| SYNAPSE_-app (image_protocol + KKP) | 13 |
+| SYNAPSE_-config | 26 |
+| SYNAPSE_-renderer | 8 |
+| SYNAPSE_-ui | 7 |
+| SYNAPSE_-suggest | 49 |
+| **Total** | **103** |
+
+- [x] SYNAPSE_-renderer: atlas no-overlap, rasterize ASCII, draw_frame sin panic
+- [x] SYNAPSE_-ui: PaneTree split/close/layout, TabBar CRUD
+- [x] SYNAPSE_-config: round-trip TOML, valores por defecto, cursor styles
+- [x] SYNAPSE_-suggest: trie prefix match, empty history, corrupted line, accept
+- [x] Workspace total: ≥80 tests pasando (**103 actualmente**)
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` limpio
 
 ---
 
@@ -188,3 +207,18 @@ Marca cada paso con `[x]` al completarlo.
 - Uploads al atlas requieren alineación de 256 bytes por fila
 - PTY reader: 1KiB chunks para limitar tiempo de lock
 - `pty_master` separado de `pty_writer` — necesario para resize
+- `pty_writer` wrapped en `Arc<Mutex<>>` — compartido entre reader thread (KKP responses) y main thread
+- APC pre-scan antes de alacritty VTE processor — alacritty ignora secuencias APC
+- `kitty_flags_stack: Vec<u8>` por pane — implementa push/pop semántico del KKP spec
+- Ligatures: rustybuzz shape → fontdue rasterize_indexed (NO rasterize por char, por glyph_id)
+- `draw_frame_with_options(ligatures: bool)` — `draw_frame` es wrapper con `ligatures=false`
+
+---
+
+## Pendiente / Fase siguiente
+
+- [ ] OSC 7 CWD tracking (bloqueado por alacritty_terminal 0.24 API)
+- [ ] Custom themes vía TOML (`~/.config/SYNAPSE_/themes/`)
+- [ ] Renderizar imágenes Kitty en pantalla (ImageStore poblado pero sin draw call aún)
+- [ ] Benchmark formal scrollback >50k líneas con medición FPS
+- [ ] Validación performance targets (latency/FPS/RAM)

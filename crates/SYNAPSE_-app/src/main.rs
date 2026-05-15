@@ -1,4 +1,5 @@
 mod app;
+mod image_protocol;
 mod input;
 mod keyboard;
 mod mouse;

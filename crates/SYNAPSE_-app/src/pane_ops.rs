@@ -1,12 +1,14 @@
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
 use alacritty_terminal::event::Event;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config as TermConfig, Term};
 use alacritty_terminal::vte::ansi::{Processor, StdSyncHandler};
-use synapse_ui::pane::{EventProxy, Pane, PaneId};
+use synapse_ui::pane::{EventProxy, KkpCommand, Pane, PaneId};
+
+use crate::image_protocol;
 use synapse_ui::{layout::Layout, splitter::PaneRect, tab_bar::TabBar, SCROLL_BTN_W, TAB_BAR_HEIGHT};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
@@ -108,9 +110,18 @@ pub fn create_pane_full(
 
     let dirty = Arc::new(AtomicBool::new(false));
 
+    // KKP: shared flags between reader thread and main thread.
+    let kitty_flags = Arc::new(AtomicU8::new(0));
+    let kitty_active = Arc::new(AtomicBool::new(false));
+    let (kkp_tx, kkp_rx) = mpsc::sync_channel::<KkpCommand>(64);
+    let (apc_tx, apc_rx) = mpsc::sync_channel::<String>(64);
+
     // 7. Spin up the reader thread: PTY bytes -> VTE parser -> Term handler.
     let term_reader = Arc::clone(&term);
     let dirty_reader = Arc::clone(&dirty);
+    // Clones needed inside the reader thread.
+    let pty_writer_kkp = Arc::new(Mutex::new(pty_writer));
+    let pty_writer_main = Arc::clone(&pty_writer_kkp);
     std::thread::Builder::new()
         .name(format!("synapse-pty-{}", id.0))
         .spawn(move || {
@@ -125,6 +136,32 @@ pub fn create_pane_full(
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
                         staging.extend_from_slice(&buf[..n]);
+
+                        // Pre-scan: detect KKP queries/push and APC image sequences
+                        // before passing bytes to alacritty's VTE processor.
+                        for scan_cmd in image_protocol::scan_kkp(&staging) {
+                            match scan_cmd {
+                                image_protocol::KkpScan::Query => {
+                                    if let Ok(mut w) = pty_writer_kkp.lock() {
+                                        let _ = std::io::Write::write_all(
+                                            &mut *w,
+                                            b"\x1b[?1u",
+                                        );
+                                    }
+                                    let _ = kkp_tx.try_send(KkpCommand::Query);
+                                }
+                                image_protocol::KkpScan::Push(flags) => {
+                                    let _ = kkp_tx.try_send(KkpCommand::Push(flags));
+                                }
+                                image_protocol::KkpScan::Pop => {
+                                    let _ = kkp_tx.try_send(KkpCommand::Pop);
+                                }
+                            }
+                        }
+                        for apc_seq in image_protocol::extract_apc_sequences(&staging) {
+                            let _ = apc_tx.try_send(apc_seq);
+                        }
+
                         match term_reader.try_lock() {
                             Ok(mut term) => {
                                 for &byte in &staging {
@@ -147,12 +184,16 @@ pub fn create_pane_full(
     Ok(Pane::new(
         id,
         term,
-        Box::new(pty_writer),
+        pty_writer_main,
         pty_master,
         event_rx,
         dirty,
         cols,
         rows,
+        kitty_flags,
+        kitty_active,
+        kkp_rx,
+        apc_rx,
     ))
 }
 

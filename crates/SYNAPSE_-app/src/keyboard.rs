@@ -63,12 +63,24 @@ pub fn handle_keyboard(
     clipboard: &mut Option<arboard::Clipboard>,
     window: &Arc<Window>,
 ) -> PostKeyAction {
-    // Kitty keyboard protocol is Phase 2 — these stubs keep the legacy path active.
-    let kitty_flags: u8 = 0;
-    let kitty_active = false;
+    // Read KKP state from the active pane (set by the PTY reader thread).
+    let active_id = tab_bar.active_tab().active_pane;
+    let kitty_flags = find_pane(panes, active_id).map(|p| p.kitty_flags()).unwrap_or(0);
+    let kitty_active = find_pane(panes, active_id).map(|p| p.kitty_active()).unwrap_or(false);
 
-    // Ignore key releases entirely for the legacy path.
-    if event.state == winit::event::ElementState::Released {
+    let is_release = event.state == winit::event::ElementState::Released;
+    // KKP can request release events (flags bit 1). Legacy path ignores them.
+    let kkp_wants_release = kitty_active && (kitty_flags & 2 != 0);
+    if is_release && !kkp_wants_release {
+        return PostKeyAction::None;
+    }
+    // Forward release events directly to KKP encoder without keybind processing.
+    if is_release && kkp_wants_release {
+        let pane = active_pane_mut(panes, tab_bar);
+        let bytes = InputAction::from_key_kitty(event, state.modifiers, kitty_flags, true);
+        if let InputAction::Write(b) = bytes {
+            pane.write_to_pty(&b);
+        }
         return PostKeyAction::None;
     }
 
@@ -385,12 +397,14 @@ pub fn handle_keyboard(
             return PostKeyAction::None;
         }
 
-        let _ = (kitty_flags, kitty_active);
-
-        let app_cursor = find_pane(panes, tab_bar.active_tab().active_pane)
-            .map(app_cursor_active)
-            .unwrap_or(false);
-        let action = InputAction::from_key(event, state.modifiers, app_cursor);
+        let action = if kitty_active {
+            InputAction::from_key_kitty(event, state.modifiers, kitty_flags, is_release)
+        } else {
+            let app_cursor = find_pane(panes, tab_bar.active_tab().active_pane)
+                .map(app_cursor_active)
+                .unwrap_or(false);
+            InputAction::from_key(event, state.modifiers, app_cursor)
+        };
         match action {
             InputAction::Write(bytes) => {
                 // Ctrl+C (byte 3) with active selection → copy to clipboard instead of ^C

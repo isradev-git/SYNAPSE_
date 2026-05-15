@@ -17,3 +17,4 @@ fontdue = { workspace = true }
 tracing = { workspace = true }
 pollster = { workspace = true }
 bytemuck = { workspace = true }
+rustybuzz = { workspace = true }

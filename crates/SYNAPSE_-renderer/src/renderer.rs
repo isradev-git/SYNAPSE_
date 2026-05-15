@@ -279,6 +279,130 @@ impl Renderer {
         instances
     }
 
+    /// Build instances using HarfBuzz shaping for ligature detection.
+    /// Consecutive same-row same-style cells are grouped into runs; if shaping
+    /// produces fewer glyphs than input characters a ligature is rendered.
+    #[allow(clippy::type_complexity)]
+    fn build_ligature_instances(
+        &mut self,
+        cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
+    ) -> Vec<CellInstance> {
+        let cell_w = self.cell_w;
+        if cell_w <= 0.0 {
+            return self.build_simple_instances(cells);
+        }
+
+        let mut instances: Vec<CellInstance> = Vec::with_capacity(cells.len());
+        let mut i = 0;
+        while i < cells.len() {
+            let (c0, x0, y0, fs0, fg0, _) = cells[i];
+
+            // Build a consecutive horizontal run of same-style cells.
+            let mut run_text = String::new();
+            run_text.push(c0);
+            let mut j = i + 1;
+            while j < cells.len() {
+                let (c1, x1, y1, fs1, fg1, _) = cells[j];
+                let expected_x = x0 + (j - i) as f32 * cell_w;
+                if (y1 - y0).abs() < 0.5
+                    && (fs1 - fs0).abs() < 0.01
+                    && fg1 == fg0
+                    && (x1 - expected_x).abs() < cell_w * 0.15
+                {
+                    run_text.push(c1);
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+
+            let run_len = j - i;
+            let mut ligature_rendered = false;
+
+            if run_len >= 2 {
+                let shaped = self.text.shape_run(&run_text, fs0, false, false);
+                if shaped.len() < run_len {
+                    // Shaping merged characters → render as shaped glyphs.
+                    let mut x_cursor = x0;
+                    for sg in &shaped {
+                        if sg.glyph_id == 0 {
+                            x_cursor += cell_w;
+                            continue;
+                        }
+                        let key = crate::text::ShapedGlyphKey {
+                            glyph_id: sg.glyph_id,
+                            font_size_bits: fs0.to_bits(),
+                            bold: false,
+                            italic: false,
+                        };
+                        let bitmap =
+                            self.text.rasterize_glyph_id(sg.glyph_id, fs0, false, false);
+                        self.push_shaped_instance(
+                            &mut instances,
+                            &bitmap,
+                            key,
+                            x_cursor + sg.x_offset,
+                            y0,
+                            fs0,
+                            fg0,
+                        );
+                        x_cursor += sg.x_advance.max(cell_w);
+                    }
+                    i = j;
+                    ligature_rendered = true;
+                }
+            }
+
+            if !ligature_rendered {
+                let (c, x, y, font_size, fg, _) = cells[i];
+                if c != ' ' {
+                    let key = crate::text::GlyphKey::new(c, font_size, false, false);
+                    let bitmap = self.text.rasterize(key);
+                    self.push_glyph_instance(&mut instances, &bitmap, key, x, y, font_size, fg);
+                }
+                i += 1;
+            }
+        }
+
+        instances
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn push_shaped_instance(
+        &mut self,
+        instances: &mut Vec<CellInstance>,
+        bitmap: &crate::text::GlyphBitmap,
+        key: crate::text::ShapedGlyphKey,
+        cell_x: f32,
+        cell_y: f32,
+        font_size: f32,
+        fg: [f32; 4],
+    ) {
+        if bitmap.width == 0 || bitmap.height == 0 {
+            return;
+        }
+        if let Some((uv, is_new)) =
+            self.atlas.get_or_insert_shaped(key, bitmap.width, bitmap.height)
+        {
+            if is_new {
+                let rgba = Self::gray_to_rgba(&bitmap.data);
+                self.atlas.upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
+            }
+            let line_h = font_size * 1.2;
+            let baseline = cell_y + line_h * 0.8;
+            instances.push(CellInstance {
+                cell_pos: [
+                    cell_x + bitmap.left as f32,
+                    baseline - (bitmap.top + bitmap.height as i32) as f32,
+                ],
+                cell_size: [bitmap.width as f32, bitmap.height as f32],
+                uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
+                fg_color: fg,
+                bg_color: [0.0, 0.0, 0.0, 0.0],
+            });
+        }
+    }
+
     #[allow(clippy::type_complexity)]
     pub fn draw_frame(
         &mut self,
@@ -286,9 +410,24 @@ impl Renderer {
         ui_rects: &[UIRect],
         bg_rects: &[UIRect],
     ) {
+        self.draw_frame_with_options(cells, ui_rects, bg_rects, false);
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn draw_frame_with_options(
+        &mut self,
+        cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
+        ui_rects: &[UIRect],
+        bg_rects: &[UIRect],
+        ligatures: bool,
+    ) {
         self.atlas.begin_frame();
 
-        let instances = self.build_simple_instances(cells);
+        let instances = if ligatures {
+            self.build_ligature_instances(cells)
+        } else {
+            self.build_simple_instances(cells)
+        };
 
         self.render_instances(&instances, bg_rects, ui_rects);
     }

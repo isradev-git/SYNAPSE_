@@ -127,9 +127,21 @@
       "type": "file"
     },
     {
+      "path": "crates/SYNAPSE_-app/src/render.rs",
+      "accessCount": 19,
+      "lastAccessed": 1778839093531,
+      "type": "file"
+    },
+    {
       "path": "crates/Luna-ui/src/pane.rs",
       "accessCount": 18,
       "lastAccessed": 1778772247396,
+      "type": "file"
+    },
+    {
+      "path": "docs/desarrollo/desarrollo_principal.md",
+      "accessCount": 18,
+      "lastAccessed": 1778841667302,
       "type": "file"
     },
     {
@@ -157,15 +169,15 @@
       "type": "file"
     },
     {
-      "path": "docs/desarrollo/desarrollo_principal.md",
-      "accessCount": 14,
-      "lastAccessed": 1778824751429,
-      "type": "file"
-    },
-    {
       "path": "crates/Luna-renderer/src/text.rs",
       "accessCount": 13,
       "lastAccessed": 1778738357156,
+      "type": "file"
+    },
+    {
+      "path": "Cargo.toml",
+      "accessCount": 12,
+      "lastAccessed": 1778838336527,
       "type": "file"
     },
     {
@@ -175,9 +187,15 @@
       "type": "file"
     },
     {
-      "path": "Cargo.toml",
-      "accessCount": 8,
-      "lastAccessed": 1778832034250,
+      "path": "crates/SYNAPSE_-app/src/app.rs",
+      "accessCount": 10,
+      "lastAccessed": 1778839170123,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-app/src/keyboard.rs",
+      "accessCount": 9,
+      "lastAccessed": 1778838858119,
       "type": "file"
     },
     {
@@ -205,6 +223,18 @@
       "type": "file"
     },
     {
+      "path": "crates/SYNAPSE_-app/src/state.rs",
+      "accessCount": 5,
+      "lastAccessed": 1778833426008,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-app/src/input.rs",
+      "accessCount": 5,
+      "lastAccessed": 1778839265318,
+      "type": "file"
+    },
+    {
       "path": "crates/Luna-renderer/Cargo.toml",
       "accessCount": 4,
       "lastAccessed": 1778687654663,
@@ -229,6 +259,12 @@
       "type": "file"
     },
     {
+      "path": "crates/SYNAPSE_-app/Cargo.toml",
+      "accessCount": 4,
+      "lastAccessed": 1778838345668,
+      "type": "file"
+    },
+    {
       "path": "docs/superpowers/plans/2026-05-13-luna-v2-phase1-foundation.md",
       "accessCount": 3,
       "lastAccessed": 1778770232952,
@@ -244,6 +280,12 @@
       "path": "crates/Luna-ui/src/layout.rs",
       "accessCount": 3,
       "lastAccessed": 1778824129158,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-renderer/Cargo.toml",
+      "accessCount": 3,
+      "lastAccessed": 1778838344637,
       "type": "file"
     },
     {
@@ -313,27 +355,57 @@
       "type": "file"
     },
     {
-      "path": "crates/SYNAPSE_-app/Cargo.toml",
-      "accessCount": 1,
-      "lastAccessed": 1778832056785,
-      "type": "file"
-    },
-    {
       "path": "crates/SYNAPSE_-config/Cargo.toml",
       "accessCount": 1,
       "lastAccessed": 1778832062260,
       "type": "file"
     },
     {
-      "path": "crates/SYNAPSE_-renderer/Cargo.toml",
-      "accessCount": 1,
-      "lastAccessed": 1778832064022,
-      "type": "file"
-    },
-    {
       "path": "crates/SYNAPSE_-ui/Cargo.toml",
       "accessCount": 1,
       "lastAccessed": 1778832065625,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-suggest/Cargo.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778833276047,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-suggest/src/lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778833276446,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-suggest/src/history.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778833289563,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-suggest/src/trie.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778833305261,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-config/src/lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778837835808,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-config/src/config.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778837842040,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-config/src/themes.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778837842547,
       "type": "file"
     }
   ],
