@@ -40,7 +40,7 @@ impl TextureAtlas {
         };
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Luna Glyph Atlas"),
+            label: Some("SYNAPSE_ Glyph Atlas"),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -53,7 +53,7 @@ impl TextureAtlas {
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Luna Atlas Sampler"),
+            label: Some("SYNAPSE_ Atlas Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -64,7 +64,7 @@ impl TextureAtlas {
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Luna Atlas BindGroupLayout"),
+            label: Some("SYNAPSE_ Atlas BindGroupLayout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -86,7 +86,7 @@ impl TextureAtlas {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Luna Atlas BindGroup"),
+            label: Some("SYNAPSE_ Atlas BindGroup"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {

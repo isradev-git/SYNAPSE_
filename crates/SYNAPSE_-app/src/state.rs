@@ -1,8 +1,8 @@
 use std::time::Instant;
 
-use luna_config::{Config, Keybinds, Theme};
-use luna_ui::pane::PaneId;
-use luna_ui::splitter::{PaneRect, SplitDirection};
+use synapse_config::{Config, Keybinds, Theme};
+use synapse_ui::pane::PaneId;
+use synapse_ui::splitter::{PaneRect, SplitDirection};
 use winit::keyboard::ModifiersState;
 
 pub struct DividerDrag {
@@ -124,7 +124,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config: Config, keybinds: Keybinds, font_size: f32) -> Self {
-        let theme = Theme::load(&config.theme, luna_config::Config::config_dir());
+        let theme = Theme::load(&config.theme, synapse_config::Config::config_dir());
         Self {
             config,
             keybinds,

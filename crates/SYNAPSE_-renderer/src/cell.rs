@@ -69,13 +69,13 @@ impl CellRenderer {
         surface_format: wgpu::TextureFormat,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Luna Cell Shader"),
+            label: Some("SYNAPSE_ Cell Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/cell.wgsl").into()),
         });
 
         let screen_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Luna Screen BindGroupLayout"),
+                label: Some("SYNAPSE_ Screen BindGroupLayout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
@@ -89,13 +89,13 @@ impl CellRenderer {
             });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Luna Cell PipelineLayout"),
+            label: Some("SYNAPSE_ Cell PipelineLayout"),
             bind_group_layouts: &[atlas_bind_group_layout, &screen_bind_group_layout],
             push_constant_ranges: &[],
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Luna Cell Pipeline"),
+            label: Some("SYNAPSE_ Cell Pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -127,14 +127,14 @@ impl CellRenderer {
         });
 
         let screen_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Luna Screen Uniform Buffer"),
+            label: Some("SYNAPSE_ Screen Uniform Buffer"),
             size: std::mem::size_of::<ScreenUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let screen_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Luna Screen BindGroup"),
+            label: Some("SYNAPSE_ Screen BindGroup"),
             layout: &screen_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -143,7 +143,7 @@ impl CellRenderer {
         });
 
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Luna Cell Instance Buffer"),
+            label: Some("SYNAPSE_ Cell Instance Buffer"),
             size: 8192 * std::mem::size_of::<CellInstance>() as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -178,7 +178,7 @@ impl CellRenderer {
         if needed > self.instance_buffer.size() {
             let new_size = (needed * 2).next_power_of_two().max(256);
             self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Luna Cell Instance Buffer"),
+                label: Some("SYNAPSE_ Cell Instance Buffer"),
                 size: new_size,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,

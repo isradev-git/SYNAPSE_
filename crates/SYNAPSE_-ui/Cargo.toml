@@ -1,5 +1,5 @@
 [package]
-name = "Luna-renderer"
+name = "SYNAPSE_-ui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,13 +7,12 @@ authors.workspace = true
 repository.workspace = true
 
 [lib]
-name = "luna_renderer"
+name = "synapse_ui"
 path = "src/lib.rs"
 
 [dependencies]
-wgpu = { workspace = true }
-winit = { workspace = true }
-fontdue = { workspace = true }
 tracing = { workspace = true }
-pollster = { workspace = true }
-bytemuck = { workspace = true }
+alacritty_terminal = { workspace = true }
+portable-pty = { workspace = true }
+SYNAPSE_-renderer = { path = "../SYNAPSE_-renderer" }
+winit = { workspace = true }

@@ -9,7 +9,7 @@ use winit::{
 use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection as TermSelection, SelectionType};
 use alacritty_terminal::term::TermMode;
-use luna_ui::{
+use synapse_ui::{
     layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection, SCROLL_BTN_W,
     TAB_BAR_HEIGHT,
 };
@@ -66,7 +66,7 @@ fn encode_mouse_event(col: usize, row: usize, btn: u8, pressed: bool, sgr: bool)
 }
 
 /// Return `(mouse_reporting_active, sgr_encoding)` for the active pane.
-fn active_pane_mouse_modes(panes: &[Pane], active_id: luna_ui::PaneId) -> (bool, bool) {
+fn active_pane_mouse_modes(panes: &[Pane], active_id: synapse_ui::PaneId) -> (bool, bool) {
     if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
         if let Ok(term) = pane.term.lock() {
             let mode = term.mode();
@@ -302,7 +302,7 @@ pub fn handle_cursor_moved(
         state.hover_divider = true;
     } else if !state.selecting {
         let pane_area = layout.pane_area();
-        let pane_rect = luna_ui::PaneRect {
+        let pane_rect = synapse_ui::PaneRect {
             x: pane_area.0,
             y: pane_area.1,
             w: pane_area.2,

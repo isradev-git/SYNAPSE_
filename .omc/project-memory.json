@@ -110,14 +110,20 @@
   "hotPaths": [
     {
       "path": "crates/Luna-app/src/render.rs",
-      "accessCount": 36,
-      "lastAccessed": 1778771678407,
+      "accessCount": 40,
+      "lastAccessed": 1778824089493,
       "type": "file"
     },
     {
       "path": "crates/Luna-renderer/src/renderer.rs",
       "accessCount": 30,
       "lastAccessed": 1778772581867,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-app/src/keyboard.rs",
+      "accessCount": 19,
+      "lastAccessed": 1778824063916,
       "type": "file"
     },
     {
@@ -128,14 +134,8 @@
     },
     {
       "path": "crates/Luna-renderer/src/atlas.rs",
-      "accessCount": 16,
-      "lastAccessed": 1778740335849,
-      "type": "file"
-    },
-    {
-      "path": "crates/Luna-app/src/keyboard.rs",
-      "accessCount": 16,
-      "lastAccessed": 1778772350908,
+      "accessCount": 17,
+      "lastAccessed": 1778823866975,
       "type": "file"
     },
     {
@@ -151,15 +151,21 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/src/text.rs",
-      "accessCount": 13,
-      "lastAccessed": 1778738357156,
+      "path": "crates/Luna-app/src/pane_ops.rs",
+      "accessCount": 14,
+      "lastAccessed": 1778824100555,
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/pane_ops.rs",
+      "path": "docs/desarrollo/desarrollo_principal.md",
+      "accessCount": 14,
+      "lastAccessed": 1778824751429,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-renderer/src/text.rs",
       "accessCount": 13,
-      "lastAccessed": 1778772410629,
+      "lastAccessed": 1778738357156,
       "type": "file"
     },
     {
@@ -169,9 +175,15 @@
       "type": "file"
     },
     {
-      "path": "docs/desarrollo/desarrollo_principal.md",
+      "path": "Cargo.toml",
       "accessCount": 8,
-      "lastAccessed": 1778772643558,
+      "lastAccessed": 1778832034250,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-app/src/input.rs",
+      "accessCount": 7,
+      "lastAccessed": 1778823702511,
       "type": "file"
     },
     {
@@ -187,15 +199,9 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/input.rs",
-      "accessCount": 6,
-      "lastAccessed": 1778689945020,
-      "type": "file"
-    },
-    {
-      "path": "Cargo.toml",
-      "accessCount": 6,
-      "lastAccessed": 1778770230850,
+      "path": "crates/Luna-ui/src/splitter.rs",
+      "accessCount": 5,
+      "lastAccessed": 1778824499852,
       "type": "file"
     },
     {
@@ -217,6 +223,12 @@
       "type": "file"
     },
     {
+      "path": "crates/Luna-ui/src/tab_bar.rs",
+      "accessCount": 4,
+      "lastAccessed": 1778824139931,
+      "type": "file"
+    },
+    {
       "path": "docs/superpowers/plans/2026-05-13-luna-v2-phase1-foundation.md",
       "accessCount": 3,
       "lastAccessed": 1778770232952,
@@ -226,6 +238,12 @@
       "path": "crates/Luna-config/src/config.rs",
       "accessCount": 3,
       "lastAccessed": 1778770244208,
+      "type": "file"
+    },
+    {
+      "path": "crates/Luna-ui/src/layout.rs",
+      "accessCount": 3,
+      "lastAccessed": 1778824129158,
       "type": "file"
     },
     {
@@ -244,6 +262,12 @@
       "path": "docs/superpowers/specs/2026-05-13-luna-v2-rewrite-design.md",
       "accessCount": 2,
       "lastAccessed": 1778770232283,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 2,
+      "lastAccessed": 1778832587768,
       "type": "file"
     },
     {
@@ -283,9 +307,33 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-ui/src/tab_bar.rs",
+      "path": "crates/Luna-config/src/keybinds.rs",
       "accessCount": 1,
-      "lastAccessed": 1778770243513,
+      "lastAccessed": 1778823946125,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-app/Cargo.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778832056785,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-config/Cargo.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778832062260,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-renderer/Cargo.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778832064022,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-ui/Cargo.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778832065625,
       "type": "file"
     }
   ],

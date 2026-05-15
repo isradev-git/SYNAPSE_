@@ -41,12 +41,12 @@ fn hex(s: &str) -> [f32; 4] {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::luna()
+        Self::synapse_()
     }
 }
 
 impl Theme {
-    pub fn luna() -> Self {
+    pub fn synapse_() -> Self {
         Self {
             bg: hex("11131a"),
             fg: hex("d2d5db"),
@@ -166,7 +166,7 @@ impl Theme {
             "dracula" => Self::dracula(),
             "catppuccin-mocha" => Self::catppuccin_mocha(),
             "tokyo-night" => Self::tokyo_night(),
-            _ => Self::luna(),
+            _ => Self::synapse_(),
         }
     }
 
@@ -257,8 +257,8 @@ mod tests {
     }
 
     #[test]
-    fn luna_theme_smoke() {
-        let t = Theme::luna();
+    fn synapse_theme_smoke() {
+        let t = Theme::synapse_();
         assert!((t.bg[3] - 1.0).abs() < 0.001, "bg alpha should be 1.0");
         assert!(t.tab_text[3] == 1.0, "tab text alpha should be 1.0");
         assert!(t.cursor[3] == 1.0, "cursor alpha should be 1.0");
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn all_builtin_themes_load() {
-        for name in &["luna", "dracula", "catppuccin-mocha", "tokyo-night"] {
+        for name in &["synapse_", "dracula", "catppuccin-mocha", "tokyo-night"] {
             let t = Theme::load(name, None);
             // bg alpha should always be 1.0
             assert!(

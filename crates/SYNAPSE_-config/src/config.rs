@@ -62,7 +62,7 @@ fn default_cursor_blink_ms() -> u64 {
     500
 }
 fn default_theme() -> String {
-    "luna".to_string()
+    "synapse_".to_string()
 }
 
 impl Default for Config {
@@ -146,7 +146,7 @@ fn config_dir() -> Option<PathBuf> {
             .map(PathBuf::from)
             .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".config")))
             .ok()
-            .map(|d| d.join("Luna"))
+            .map(|d| d.join("SYNAPSE_"))
     }
     #[cfg(target_os = "macos")]
     {
@@ -155,7 +155,7 @@ fn config_dir() -> Option<PathBuf> {
                 PathBuf::from(h)
                     .join("Library")
                     .join("Application Support")
-                    .join("Luna")
+                    .join("SYNAPSE_")
             })
             .ok()
     }
@@ -244,7 +244,7 @@ scrollback_lines = 50000
 
     #[test]
     fn test_config_save_and_load_temp() {
-        let dir = std::env::temp_dir().join(format!("luna_config_test_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("synapse_config_test_{}", std::process::id()));
         let path = dir.join("config.toml");
 
         let config = Config {
@@ -269,7 +269,7 @@ scrollback_lines = 50000
         if let Some(p) = path {
             // Path should point to the Luna config directory
             let dir = p.parent().unwrap();
-            assert!(dir.ends_with("Luna"));
+            assert!(dir.ends_with("SYNAPSE_"));
         }
     }
 

@@ -8,9 +8,9 @@ use winit::{
 };
 
 use alacritty_terminal::term::TermMode;
-use luna_renderer::renderer::Renderer;
-use luna_renderer::ui::UIRect;
-use luna_ui::{
+use synapse_renderer::renderer::Renderer;
+use synapse_renderer::ui::UIRect;
+use synapse_ui::{
     layout::Layout,
     pane::{Pane, PaneId},
     tab_bar::{Tab, TabBar, TabId},
@@ -47,8 +47,8 @@ pub struct App {
 
 impl App {
     pub fn new() -> Result<(Self, EventLoop<()>), Box<dyn std::error::Error>> {
-        let config = luna_config::Config::load();
-        let keybinds = luna_config::Keybinds::new();
+        let config = synapse_config::Config::load();
+        let keybinds = synapse_config::Keybinds::new();
         let logical_font_size = config.font_size;
 
         let event_loop = EventLoop::new()?;
@@ -57,7 +57,7 @@ impl App {
         let window = Arc::new(
             event_loop.create_window(
                 WindowAttributes::default()
-                    .with_title("Luna")
+                    .with_title("SYNAPSE_")
                     .with_inner_size(winit::dpi::LogicalSize::new(
                         config.window_width as f64,
                         config.window_height as f64,
@@ -182,7 +182,7 @@ impl App {
         self.layout.update(size.width as f32, size.height as f32);
 
         let pane_area = self.layout.pane_area();
-        let pane_rect = luna_ui::PaneRect {
+        let pane_rect = synapse_ui::PaneRect {
             x: pane_area.0,
             y: pane_area.1,
             w: pane_area.2,

@@ -5,12 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```sh
-cargo build -p Luna-app                      # build binary
-cargo run -p Luna-app                        # run
+cargo build -p SYNAPSE_-app                  # build binary
+cargo run -p SYNAPSE_-app                    # run
 cargo build --release                        # release build (thin LTO)
-cargo test --workspace                       # all tests (~67)
-cargo test -p Luna-terminal                  # single crate tests
-cargo test -p Luna-terminal -- --nocapture   # with stdout
+cargo test --workspace                       # all tests (~80)
+cargo test -p SYNAPSE_-config                # single crate tests
+cargo test -p SYNAPSE_-config -- --nocapture # with stdout
 cargo fmt --all -- --check                   # format check
 cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings = errors)
 ```
@@ -19,22 +19,21 @@ Linux requires system deps for building: `libx11-dev libxkbcommon-dev libwayland
 
 ## Architecture
 
-Cargo workspace with 5 crates under `crates/`. Crate dirs use PascalCase (`Luna-app`) but lib names use snake_case (`luna_renderer`).
+Cargo workspace with 4 crates under `crates/`. Crate dirs use `SYNAPSE_-*` prefix, lib names use snake_case (`synapse_renderer`).
 
 ```
-Luna-app        → binary, winit event loop, owns App struct
-Luna-terminal   → PTY, VT parser, grid/buffer
-Luna-renderer   → wgpu GPU rendering, texture atlas, text shaping
-Luna-ui         → layout, pane tree, tab bar, theme
-Luna-config     → TOML config, keybinds
+SYNAPSE_-app        → binary, winit event loop, owns App struct
+SYNAPSE_-renderer   → wgpu GPU rendering, texture atlas, text shaping
+SYNAPSE_-ui         → layout, pane tree, tab bar, theme
+SYNAPSE_-config     → TOML config, keybinds
 ```
 
 ### Data flow
 
 ```
 PTY (portable-pty) → reader thread → mpsc channel
-  → VteProcessor (vte 0.13) → Grid (CharCell matrix)
-  → render.rs reads Grid → CellInstance vec → draw_frame()
+  → alacritty_terminal VTE processor → Term grid
+  → render.rs reads grid → CellInstance vec → draw_frame()
   → CellRenderer (cell.wgsl) + UIRenderer (ui.wgsl) → wgpu surface
 ```
 
@@ -42,7 +41,7 @@ PTY (portable-pty) → reader thread → mpsc channel
 
 - `App` owns `Vec<Pane>` (flat list), `TabBar`, `Layout`, `Renderer`, `AppState`
 - Each `Tab` owns a `PaneTree` (binary split tree) and `active_pane: PaneId`
-- `Pane` holds `PaneSession` (PTY + mpsc rx), `Rc<RefCell<Grid>>`, `VteProcessor`
+- `Pane` holds `Term` (alacritty_terminal), PTY master/writer, event_rx, dirty AtomicBool
 - `PaneTree` is `Leaf(PaneId) | Split { direction, ratio, first, second }` — split at 50% by default, draggable
 
 ### Rendering
@@ -51,7 +50,7 @@ Single render pass per frame: `draw_frame(cells, ui_rects)` — one `get_current
 
 **Instanced rendering**: one GPU instance per visible cell, 64 bytes each (pos:2, size:2, uv:4, fg:4, bg:4). Single draw call.
 
-**Atlas**: glyphs cached in `TextureAtlas` (texture + UV map). `cosmic-text` + swash for rasterization. `SwashContent::Mask` = 1-byte alpha, convert to RGBA manually.
+**Atlas**: glyphs cached in `TextureAtlas` (texture + UV map). `fontdue` for rasterization. 2048×2048 RGBA, reset at 90% full.
 
 **Bind groups**: group 0 = atlas texture + sampler, group 1 = screen uniform (vec2).
 
@@ -61,12 +60,12 @@ Single render pass per frame: `draw_frame(cells, ui_rects)` — one `get_current
 
 **wgpu 22**: `entry_point` in vertex/fragment state is `&str` (not `Option<&str>`). `BindGroupLayout` does not implement `Clone` — pass by reference. `create_surface` requires `Arc<Window>`. Use `pollster::block_on` for adapter/device init.
 
-**cosmic-text 0.12**: `CacheKey::new(font_id, glyph_id, font_size, (x, y), flags)` returns `(CacheKey, i32, i32)`. `SwashCache::get_image_uncached(font_system, cache_key)` → `Option<SwashImage>`.
+**alacritty_terminal 0.24**: `grid.display_offset()` = 0 at bottom, positive = scrolled into history. `grid.history_size()` requires `Dimensions` trait in scope. `term.selection_to_string()` extracts selected text.
 
 ## Color palette
 
-Professional dark theme with steel blue accent. Defined in `Theme::luna()` (`crates/Luna-config/src/themes.rs`).
-4 built-in themes: `luna`, `dracula`, `catppuccin-mocha`, `tokyo-night`.
+Cyberpunk dark theme with steel blue accent. Defined in `Theme::synapse_()` (`crates/SYNAPSE_-config/src/themes.rs`).
+4 built-in themes: `synapse_`, `dracula`, `catppuccin-mocha`, `tokyo-night`.
 
 ```
 #11131a  main background (wgpu clear color)
@@ -81,9 +80,9 @@ Professional dark theme with steel blue accent. Defined in `Theme::luna()` (`cra
 ## Config
 
 Auto-created at first launch:
-- Linux: `~/.config/Luna/config.toml`
-- macOS: `~/Library/Application Support/Luna/config.toml`
-- Windows: `%APPDATA%\Luna\config.toml`
+- Linux: `~/.config/SYNAPSE_/config.toml`
+- macOS: `~/Library/Application Support/SYNAPSE_/config.toml`
+- Windows: `%APPDATA%\SYNAPSE_\config.toml`
 
 Hot-reload: `Ctrl+,`
 

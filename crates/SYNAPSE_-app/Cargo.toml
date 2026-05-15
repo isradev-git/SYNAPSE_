@@ -1,20 +1,20 @@
 [package]
-name = "Luna-app"
+name = "SYNAPSE_-app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Luna terminal emulator — binary entry point"
+description = "SYNAPSE_ terminal emulator — binary entry point"
 
 [[bin]]
-name = "luna"
+name = "synapse_"
 path = "src/main.rs"
 
 [dependencies]
-Luna-renderer = { path = "../Luna-renderer" }
-Luna-ui = { path = "../Luna-ui" }
-Luna-config = { path = "../Luna-config" }
+SYNAPSE_-renderer = { path = "../SYNAPSE_-renderer" }
+SYNAPSE_-ui = { path = "../SYNAPSE_-ui" }
+SYNAPSE_-config = { path = "../SYNAPSE_-config" }
 alacritty_terminal = { workspace = true }
 portable-pty = { workspace = true }
 winit = { workspace = true }

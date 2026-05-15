@@ -1,4 +1,4 @@
-# Luna — Desarrollo Principal
+# SYNAPSE_ — Desarrollo Principal
 
 Estado actual: **v0.2.0** | Phase 1 completa ✅
 
@@ -8,7 +8,7 @@ Marca cada paso con `[x]` al completarlo.
 
 ## Phase 1 — Foundation ✅ COMPLETA
 
-- [x] Eliminar crate Luna-terminal
+- [x] Eliminar crate SYNAPSE_-terminal
 - [x] Integrar `alacritty_terminal` (VT parsing, grid, scrollback)
 - [x] Reemplazar cosmic-text/swash → `fontdue`
 - [x] PTY reader thread → Processor::advance() → Term
@@ -19,7 +19,7 @@ Marca cada paso con `[x]` al completarlo.
 - [x] Splits V/H: Ctrl+Shift+D / Ctrl+Shift+E
 - [x] Navegación panes: Alt+arrows
 - [x] Search: Ctrl+F
-- [x] Temas: luna, dracula, catppuccin-mocha, tokyo-night
+- [x] Temas: synapse_, dracula, catppuccin-mocha, tokyo-night
 - [x] Hot-reload config: Ctrl+,
 - [x] Cursor block/beam/underline con blink
 - [x] xterm256 color palette completa
@@ -86,12 +86,12 @@ Marca cada paso con `[x]` al completarlo.
 
 ---
 
-## Phase 3 — Autosuggestions (luna-suggest)
+## Phase 3 — Autosuggestions (synapse_-suggest)
 
 ### 3.1 Nuevo crate
-- [ ] Crear `crates/luna-suggest/` con `Cargo.toml`
+- [ ] Crear `crates/synapse_-suggest/` con `Cargo.toml`
 - [ ] Añadir al workspace `Cargo.toml`
-- [ ] Añadir dependencia en `Luna-app`
+- [ ] Añadir dependencia en `SYNAPSE_-app`
 
 ### 3.2 Carga de historial
 - [ ] Leer `~/.zsh_history` (formato extendido: `: timestamp:elapsed;command`)
@@ -150,7 +150,7 @@ Marca cada paso con `[x]` al completarlo.
 - [ ] Limitar cells procesadas al viewport visible únicamente
 
 ### 4.4 Theme polish
-- [ ] Soporte para themes custom via TOML (`~/.config/Luna/themes/`)
+- [ ] Soporte para themes custom via TOML (`~/.config/SYNAPSE_/themes/`)
 - [ ] Verificar colores con cada tema (dracula, catppuccin, tokyo-night)
 - [ ] Smooth resize sin flicker
 
@@ -173,10 +173,10 @@ Marca cada paso con `[x]` al completarlo.
 
 ## Tests objetivo
 
-- [ ] Luna-renderer: atlas no-overlap, rasterize ASCII, draw_frame sin panic
-- [ ] Luna-ui: PaneTree split/close/layout, TabBar CRUD
-- [ ] Luna-config: round-trip TOML, valores por defecto, cursor styles
-- [ ] luna-suggest: trie prefix match, empty history, corrupted line, accept
+- [ ] SYNAPSE_-renderer: atlas no-overlap, rasterize ASCII, draw_frame sin panic
+- [ ] SYNAPSE_-ui: PaneTree split/close/layout, TabBar CRUD
+- [ ] SYNAPSE_-config: round-trip TOML, valores por defecto, cursor styles
+- [ ] synapse_-suggest: trie prefix match, empty history, corrupted line, accept
 - [ ] Workspace total: ≥80 tests pasando
 
 ---

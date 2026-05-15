@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "crates/Luna-app",
-    "crates/Luna-renderer",
-    "crates/Luna-ui",
-    "crates/Luna-config",
+    "crates/SYNAPSE_-app",
+    "crates/SYNAPSE_-renderer",
+    "crates/SYNAPSE_-ui",
+    "crates/SYNAPSE_-config",
 ]
 resolver = "2"
 
@@ -11,10 +11,10 @@ resolver = "2"
 version = "0.2.0"
 edition = "2021"
 license = "MIT"
-authors = ["Luna Team"]
-repository = "https://github.com/isradev-git/luna"
-homepage = "https://github.com/isradev-git/luna"
-description = "A modern GPU-accelerated terminal emulator"
+authors = ["SYNAPSE_ Team"]
+repository = "https://github.com/isradev-git/synapse_"
+homepage = "https://github.com/isradev-git/synapse_"
+description = "A cyberpunk GPU-accelerated terminal emulator"
 
 [workspace.dependencies]
 winit = "0.30"

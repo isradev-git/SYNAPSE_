@@ -26,11 +26,11 @@ fn main() {
             .map(|l| format!("{}:{}", l.file(), l.line()))
             .unwrap_or_default();
         tracing::error!("PANIC: {} at {}", payload, location);
-        eprintln!("Luna crashed:\n{}\n\nLocation: {}", payload, location);
+        eprintln!("SYNAPSE_ crashed:\n{}\n\nLocation: {}", payload, location);
     }));
 
     if let Err(e) = try_main() {
-        let msg = format!("Luna failed to start:\n\n{}", e);
+        let msg = format!("SYNAPSE_ failed to start:\n\n{}", e);
         tracing::error!("STARTUP ERROR: {}", e);
         eprintln!("{}", msg);
         std::process::exit(1);

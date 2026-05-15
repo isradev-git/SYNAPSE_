@@ -2,9 +2,9 @@ use std::collections::HashSet;
 
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::vte::ansi::Color as TermColor;
-use luna_config::Theme;
-use luna_renderer::{renderer::Renderer, ui::UIRect};
-use luna_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
+use synapse_config::Theme;
+use synapse_renderer::{renderer::Renderer, ui::UIRect};
+use synapse_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
 
 use crate::{app::CellData, pane_ops::find_pane, search::build_match_set, state::AppState};
 
@@ -357,7 +357,7 @@ pub fn render_frame(
 
         let pane_area = layout.pane_area();
         let margin = layout.pane_margin();
-        let pane_rect = luna_ui::PaneRect {
+        let pane_rect = synapse_ui::PaneRect {
             x: pane_area.0,
             y: pane_area.1,
             w: pane_area.2,
@@ -480,17 +480,17 @@ pub fn render_frame(
                 let cy = content_y + cursor_row as f32 * cell_h;
                 let cursor_color = state.theme.cursor;
                 match state.config.cursor_style {
-                    luna_config::CursorStyle::Block => {
+                    synapse_config::CursorStyle::Block => {
                         // Block cursor is rendered via the per-cell pass above.
                     }
-                    luna_config::CursorStyle::Beam => {
+                    synapse_config::CursorStyle::Beam => {
                         cached_ui_rects.push(UIRect {
                             pos: [cx, cy],
                             size: [1.5, cell_h],
                             color: cursor_color,
                         });
                     }
-                    luna_config::CursorStyle::Underline => {
+                    synapse_config::CursorStyle::Underline => {
                         cached_ui_rects.push(UIRect {
                             pos: [cx, cy + cell_h - 2.0],
                             size: [cell_w, 2.0],
@@ -740,7 +740,7 @@ impl App {
         let elapsed = now.duration_since(self.fps_last_print);
         if elapsed >= std::time::Duration::from_secs(1) {
             let fps = self.frame_count as f64 / elapsed.as_secs_f64();
-            tracing::info!(target: "luna::bench", "FPS: {:.1}", fps);
+            tracing::info!(target: "synapse_::bench", "FPS: {:.1}", fps);
             self.frame_count = 0;
             self.fps_last_print = now;
         }
@@ -781,7 +781,7 @@ impl App {
         }
     }
 
-    fn handle_pane_exit(&mut self, pane_id: luna_ui::PaneId) {
+    fn handle_pane_exit(&mut self, pane_id: synapse_ui::PaneId) {
         // Phase 1: exited_panes is always empty so this path is unused; the
         // implementation is kept so we can wire alacritty exit events later
         // without redoing the tab/pane rebalancing logic.
@@ -802,7 +802,7 @@ impl App {
                     let new_rows =
                         ((pane_area.3 - self.margin * 2.0) / self.cell_h).max(1.0) as usize;
                     let new_pane_id = self.tab_bar.next_pane_id();
-                    self.tab_bar.tabs[0].pane_tree = luna_ui::PaneTree::leaf(new_pane_id);
+                    self.tab_bar.tabs[0].pane_tree = synapse_ui::PaneTree::leaf(new_pane_id);
                     self.tab_bar.tabs[0].active_pane = new_pane_id;
                     match create_pane(new_pane_id, new_cols, new_rows) {
                         Ok(pane) => self.panes.push(pane),

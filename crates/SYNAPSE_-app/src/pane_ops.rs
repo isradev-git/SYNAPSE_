@@ -6,8 +6,8 @@ use alacritty_terminal::event::Event;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config as TermConfig, Term};
 use alacritty_terminal::vte::ansi::{Processor, StdSyncHandler};
-use luna_ui::pane::{EventProxy, Pane, PaneId};
-use luna_ui::{layout::Layout, splitter::PaneRect, tab_bar::TabBar, SCROLL_BTN_W, TAB_BAR_HEIGHT};
+use synapse_ui::pane::{EventProxy, Pane, PaneId};
+use synapse_ui::{layout::Layout, splitter::PaneRect, tab_bar::TabBar, SCROLL_BTN_W, TAB_BAR_HEIGHT};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 const CLOSE_BTN_W: f32 = 16.0;
@@ -112,7 +112,7 @@ pub fn create_pane_full(
     let term_reader = Arc::clone(&term);
     let dirty_reader = Arc::clone(&dirty);
     std::thread::Builder::new()
-        .name(format!("luna-pty-{}", id.0))
+        .name(format!("synapse-pty-{}", id.0))
         .spawn(move || {
             let mut reader = pty_reader;
             let mut buf = [0u8; 1024];
@@ -305,10 +305,10 @@ pub fn handle_tab_click(
 }
 
 pub fn find_hovered_divider(
-    dividers: &[luna_ui::DividerInfo],
+    dividers: &[synapse_ui::DividerInfo],
     x: f64,
     y: f64,
-) -> Option<&luna_ui::DividerInfo> {
+) -> Option<&synapse_ui::DividerInfo> {
     dividers.iter().find(|info| {
         let h = info.hitbox;
         x >= h.x as f64 && x <= (h.x + h.w) as f64 && y >= h.y as f64 && y <= (h.y + h.h) as f64
@@ -327,7 +327,7 @@ impl App {
         (self.cell_w, self.cell_h) = self.renderer.cell_metrics(effective);
 
         let pane_area = self.layout.pane_area();
-        let pane_rect = luna_ui::PaneRect {
+        let pane_rect = synapse_ui::PaneRect {
             x: pane_area.0,
             y: pane_area.1,
             w: pane_area.2,

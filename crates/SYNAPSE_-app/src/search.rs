@@ -5,8 +5,8 @@ use winit::{
     keyboard::{Key, NamedKey},
 };
 
-use luna_ui::pane::{EventProxy, Pane};
-use luna_ui::tab_bar::TabBar;
+use synapse_ui::pane::{EventProxy, Pane};
+use synapse_ui::tab_bar::TabBar;
 
 use crate::{
     pane_ops::active_pane_mut,

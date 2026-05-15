@@ -4,8 +4,8 @@ use winit::{event::KeyEvent, window::Window};
 
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::TermMode;
-use luna_config::Action;
-use luna_ui::{layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::TabBar};
+use synapse_config::Action;
+use synapse_ui::{layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::TabBar};
 
 use crate::{
     input::InputAction,
@@ -23,7 +23,7 @@ pub enum PostKeyAction {
 fn ensure_tab_visible(
     active_idx: usize,
     tab_count: usize,
-    layout: &luna_ui::layout::Layout,
+    layout: &synapse_ui::layout::Layout,
     offset: &mut usize,
 ) {
     let (start, end, _, _) = layout.tab_visible_range(tab_count, *offset);
@@ -296,7 +296,7 @@ pub fn handle_keyboard(
                     _ => unreachable!(),
                 };
                 let pane_area = layout.pane_area();
-                let pane_rect = luna_ui::PaneRect {
+                let pane_rect = synapse_ui::PaneRect {
                     x: pane_area.0,
                     y: pane_area.1,
                     w: pane_area.2,
@@ -354,11 +354,11 @@ pub fn handle_keyboard(
             }
             Some(Action::ReloadConfig) => {
                 state.config.reload();
-                state.theme = luna_config::Theme::load(
+                state.theme = synapse_config::Theme::load(
                     &state.config.theme,
-                    luna_config::Config::config_dir(),
+                    synapse_config::Config::config_dir(),
                 );
-                if let Some(config_path) = luna_config::Config::config_path() {
+                if let Some(config_path) = synapse_config::Config::config_path() {
                     let editor = std::env::var("EDITOR")
                         .or_else(|_| std::env::var("VISUAL"))
                         .unwrap_or_else(|_| {
