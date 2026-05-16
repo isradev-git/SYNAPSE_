@@ -16,6 +16,7 @@ dependencies = [
  "clap",
  "png 0.17.16",
  "portable-pty",
+ "rustix 0.38.44",
  "tracing",
  "tracing-subscriber",
  "wgpu",

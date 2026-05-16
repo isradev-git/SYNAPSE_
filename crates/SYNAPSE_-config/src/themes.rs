@@ -26,6 +26,11 @@ pub struct Theme {
     pub search_current: [f32; 4],
     pub search_text: [f32; 4],
     pub search_text_dim: [f32; 4],
+    // ANSI 16-color palette (indices 0-15)
+    // 0=Black, 1=Red, 2=Green, 3=Yellow, 4=Blue, 5=Magenta, 6=Cyan, 7=White
+    // 8=BrightBlack, 9=BrightRed, 10=BrightGreen, 11=BrightYellow,
+    // 12=BrightBlue, 13=BrightMagenta, 14=BrightCyan, 15=BrightWhite
+    pub ansi_colors: [[f32; 4]; 16],
 }
 
 fn hex(s: &str) -> [f32; 4] {
@@ -68,6 +73,25 @@ impl Theme {
             search_current: hex("FF003C70"),
             search_text: hex("E8E8E8"),
             search_text_dim: hex("444444"),
+            // Cyberpunk ANSI palette: negro puro + rojos/neons
+            ansi_colors: [
+                hex("0A0A0A"), // 0  Black
+                hex("FF003C"), // 1  Red       → cyber rojo
+                hex("00CC44"), // 2  Green     → neon verde
+                hex("FF9900"), // 3  Yellow    → ámbar
+                hex("2266BB"), // 4  Blue      → azul neón
+                hex("CC00AA"), // 5  Magenta   → magenta neón
+                hex("00BBCC"), // 6  Cyan      → cian neón
+                hex("B81C2E"), // 7  White     → rojo tema (texto por defecto = rojo)
+                hex("2A2A2A"), // 8  BrightBlack / Dark Gray
+                hex("FF3355"), // 9  BrightRed
+                hex("00FF55"), // 10 BrightGreen
+                hex("FFD000"), // 11 BrightYellow
+                hex("4499FF"), // 12 BrightBlue
+                hex("FF44CC"), // 13 BrightMagenta
+                hex("00EEFF"), // 14 BrightCyan
+                hex("FF003C"), // 15 BrightWhite → rojo brillante
+            ],
         }
     }
 
@@ -93,6 +117,24 @@ impl Theme {
             search_current: [1.0, 0.72, 0.42, 0.55],
             search_text: hex("f8f8f2"),
             search_text_dim: hex("6272a4"),
+            ansi_colors: [
+                hex("21222c"), // 0  Black
+                hex("ff5555"), // 1  Red
+                hex("50fa7b"), // 2  Green
+                hex("f1fa8c"), // 3  Yellow
+                hex("bd93f9"), // 4  Blue (purple)
+                hex("ff79c6"), // 5  Magenta (pink)
+                hex("8be9fd"), // 6  Cyan
+                hex("f8f8f2"), // 7  White
+                hex("6272a4"), // 8  BrightBlack
+                hex("ff6e6e"), // 9  BrightRed
+                hex("69ff94"), // 10 BrightGreen
+                hex("ffffa5"), // 11 BrightYellow
+                hex("d6acff"), // 12 BrightBlue
+                hex("ff92df"), // 13 BrightMagenta
+                hex("a4ffff"), // 14 BrightCyan
+                hex("ffffff"), // 15 BrightWhite
+            ],
         }
     }
 
@@ -118,6 +160,24 @@ impl Theme {
             search_current: [0.96, 0.62, 0.42, 0.55],
             search_text: hex("cdd6f4"),
             search_text_dim: hex("a6adc8"),
+            ansi_colors: [
+                hex("45475a"), // 0  Black (Surface1)
+                hex("f38ba8"), // 1  Red
+                hex("a6e3a1"), // 2  Green
+                hex("f9e2af"), // 3  Yellow
+                hex("89b4fa"), // 4  Blue
+                hex("f5c2e7"), // 5  Magenta (Pink)
+                hex("94e2d5"), // 6  Cyan (Teal)
+                hex("bac2de"), // 7  White (Subtext1)
+                hex("585b70"), // 8  BrightBlack (Surface2)
+                hex("f38ba8"), // 9  BrightRed
+                hex("a6e3a1"), // 10 BrightGreen
+                hex("f9e2af"), // 11 BrightYellow
+                hex("89b4fa"), // 12 BrightBlue
+                hex("f5c2e7"), // 13 BrightMagenta
+                hex("94e2d5"), // 14 BrightCyan
+                hex("cdd6f4"), // 15 BrightWhite (Text)
+            ],
         }
     }
 
@@ -143,6 +203,24 @@ impl Theme {
             search_current: [0.97, 0.55, 0.27, 0.55],
             search_text: hex("c0caf5"),
             search_text_dim: hex("565f89"),
+            ansi_colors: [
+                hex("15161e"), // 0  Black
+                hex("f7768e"), // 1  Red
+                hex("9ece6a"), // 2  Green
+                hex("e0af68"), // 3  Yellow
+                hex("7aa2f7"), // 4  Blue
+                hex("bb9af7"), // 5  Magenta (Purple)
+                hex("7dcfff"), // 6  Cyan
+                hex("a9b1d6"), // 7  White
+                hex("414868"), // 8  BrightBlack
+                hex("f7768e"), // 9  BrightRed
+                hex("9ece6a"), // 10 BrightGreen
+                hex("e0af68"), // 11 BrightYellow
+                hex("7aa2f7"), // 12 BrightBlue
+                hex("bb9af7"), // 13 BrightMagenta
+                hex("7dcfff"), // 14 BrightCyan
+                hex("c0caf5"), // 15 BrightWhite
+            ],
         }
     }
 

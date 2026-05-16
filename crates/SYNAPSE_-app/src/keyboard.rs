@@ -510,9 +510,9 @@ pub fn handle_keyboard(
     PostKeyAction::None
 }
 
-use crate::app::App;
+use crate::app::AppCore;
 
-impl App {
+impl AppCore {
     pub(crate) fn handle_keyboard(&mut self, event: winit::event::KeyEvent) {
         let action = handle_keyboard(
             &event,

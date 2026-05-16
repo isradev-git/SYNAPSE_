@@ -11,7 +11,6 @@ use alacritty_terminal::selection::{Selection as TermSelection, SelectionType};
 use alacritty_terminal::term::TermMode;
 use synapse_ui::{
     layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection, SCROLL_BTN_W,
-    TAB_BAR_HEIGHT,
 };
 
 use crate::{
@@ -101,7 +100,7 @@ pub fn handle_scroll(
     let active_id = tab_bar.active_tab().active_pane;
     let (mouse_active, sgr) = active_pane_mouse_modes(panes, active_id);
 
-    if mouse_active && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
+    if mouse_active && state.cursor_y >= layout.tab_bar_height as f64 {
         if let Some((col, row)) = cursor_to_pane_cell(
             state.cursor_x,
             state.cursor_y,
@@ -151,7 +150,7 @@ pub fn handle_mouse_button(
     {
         let (mouse_active, sgr) = active_pane_mouse_modes(panes, active_id);
 
-        if mouse_active && !shift_held && state.cursor_y >= TAB_BAR_HEIGHT as f64 {
+        if mouse_active && !shift_held && state.cursor_y >= layout.tab_bar_height as f64 {
             if let Some((col, row)) = cursor_to_pane_cell(
                 state.cursor_x,
                 state.cursor_y,
@@ -194,8 +193,8 @@ pub fn handle_mouse_button(
                 state.last_click_time = now;
                 let click = state.click_count;
 
-                if y < TAB_BAR_HEIGHT as f64 {
-                    handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset);
+                if y < layout.tab_bar_height as f64 {
+                    handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset, cell_w, cell_h);
                 } else if state.hover_divider && click == 1 {
                     let pane_area = layout.pane_area();
                     let pane_rect = PaneRect {
@@ -258,12 +257,14 @@ pub fn handle_cursor_moved(
     cell_h: f32,
     margin: f32,
 ) {
-    let sf = scale_factor;
-    state.cursor_x = position.x / sf;
-    state.cursor_y = position.y / sf;
+    // Guardamos cursor en píxeles FÍSICOS para que sea consistente con
+    // el layout (que usa physical size). El scale_factor ya no se usa aquí.
+    let _ = scale_factor;
+    state.cursor_x = position.x;
+    state.cursor_y = position.y;
 
-    // Tab hover detection
-    if state.cursor_y < TAB_BAR_HEIGHT as f64 {
+    // Tab hover detection: comparar contra layout.tab_bar_height (físico)
+    if state.cursor_y < layout.tab_bar_height as f64 {
         let tab_count = tab_bar.tabs.len();
         let (start, end, show_left, show_right) =
             layout.tab_visible_range(tab_count, state.tab_scroll_offset);
@@ -346,9 +347,9 @@ pub fn handle_cursor_moved(
     }
 }
 
-use crate::app::App;
+use crate::app::AppCore;
 
-impl App {
+impl AppCore {
     pub(crate) fn handle_scroll(&mut self, delta: winit::event::MouseScrollDelta) {
         handle_scroll(
             delta,

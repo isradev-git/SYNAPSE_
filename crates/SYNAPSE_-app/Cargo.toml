@@ -17,6 +17,7 @@ SYNAPSE_-ui = { path = "../SYNAPSE_-ui" }
 SYNAPSE_-config = { path = "../SYNAPSE_-config" }
 SYNAPSE_-suggest = { path = "../SYNAPSE_-suggest" }
 alacritty_terminal = { workspace = true }
+rustix = { workspace = true }
 portable-pty = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }

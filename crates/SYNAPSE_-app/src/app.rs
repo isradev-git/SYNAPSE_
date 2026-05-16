@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use winit::{
+    application::ApplicationHandler,
     dpi::PhysicalSize,
-    event::{Event, WindowEvent},
+    event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    window::{Window, WindowAttributes},
+    window::{Window, WindowAttributes, WindowId},
 };
 
 use alacritty_terminal::term::TermMode;
@@ -25,7 +26,7 @@ use crate::{
 
 pub type CellData = Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>;
 
-pub struct App {
+pub struct AppCore {
     pub window: Arc<Window>,
     pub renderer: Renderer,
     pub layout: Layout,
@@ -48,35 +49,128 @@ pub struct App {
     pub fps_last_print: std::time::Instant,
     pub scale_factor: f32,
     pub image_store: ImageStore,
+    pub splash_start: Option<std::time::Instant>,
+}
+
+pub struct App {
+    pub core: Option<AppCore>,
 }
 
 impl App {
     pub fn new() -> Result<(Self, EventLoop<()>), Box<dyn std::error::Error>> {
+        let event_loop = EventLoop::new()?;
+        Ok((App { core: None }, event_loop))
+    }
+
+    pub fn run(mut self, event_loop: EventLoop<()>) -> Result<(), Box<dyn std::error::Error>> {
+        event_loop.run_app(&mut self)?;
+        Ok(())
+    }
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.core.is_none() {
+            let core = AppCore::initialize(event_loop);
+            self.core = Some(core);
+        }
+        event_loop.set_control_flow(ControlFlow::Poll);
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::Resized(size) => self.core_mut().handle_resize(size),
+            WindowEvent::ModifiersChanged(m) => {
+                self.core_mut().state.modifiers = m.state();
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                self.core_mut().handle_scroll(delta);
+            }
+            WindowEvent::MouseInput {
+                state: button_state,
+                button,
+                ..
+            } => {
+                self.core_mut().handle_mouse_button(button_state, button);
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.core_mut().handle_cursor_moved(position);
+            }
+            WindowEvent::RedrawRequested => {
+                self.core_mut().render();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                self.core_mut().handle_keyboard(event);
+            }
+            WindowEvent::Focused(focused) => {
+                self.core_mut().handle_focus(focused);
+            }
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                mut inner_size_writer,
+            } => {
+                {
+                    let core = self.core_mut();
+                    core.scale_factor = scale_factor as f32;
+                    let size = core.window.inner_size();
+                    if let Err(e) = inner_size_writer.request_inner_size(size) {
+                        tracing::warn!("ScaleFactorChanged size request failed: {:?}", e);
+                    }
+                }
+                self.core_mut().handle_scale_factor_change();
+            }
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        self.core().window.request_redraw();
+    }
+}
+
+impl App {
+    fn core(&self) -> &AppCore {
+        self.core.as_ref().expect("App not initialized")
+    }
+
+    fn core_mut(&mut self) -> &mut AppCore {
+        self.core.as_mut().expect("App not initialized")
+    }
+}
+
+impl AppCore {
+    fn initialize(event_loop: &ActiveEventLoop) -> Self {
         let config = synapse_config::Config::load();
         let keybinds = synapse_config::Keybinds::new();
         let logical_font_size = config.font_size;
 
-        let event_loop = EventLoop::new()?;
-
-        #[allow(deprecated)]
         let window = Arc::new(
-            event_loop.create_window(
-                WindowAttributes::default()
-                    .with_title("SYNAPSE_")
-                    .with_inner_size(winit::dpi::LogicalSize::new(
-                        config.window_width as f64,
-                        config.window_height as f64,
-                    ))
-                    .with_resizable(true),
-            )?,
+            event_loop
+                .create_window(
+                    WindowAttributes::default()
+                        .with_title("SYNAPSE_")
+                        .with_inner_size(winit::dpi::LogicalSize::new(
+                            config.window_width as f64,
+                            config.window_height as f64,
+                        ))
+                        .with_resizable(true),
+                )
+                .expect("Failed to create window"),
         );
-        let mut renderer = Renderer::new(window.clone())?;
+        let mut renderer = Renderer::new(window.clone()).expect("Renderer init failed");
 
         let mut layout = Layout::new();
         let size = renderer.size();
         layout.update(size.width as f32, size.height as f32);
 
         let scale = window.scale_factor() as f32;
+        layout.tab_bar_height = synapse_ui::TAB_BAR_HEIGHT * scale;
         let effective_initial_font_size = logical_font_size * scale;
         let (cell_w, cell_h) = renderer.cell_metrics(effective_initial_font_size);
         let margin = layout.pane_margin();
@@ -87,7 +181,8 @@ impl App {
 
         let first_tab_id = TabId(0);
         let first_pane_id = PaneId(0);
-        let first_pane = create_pane(first_pane_id, cols, rows)?;
+        let first_pane = create_pane(first_pane_id, cols, rows)
+            .expect("Pane creation failed");
         let first_tab = Tab::new(first_tab_id, first_pane_id);
         let tab_bar = TabBar::new(first_tab);
 
@@ -97,88 +192,30 @@ impl App {
         let state = AppState::new(config, keybinds, logical_font_size);
         renderer.set_clear_color(state.theme.bg);
 
-        Ok((
-            App {
-                window,
-                renderer,
-                layout,
-                tab_bar,
-                panes,
-                clipboard,
-                state,
-                cell_w,
-                cell_h,
-                margin,
-                cursor_blink_on: true,
-                last_blink: std::time::Instant::now(),
-                cached_cell_data: Vec::new(),
-                cached_ui_rects: Vec::new(),
-                cached_bg_rects: Vec::new(),
-                cached_blink: true,
-                cached_font_size: effective_initial_font_size,
-                cached_active_tab: 0,
-                frame_count: 0,
-                fps_last_print: std::time::Instant::now(),
-                scale_factor: scale,
-                image_store: ImageStore::new(),
-            },
-            event_loop,
-        ))
-    }
-
-    pub fn run(mut self, event_loop: EventLoop<()>) -> Result<(), Box<dyn std::error::Error>> {
-        event_loop.set_control_flow(ControlFlow::Poll);
-        #[allow(deprecated)]
-        event_loop.run(move |event, elwt| match event {
-            Event::WindowEvent { event, .. } => self.handle_window_event(event, elwt),
-            Event::AboutToWait => self.window.request_redraw(),
-            _ => {}
-        })?;
-        Ok(())
-    }
-
-    fn handle_window_event(&mut self, event: WindowEvent, elwt: &ActiveEventLoop) {
-        match event {
-            WindowEvent::CloseRequested => elwt.exit(),
-            WindowEvent::Resized(size) => self.handle_resize(size),
-            WindowEvent::ModifiersChanged(m) => self.state.modifiers = m.state(),
-            WindowEvent::MouseWheel { delta, .. } => self.handle_scroll(delta),
-            WindowEvent::MouseInput {
-                state: button_state,
-                button,
-                ..
-            } => self.handle_mouse_button(button_state, button),
-            WindowEvent::CursorMoved { position, .. } => self.handle_cursor_moved(position),
-            WindowEvent::RedrawRequested => self.render(),
-            WindowEvent::KeyboardInput { event, .. } => self.handle_keyboard(event),
-            WindowEvent::Focused(focused) => self.handle_focus(focused),
-            WindowEvent::ScaleFactorChanged {
-                scale_factor,
-                mut inner_size_writer,
-            } => {
-                self.scale_factor = scale_factor as f32;
-                let size = self.window.inner_size();
-                if let Err(e) = inner_size_writer.request_inner_size(size) {
-                    tracing::warn!("ScaleFactorChanged size request failed: {:?}", e);
-                }
-                self.handle_scale_factor_change();
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_focus(&mut self, focused: bool) {
-        let active_id = self.tab_bar.active_tab().active_pane;
-        if let Some(pane) = self.panes.iter().find(|p| p.id == active_id) {
-            let send_focus = pane
-                .term
-                .lock()
-                .map(|t| t.mode().contains(TermMode::FOCUS_IN_OUT))
-                .unwrap_or(false);
-            if send_focus {
-                let seq: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
-                pane.write_to_pty(seq);
-            }
+        AppCore {
+            window,
+            renderer,
+            layout,
+            tab_bar,
+            panes,
+            clipboard,
+            state,
+            cell_w,
+            cell_h,
+            margin,
+            cursor_blink_on: true,
+            last_blink: std::time::Instant::now(),
+            cached_cell_data: Vec::new(),
+            cached_ui_rects: Vec::new(),
+            cached_bg_rects: Vec::new(),
+            cached_blink: true,
+            cached_font_size: effective_initial_font_size,
+            cached_active_tab: 0,
+            frame_count: 0,
+            fps_last_print: std::time::Instant::now(),
+            scale_factor: scale,
+            image_store: ImageStore::new(),
+            splash_start: Some(std::time::Instant::now()),
         }
     }
 
@@ -221,9 +258,23 @@ impl App {
                 }
             }
         }
-        // 4.4: clear caches so the first frame after resize is rebuilt clean.
         self.cached_cell_data.clear();
         self.cached_ui_rects.clear();
         self.cached_bg_rects.clear();
+    }
+
+    fn handle_focus(&mut self, focused: bool) {
+        let active_id = self.tab_bar.active_tab().active_pane;
+        if let Some(pane) = self.panes.iter().find(|p| p.id == active_id) {
+            let send_focus = pane
+                .term
+                .lock()
+                .map(|t| t.mode().contains(TermMode::FOCUS_IN_OUT))
+                .unwrap_or(false);
+            if send_focus {
+                let seq: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
+                pane.write_to_pty(seq);
+            }
+        }
     }
 }

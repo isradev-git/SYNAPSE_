@@ -48,48 +48,57 @@ fn xterm256_to_rgba(idx: u8) -> [f32; 4] {
     ]
 }
 
+/// Devuelve c con la luminosidad reducida al 50% (colores "dim" ANSI).
+fn dim_color(c: [f32; 4]) -> [f32; 4] {
+    [c[0] * 0.5, c[1] * 0.5, c[2] * 0.5, c[3]]
+}
+
+/// Convierte un NamedColor ANSI a RGBA usando la paleta de 16 colores del tema.
+/// `fallback` se usa para Foreground/Background/Cursor (debe ser theme.fg o theme.bg
+/// según el contexto donde se invoca).
 fn named_color_to_rgba(
     nc: alacritty_terminal::vte::ansi::NamedColor,
-    fg: [f32; 4],
-    bg: [f32; 4],
+    ansi: &[[f32; 4]; 16],
+    fallback: [f32; 4],
 ) -> [f32; 4] {
     use alacritty_terminal::vte::ansi::NamedColor::*;
-    // Standard xterm 16-color ANSI palette.
     match nc {
-        Black => [0.000, 0.000, 0.000, 1.0],
-        Red => [0.800, 0.000, 0.000, 1.0],
-        Green => [0.306, 0.604, 0.024, 1.0],
-        Yellow => [0.769, 0.627, 0.000, 1.0],
-        Blue => [0.204, 0.396, 0.643, 1.0],
-        Magenta => [0.459, 0.314, 0.482, 1.0],
-        Cyan => [0.024, 0.596, 0.604, 1.0],
-        White => [0.827, 0.843, 0.812, 1.0],
-        BrightBlack => [0.333, 0.341, 0.325, 1.0],
-        BrightRed => [0.937, 0.161, 0.161, 1.0],
-        BrightGreen => [0.541, 0.886, 0.204, 1.0],
-        BrightYellow => [0.988, 0.914, 0.310, 1.0],
-        BrightBlue => [0.447, 0.624, 0.812, 1.0],
-        BrightMagenta => [0.678, 0.498, 0.659, 1.0],
-        BrightCyan => [0.204, 0.886, 0.886, 1.0],
-        BrightWhite => [0.933, 0.933, 0.925, 1.0],
-        // Semantic aliases — use the caller-supplied fg/bg.
-        Foreground | BrightForeground | DimForeground => fg,
-        Background => bg,
-        // Dim variants: darken the normal color by ~50%.
-        DimBlack => [0.000, 0.000, 0.000, 1.0],
-        DimRed => [0.400, 0.000, 0.000, 1.0],
-        DimGreen => [0.153, 0.302, 0.012, 1.0],
-        DimYellow => [0.385, 0.314, 0.000, 1.0],
-        DimBlue => [0.102, 0.198, 0.322, 1.0],
-        DimMagenta => [0.230, 0.157, 0.241, 1.0],
-        DimCyan => [0.012, 0.298, 0.302, 1.0],
-        DimWhite => [0.414, 0.422, 0.406, 1.0],
-        // Cursor / other terminal-managed colors: fall back to fg.
-        Cursor => fg,
+        // Colores normales 0-7 → paleta ANSI del tema
+        Black   => ansi[0],
+        Red     => ansi[1],
+        Green   => ansi[2],
+        Yellow  => ansi[3],
+        Blue    => ansi[4],
+        Magenta => ansi[5],
+        Cyan    => ansi[6],
+        White   => ansi[7],
+        // Colores brillantes 8-15
+        BrightBlack   => ansi[8],
+        BrightRed     => ansi[9],
+        BrightGreen   => ansi[10],
+        BrightYellow  => ansi[11],
+        BrightBlue    => ansi[12],
+        BrightMagenta => ansi[13],
+        BrightCyan    => ansi[14],
+        BrightWhite   => ansi[15],
+        // Semánticos → usan el fallback (fg o bg según contexto)
+        Foreground | BrightForeground | DimForeground => fallback,
+        Background => fallback,
+        // Dim: versión oscurecida de los colores normales del tema
+        DimBlack   => dim_color(ansi[0]),
+        DimRed     => dim_color(ansi[1]),
+        DimGreen   => dim_color(ansi[2]),
+        DimYellow  => dim_color(ansi[3]),
+        DimBlue    => dim_color(ansi[4]),
+        DimMagenta => dim_color(ansi[5]),
+        DimCyan    => dim_color(ansi[6]),
+        DimWhite   => dim_color(ansi[7]),
+        // Cursor → fallback
+        Cursor => fallback,
     }
 }
 
-fn term_color_to_rgba(color: TermColor, fallback: [f32; 4]) -> [f32; 4] {
+fn term_color_to_rgba(color: TermColor, fallback: [f32; 4], ansi: &[[f32; 4]; 16]) -> [f32; 4] {
     match color {
         TermColor::Spec(rgb) => [
             rgb.r as f32 / 255.0,
@@ -97,8 +106,16 @@ fn term_color_to_rgba(color: TermColor, fallback: [f32; 4]) -> [f32; 4] {
             rgb.b as f32 / 255.0,
             1.0,
         ],
-        TermColor::Named(nc) => named_color_to_rgba(nc, fallback, [0.067, 0.075, 0.102, 1.0]),
-        TermColor::Indexed(idx) => xterm256_to_rgba(idx),
+        // NamedColor usa la paleta del tema
+        TermColor::Named(nc) => named_color_to_rgba(nc, ansi, fallback),
+        // Indexed 0-15 también usa la paleta del tema; 16-255 usa xterm estándar
+        TermColor::Indexed(idx) => {
+            if (idx as usize) < 16 {
+                ansi[idx as usize]
+            } else {
+                xterm256_to_rgba(idx)
+            }
+        }
     }
 }
 
@@ -191,7 +208,7 @@ pub fn build_tab_bar_ui_rects(
 pub fn build_tab_bar_text(
     layout: &Layout,
     tab_bar: &TabBar,
-    _scale_factor: f64,
+    scale_factor: f64,
     scroll_offset: usize,
     theme: &Theme,
 ) -> Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> {
@@ -201,8 +218,9 @@ pub fn build_tab_bar_text(
     let vis_count = end - start;
     let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right);
     let x_start = if show_left { SCROLL_BTN_W } else { 0.0 };
-    let char_w = TAB_FONT_SIZE * 0.6;
-    let text_y = 8.0;
+    let tab_font_size = TAB_FONT_SIZE * scale_factor as f32;
+    let char_w = tab_font_size * 0.6;
+    let text_y = 8.0 * scale_factor as f32;
 
     // < button text
     if show_left {
@@ -210,7 +228,7 @@ pub fn build_tab_bar_text(
             '<',
             4.0,
             text_y,
-            TAB_FONT_SIZE,
+            tab_font_size,
             theme.tab_button_text,
             theme.tab_bar_bg,
         ));
@@ -254,7 +272,7 @@ pub fn build_tab_bar_text(
 
         let text_x = x + 8.0;
         for (j, c) in title.chars().enumerate() {
-            result.push((c, text_x + j as f32 * char_w, text_y, TAB_FONT_SIZE, fg, bg));
+            result.push((c, text_x + j as f32 * char_w, text_y, tab_font_size, fg, bg));
         }
 
         let close_x = x + tab_w - 14.0;
@@ -263,7 +281,7 @@ pub fn build_tab_bar_text(
         } else {
             [0.8, 0.8, 0.8, 0.5_f32]
         };
-        result.push(('×', close_x, text_y, TAB_FONT_SIZE, close_fg, bg));
+        result.push(('×', close_x, text_y, tab_font_size, close_fg, bg));
     }
 
     // + button
@@ -272,7 +290,7 @@ pub fn build_tab_bar_text(
         '+',
         plus_x + 8.0,
         text_y,
-        TAB_FONT_SIZE,
+        tab_font_size,
         theme.tab_button_text,
         theme.tab_bar_bg,
     ));
@@ -283,7 +301,7 @@ pub fn build_tab_bar_text(
             '>',
             plus_x + 32.0 + 4.0,
             text_y,
-            TAB_FONT_SIZE,
+            tab_font_size,
             theme.tab_button_text,
             theme.tab_bar_bg,
         ));
@@ -309,6 +327,7 @@ pub fn render_frame(
     cached_font_size: &mut f32,
     cached_active_tab: &mut usize,
     effective_font_size: f32,
+    scale_factor: f32,
 ) -> Vec<PaneId> {
     let font_size = effective_font_size;
 
@@ -436,8 +455,8 @@ pub fn render_frame(
                 let x = content_x + col as f32 * cell_w;
                 let y = content_y + row_val as f32 * cell_h;
 
-                let fg = term_color_to_rgba(fg_c, state.theme.fg);
-                let bg = term_color_to_rgba(bg_c, state.theme.bg);
+                let fg = term_color_to_rgba(fg_c, state.theme.fg, &state.theme.ansi_colors);
+                let bg = term_color_to_rgba(bg_c, state.theme.bg, &state.theme.ansi_colors);
 
                 let is_cursor =
                     is_active && col == cursor_col && row_val == cursor_row && cursor_blink_on;
@@ -738,7 +757,7 @@ pub fn render_frame(
         cached_bg_rects.extend(tab_ui);
 
         for tab_cell in
-            build_tab_bar_text(layout, tab_bar, 1.0, state.tab_scroll_offset, &state.theme)
+            build_tab_bar_text(layout, tab_bar, scale_factor as f64, state.tab_scroll_offset, &state.theme)
         {
             cached_cell_data.push(tab_cell);
         }
@@ -753,12 +772,154 @@ pub fn render_frame(
     exited_panes
 }
 
-use crate::app::App;
+/// Duración del splash en segundos.
+const SPLASH_DURATION_SECS: f32 = 2.5;
+
+/// Renderiza la pantalla de arranque cyberpunk.
+/// `progress` va de 0.0 (inicio) a 1.0 (fin).
+pub fn render_splash_screen(
+    renderer: &mut Renderer,
+    layout: &Layout,
+    theme: &Theme,
+    progress: f32,
+) {
+    let w = layout.window_width;
+    let h = layout.window_height;
+
+    let mut bg_rects: Vec<UIRect> = Vec::new();
+    let mut ui_rects: Vec<UIRect> = Vec::new();
+    let mut cells: Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> = Vec::new();
+
+    let transparent = [0.0_f32, 0.0, 0.0, 0.0];
+    // Color atenuado para subtítulo y decoraciones
+    let dim_fg = [theme.fg[0], theme.fg[1], theme.fg[2], 0.45];
+
+    // ── Fondo completo ──────────────────────────────────────────────────────
+    bg_rects.push(UIRect { pos: [0.0, 0.0], size: [w, h], color: theme.bg });
+
+    // ── Título: "S Y N A P S E  _" con letra espaciada ──────────────────────
+    let title_fs: f32 = 30.0;
+    let title_char_w = title_fs * 0.6;
+    // Espacio entre letras para efecto cyberpunk
+    let title = "S Y N A P S E  _";
+    let title_w = title.chars().count() as f32 * title_char_w;
+    let title_x = (w - title_w) * 0.5;
+    // Centrado vertical ligeramente por encima del centro
+    let title_y = h * 0.38 - title_fs;
+
+    for (j, c) in title.chars().enumerate() {
+        cells.push((
+            c,
+            title_x + j as f32 * title_char_w,
+            title_y,
+            title_fs,
+            theme.fg,
+            transparent,
+        ));
+    }
+
+    // ── Línea decorativa bajo el título ─────────────────────────────────────
+    let line_y = title_y + title_fs * 1.5;
+    let line_w = (title_w * 1.15).min(w * 0.75);
+    let line_x = (w - line_w) * 0.5;
+    ui_rects.push(UIRect {
+        pos: [line_x, line_y],
+        size: [line_w, 1.0],
+        color: dim_fg,
+    });
+
+    // ── Subtítulo ────────────────────────────────────────────────────────────
+    let sub_fs: f32 = 11.0;
+    let sub_char_w = sub_fs * 0.6;
+    let subtitle = "NEURAL INTERFACE // v0.1.0";
+    let sub_w = subtitle.chars().count() as f32 * sub_char_w;
+    let sub_x = (w - sub_w) * 0.5;
+    let sub_y = line_y + 10.0;
+    for (j, c) in subtitle.chars().enumerate() {
+        cells.push((
+            c,
+            sub_x + j as f32 * sub_char_w,
+            sub_y,
+            sub_fs,
+            dim_fg,
+            transparent,
+        ));
+    }
+
+    // ── Barra de progreso ────────────────────────────────────────────────────
+    let bar_y = sub_y + 45.0;
+    let bar_w: f32 = (w * 0.5).clamp(200.0, 500.0);
+    let bar_x = (w - bar_w) * 0.5;
+    let bar_h: f32 = 2.0;
+
+    // Track (fondo de la barra)
+    ui_rects.push(UIRect {
+        pos: [bar_x, bar_y],
+        size: [bar_w, bar_h],
+        color: dim_fg,
+    });
+    // Fill (progreso)
+    if progress > 0.0 {
+        ui_rects.push(UIRect {
+            pos: [bar_x, bar_y],
+            size: [bar_w * progress, bar_h],
+            color: theme.cursor,
+        });
+    }
+
+    // ── Texto de estado animado ───────────────────────────────────────────────
+    let status_fs: f32 = 11.0;
+    let status_char_w = status_fs * 0.6;
+    let status = match (progress * 4.0) as u32 {
+        0 => "> INITIALIZING KERNEL...",
+        1 => "> MOUNTING NEURAL INTERFACE...",
+        2 => "> SYNCING UPLINK PROTOCOLS...",
+        3 => "> ESTABLISHING SECURE CHANNEL...",
+        _ => "> SYSTEM READY",
+    };
+    let status_w = status.chars().count() as f32 * status_char_w;
+    let status_x = (w - status_w) * 0.5;
+    let status_y = bar_y + 14.0;
+    // Al llegar al final, usar el color del cursor (más brillante) como confirmación
+    let status_color = if progress >= 0.95 { theme.cursor } else { dim_fg };
+    for (j, c) in status.chars().enumerate() {
+        cells.push((
+            c,
+            status_x + j as f32 * status_char_w,
+            status_y,
+            status_fs,
+            status_color,
+            transparent,
+        ));
+    }
+
+    renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, false);
+}
+
+use crate::app::AppCore;
 use crate::image_protocol::parse_apc;
 use crate::pane_ops::create_pane;
 
-impl App {
+impl AppCore {
     pub(crate) fn render(&mut self) {
+        // ── Splash screen ──────────────────────────────────────────────────
+        if let Some(start) = self.splash_start {
+            let progress = start.elapsed().as_secs_f32() / SPLASH_DURATION_SECS;
+            if progress < 1.0 {
+                render_splash_screen(
+                    &mut self.renderer,
+                    &self.layout,
+                    &self.state.theme,
+                    progress,
+                );
+                // Pedir el siguiente frame para animar la barra de progreso
+                self.window.request_redraw();
+                return;
+            }
+            // Splash terminado
+            self.splash_start = None;
+        }
+
         // Drain APC image sequences from all panes into the image store.
         for pane in self.panes.iter_mut() {
             while let Ok(raw) = pane.apc_rx.try_recv() {
@@ -805,6 +966,7 @@ impl App {
             &mut self.cached_font_size,
             &mut self.cached_active_tab,
             effective_fs,
+            self.scale_factor,
         );
 
         for pane_id in exited {

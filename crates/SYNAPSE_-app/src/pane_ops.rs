@@ -9,7 +9,7 @@ use alacritty_terminal::vte::ansi::{Processor, StdSyncHandler};
 use synapse_ui::pane::{EventProxy, KkpCommand, Pane, PaneId};
 
 use crate::image_protocol;
-use synapse_ui::{layout::Layout, splitter::PaneRect, tab_bar::TabBar, SCROLL_BTN_W, TAB_BAR_HEIGHT};
+use synapse_ui::{layout::Layout, splitter::PaneRect, tab_bar::TabBar, SCROLL_BTN_W, TAB_BAR_HEIGHT as TAB_BAR_HEIGHT_PX};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 const CLOSE_BTN_W: f32 = 16.0;
@@ -267,6 +267,8 @@ pub fn handle_tab_click(
     x: f64,
     layout: &Layout,
     scroll_offset: &mut usize,
+    cell_w: f32,
+    cell_h: f32,
 ) {
     let tab_count = tab_bar.tabs.len();
     let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, *scroll_offset);
@@ -283,12 +285,10 @@ pub fn handle_tab_click(
     // + button area
     let plus_x = x_start + vis_count as f64 * tab_w;
     if x >= plus_x && x < plus_x + 32.0 {
-        let margin = 4.0;
-        let cell_w = 8.4;
-        let cell_h = 18.0;
-        let pane_height = layout.window_height as f64 - TAB_BAR_HEIGHT as f64 - margin * 2.0;
-        let new_cols = ((layout.window_width as f64 - margin * 2.0) / cell_w).max(1.0) as usize;
-        let new_rows = (pane_height / cell_h).max(1.0) as usize;
+        let pane_area = layout.pane_area();
+        let margin = layout.pane_margin() as f64;
+        let new_cols = ((pane_area.2 as f64 - margin * 2.0) / cell_w as f64).max(1.0) as usize;
+        let new_rows = ((pane_area.3 as f64 - margin * 2.0) / cell_h as f64).max(1.0) as usize;
         let (_, pane_id) = tab_bar.new_tab();
         match create_pane(pane_id, new_cols, new_rows) {
             Ok(pane) => panes.push(pane),
@@ -356,9 +356,9 @@ pub fn find_hovered_divider(
     })
 }
 
-use crate::app::App;
+use crate::app::AppCore;
 
-impl App {
+impl AppCore {
     pub(crate) fn change_font_size(&mut self, new_size: f32) {
         self.state.font_size = new_size;
         self.state.config.font_size = new_size;
@@ -402,6 +402,7 @@ impl App {
     }
 
     pub(crate) fn handle_scale_factor_change(&mut self) {
+        self.layout.tab_bar_height = TAB_BAR_HEIGHT_PX * self.scale_factor;
         let current_size = self.state.font_size;
         self.change_font_size(current_size);
         self.cached_cell_data.clear();
