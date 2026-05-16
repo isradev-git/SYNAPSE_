@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"~/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings 2>&1\",\"timeout\":60000,\"description\":\"Clippy check workspace\"}",
-  "error": "Exit code 101\n    Checking SYNAPSE_-renderer v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-renderer)\n    Checking SYNAPSE_-config v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-config)\n    Checking SYNAPSE_-suggest v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-suggest)\n    Checking SYNAPSE_-ui v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-ui)\n    Checking SYNAPSE_-app v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_...",
-  "timestamp": "2026-05-15T08:23:40.953Z",
-  "retry_count": 2
+  "tool_input_preview": "{\"command\":\"cargo test -p SYNAPSE_-config 2>&1\",\"description\":\"Run SYNAPSE_-config tests\"}",
+  "error": "Exit code 127\n/bin/bash: line 1: cargo: command not found",
+  "timestamp": "2026-05-15T11:46:14.861Z",
+  "retry_count": 1
 }

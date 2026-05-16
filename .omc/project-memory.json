@@ -289,6 +289,12 @@
       "type": "file"
     },
     {
+      "path": "crates/SYNAPSE_-config/src/themes.rs",
+      "accessCount": 3,
+      "lastAccessed": 1778845572288,
+      "type": "file"
+    },
+    {
       "path": "crates/Luna-ui/src/lib.rs",
       "accessCount": 2,
       "lastAccessed": 1778688332037,
@@ -400,12 +406,6 @@
       "path": "crates/SYNAPSE_-config/src/config.rs",
       "accessCount": 1,
       "lastAccessed": 1778837842040,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-config/src/themes.rs",
-      "accessCount": 1,
-      "lastAccessed": 1778837842547,
       "type": "file"
     }
   ],
