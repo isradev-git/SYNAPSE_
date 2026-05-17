@@ -535,8 +535,7 @@ pub fn render_frame(
             // Ghost text overlay — fish-shell style suggestion after cursor.
             if is_active && cursor_row >= 0 && (cursor_row as usize) < pane_rows {
                 if let Some(suffix) = state.suggest.ghost_suffix() {
-                    let [r, g, b, _] = state.theme.fg;
-                    let ghost_fg = [r, g, b, 0.4];
+                    let ghost_fg = state.theme.ghost_text;
                     let transparent = [0.0, 0.0, 0.0, 0.0];
                     let cy = content_y + cursor_row as f32 * cell_h;
                     for (j, c) in suffix.chars().enumerate() {

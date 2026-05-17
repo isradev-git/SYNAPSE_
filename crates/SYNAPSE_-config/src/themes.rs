@@ -26,6 +26,8 @@ pub struct Theme {
     pub search_current: [f32; 4],
     pub search_text: [f32; 4],
     pub search_text_dim: [f32; 4],
+    // Ghost text (autosuggestion overlay)
+    pub ghost_text: [f32; 4],
     // ANSI 16-color palette (indices 0-15)
     // 0=Black, 1=Red, 2=Green, 3=Yellow, 4=Blue, 5=Magenta, 6=Cyan, 7=White
     // 8=BrightBlack, 9=BrightRed, 10=BrightGreen, 11=BrightYellow,
@@ -73,6 +75,7 @@ impl Theme {
             search_current: hex("FF003C70"),
             search_text: hex("E8E8E8"),
             search_text_dim: hex("444444"),
+            ghost_text: hex("405060"),
             // Cyberpunk ANSI palette: negro puro + rojos/neons
             ansi_colors: [
                 hex("0A0A0A"), // 0  Black
@@ -117,6 +120,7 @@ impl Theme {
             search_current: [1.0, 0.72, 0.42, 0.55],
             search_text: hex("f8f8f2"),
             search_text_dim: hex("6272a4"),
+            ghost_text: hex("6272a4"),
             ansi_colors: [
                 hex("21222c"), // 0  Black
                 hex("ff5555"), // 1  Red
@@ -160,6 +164,7 @@ impl Theme {
             search_current: [0.96, 0.62, 0.42, 0.55],
             search_text: hex("cdd6f4"),
             search_text_dim: hex("a6adc8"),
+            ghost_text: hex("585b70"),
             ansi_colors: [
                 hex("45475a"), // 0  Black (Surface1)
                 hex("f38ba8"), // 1  Red
@@ -203,6 +208,7 @@ impl Theme {
             search_current: [0.97, 0.55, 0.27, 0.55],
             search_text: hex("c0caf5"),
             search_text_dim: hex("565f89"),
+            ghost_text: hex("414868"),
             ansi_colors: [
                 hex("15161e"), // 0  Black
                 hex("f7768e"), // 1  Red
@@ -276,6 +282,7 @@ impl Theme {
         apply!(search_current);
         apply!(search_text);
         apply!(search_text_dim);
+        apply!(ghost_text);
         base
     }
 }
@@ -308,6 +315,7 @@ struct ColorsToml {
     search_current: Option<String>,
     search_text: Option<String>,
     search_text_dim: Option<String>,
+    ghost_text: Option<String>,
 }
 
 #[cfg(test)]
