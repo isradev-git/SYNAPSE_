@@ -14,6 +14,49 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 const CLOSE_BTN_W: f32 = 16.0;
 
+/// Scan `bytes` for OSC 7 sequences (`ESC ] 7 ; <uri> BEL/ST`) and return
+/// the decoded filesystem paths. Strips the `file://hostname` prefix so only
+/// the absolute path remains.
+fn extract_osc7_paths(bytes: &[u8]) -> Vec<String> {
+    let mut results = Vec::new();
+    let mut i = 0;
+    while i + 3 < bytes.len() {
+        if bytes[i] == 0x1b && bytes[i + 1] == b']' && bytes[i + 2] == b'7' && bytes[i + 3] == b';' {
+            let start = i + 4;
+            let mut j = start;
+            let mut end = None;
+            while j < bytes.len() {
+                if bytes[j] == 0x07 {
+                    end = Some((j, j + 1));
+                    break;
+                }
+                if j + 1 < bytes.len() && bytes[j] == 0x1b && bytes[j + 1] == b'\\' {
+                    end = Some((j, j + 2));
+                    break;
+                }
+                j += 1;
+            }
+            if let Some((term_start, next_i)) = end {
+                if let Ok(uri) = std::str::from_utf8(&bytes[start..term_start]) {
+                    let path = if let Some(rest) = uri.strip_prefix("file://") {
+                        // rest = "hostname/absolute/path" — skip hostname component
+                        rest.find('/').map(|s| &rest[s..]).unwrap_or(rest)
+                    } else {
+                        uri
+                    };
+                    if !path.is_empty() {
+                        results.push(path.to_string());
+                    }
+                }
+                i = next_i;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    results
+}
+
 /// Minimal `Dimensions` impl used to construct and resize a `Term`.
 pub(crate) struct TermSize {
     pub(crate) cols: usize,
@@ -101,6 +144,7 @@ pub fn create_pane_full(
 
     // 5. Event channel for alacritty_terminal -> Luna events.
     let (event_tx, event_rx) = mpsc::sync_channel::<Event>(256);
+    let exit_tx = event_tx.clone();
     let proxy = EventProxy::new(event_tx);
 
     // 6. Construct the terminal.
@@ -115,6 +159,7 @@ pub fn create_pane_full(
     let kitty_active = Arc::new(AtomicBool::new(false));
     let (kkp_tx, kkp_rx) = mpsc::sync_channel::<KkpCommand>(64);
     let (apc_tx, apc_rx) = mpsc::sync_channel::<String>(64);
+    let (osc7_tx, osc7_rx) = mpsc::sync_channel::<String>(16);
 
     // 7. Spin up the reader thread: PTY bytes -> VTE parser -> Term handler.
     let term_reader = Arc::clone(&term);
@@ -133,7 +178,10 @@ pub fn create_pane_full(
             let mut staging: Vec<u8> = Vec::new();
             loop {
                 match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) | Err(_) => {
+                        let _ = exit_tx.try_send(Event::Exit);
+                        break;
+                    }
                     Ok(n) => {
                         staging.extend_from_slice(&buf[..n]);
 
@@ -160,6 +208,9 @@ pub fn create_pane_full(
                         }
                         for apc_seq in image_protocol::extract_apc_sequences(&staging) {
                             let _ = apc_tx.try_send(apc_seq);
+                        }
+                        for path in extract_osc7_paths(&staging) {
+                            let _ = osc7_tx.try_send(path);
                         }
 
                         match term_reader.try_lock() {
@@ -194,6 +245,7 @@ pub fn create_pane_full(
         kitty_active,
         kkp_rx,
         apc_rx,
+        osc7_rx,
     ))
 }
 

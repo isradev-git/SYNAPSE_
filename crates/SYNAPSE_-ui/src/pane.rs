@@ -58,6 +58,8 @@ pub struct Pane {
     pub kitty_flags_stack: Vec<u8>,
     /// Channel for raw APC inner strings (Kitty image protocol payloads).
     pub apc_rx: mpsc::Receiver<String>,
+    /// Channel for OSC 7 CWD updates from the PTY reader thread.
+    osc7_rx: mpsc::Receiver<String>,
     title: String,
     cwd: String,
 }
@@ -77,6 +79,7 @@ impl Pane {
         kitty_active: Arc<AtomicBool>,
         kkp_rx: mpsc::Receiver<KkpCommand>,
         apc_rx: mpsc::Receiver<String>,
+        osc7_rx: mpsc::Receiver<String>,
     ) -> Self {
         Self {
             id,
@@ -92,6 +95,7 @@ impl Pane {
             kkp_rx,
             kitty_flags_stack: Vec::new(),
             apc_rx,
+            osc7_rx,
             title: String::new(),
             cwd: String::new(),
         }
@@ -132,6 +136,9 @@ impl Pane {
                 Event::Title(title) => self.title = title,
                 _ => {}
             }
+        }
+        while let Ok(path) = self.osc7_rx.try_recv() {
+            self.cwd = path;
         }
         while let Ok(cmd) = self.kkp_rx.try_recv() {
             match cmd {

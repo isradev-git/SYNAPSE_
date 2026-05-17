@@ -788,7 +788,7 @@ pub fn render_splash_screen(
 
     let mut bg_rects: Vec<UIRect> = Vec::new();
     let mut ui_rects: Vec<UIRect> = Vec::new();
-    let mut cells: Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> = Vec::new();
+    let mut cells: CellData = Vec::new();
 
     let transparent = [0.0_f32, 0.0, 0.0, 0.0];
     // Color atenuado para subtítulo y decoraciones
@@ -977,9 +977,6 @@ impl AppCore {
     }
 
     fn handle_pane_exit(&mut self, pane_id: synapse_ui::PaneId) {
-        // Phase 1: exited_panes is always empty so this path is unused; the
-        // implementation is kept so we can wire alacritty exit events later
-        // without redoing the tab/pane rebalancing logic.
         let tab_idx = self
             .tab_bar
             .tabs
