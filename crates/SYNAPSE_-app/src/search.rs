@@ -5,6 +5,7 @@ use winit::{
     keyboard::{Key, NamedKey},
 };
 
+use alacritty_terminal::grid::Dimensions;
 use synapse_ui::pane::{EventProxy, Pane};
 use synapse_ui::tab_bar::TabBar;
 
@@ -13,16 +14,64 @@ use crate::{
     state::{AppState, SearchMatch},
 };
 
-/// Phase 1 stub: scrollback search will be reimplemented on top of
-/// alacritty_terminal's grid in Phase 2.
+/// Search all rows (history + visible viewport) for `query` (case-insensitive).
+/// Returns one `SearchMatch` per match occurrence, ordered top-to-bottom.
+/// `SearchMatch.row` is the raw grid `Line.0` value: negative = history, >=0 = viewport.
 pub fn find_matches(
-    _term: &alacritty_terminal::term::Term<EventProxy>,
-    _term_str: &str,
+    term: &alacritty_terminal::term::Term<EventProxy>,
+    query: &str,
 ) -> Vec<SearchMatch> {
-    Vec::new()
+    if query.is_empty() {
+        return Vec::new();
+    }
+
+    let query_lower: Vec<char> = query.to_lowercase().chars().collect();
+    let q_len = query_lower.len();
+    let grid = term.grid();
+    let history_size = grid.history_size();
+    let screen_lines = grid.screen_lines();
+    let columns = grid.columns();
+
+    let mut matches = Vec::new();
+
+    // Iterate from oldest history row to bottom of viewport.
+    // Line(-history_size as i32) is the oldest history row.
+    // Line(screen_lines as i32 - 1) is the bottommost viewport row.
+    let top = -(history_size as i32);
+    let bottom = screen_lines as i32;
+
+    for line_idx in top..bottom {
+        let line = alacritty_terminal::index::Line(line_idx);
+        let row = &grid[line];
+
+        // Collect visible chars, clamping to actual columns.
+        let chars: Vec<char> = (0..columns)
+            .map(|c| {
+                let ch = row[alacritty_terminal::index::Column(c)].c;
+                if ch == '\0' { ' ' } else { ch }
+            })
+            .collect();
+
+        let chars_lower: Vec<char> = chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+
+        // Slide the query window across this row.
+        let search_len = chars_lower.len();
+        if search_len < q_len {
+            continue;
+        }
+        for col in 0..=(search_len - q_len) {
+            if chars_lower[col..col + q_len] == query_lower[..] {
+                matches.push(SearchMatch { col, row: line_idx });
+            }
+        }
+    }
+
+    matches
 }
 
-pub fn build_match_set(matches: &[SearchMatch], term_len: usize) -> HashSet<(usize, usize)> {
+/// Returns a `HashSet<(col, row)>` covering every cell occupied by any match.
+/// Used by the renderer to highlight matched cells.
+pub fn build_match_set(matches: &[SearchMatch], term_len: usize) -> HashSet<(usize, i32)> {
     let mut set = HashSet::new();
     for m in matches {
         for i in 0..term_len {
@@ -45,8 +94,41 @@ pub fn update_search_matches(state: &mut AppState, tab_bar: &TabBar, panes: &[Pa
     }
 }
 
-/// Phase 1 stub: scrollback scrolling not yet wired through alacritty_terminal.
-pub fn scroll_to_current_match(_state: &AppState, _tab_bar: &TabBar, _panes: &[Pane]) {}
+/// Scroll the active pane so the current search match is visible in the viewport.
+pub fn scroll_to_current_match(state: &AppState, tab_bar: &TabBar, panes: &[Pane]) {
+    let Some(m) = state.search.matches.get(state.search.current_match) else {
+        return;
+    };
+    let Some(pane) = panes.iter().find(|p| p.id == tab_bar.active_tab().active_pane) else {
+        return;
+    };
+    let Ok(mut term) = pane.term.lock() else {
+        return;
+    };
+
+    let screen_lines = term.screen_lines() as i32;
+    let history_size = term.grid().history_size();
+
+    // Determine the display_offset needed to centre the match row in the viewport.
+    // display_offset=0 shows lines 0..screen_lines-1; display_offset=N shifts up by N.
+    let target_offset = if m.row >= 0 {
+        // Row is in the current viewport — scroll back to bottom.
+        0usize
+    } else {
+        // Row is in history. Offset to put the match at ~30% from the top.
+        let centre = (screen_lines / 3).max(1);
+        let offset = (-m.row - 1 + centre).max(0) as usize;
+        offset.min(history_size)
+    };
+
+    let current_offset = term.grid().display_offset();
+    use alacritty_terminal::grid::Scroll;
+    let delta = target_offset as i32 - current_offset as i32;
+    if delta != 0 {
+        term.scroll_display(Scroll::Delta(delta));
+        pane.dirty.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
 
 pub fn handle_search_input(
     key: &Key,

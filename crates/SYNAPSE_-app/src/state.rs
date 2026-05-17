@@ -15,7 +15,7 @@ pub struct DividerDrag {
 #[derive(Debug, Clone)]
 pub struct SearchMatch {
     pub col: usize,
-    pub row: usize,
+    pub row: i32,
 }
 
 pub struct SearchState {

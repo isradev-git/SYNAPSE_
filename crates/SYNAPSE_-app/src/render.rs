@@ -391,7 +391,7 @@ pub fn render_frame(
         let layouts = pane_tree.get_layout(pane_rect);
         let dividers = pane_tree.get_dividers(pane_rect);
 
-        let _match_set: HashSet<(usize, usize)> =
+        let match_set: HashSet<(usize, i32)> =
             if state.search.active && !state.search.term.is_empty() {
                 build_match_set(&state.search.matches, state.search.term.len())
             } else {
@@ -439,46 +439,53 @@ pub fn render_frame(
                 let mut buf = Vec::with_capacity(pane_cols * pane_rows);
                 for indexed in grid.display_iter() {
                     let col = indexed.point.column.0;
-                    let row_val = indexed.point.line.0;
-                    if row_val < 0 || row_val as usize >= pane_rows {
+                    let raw_row = indexed.point.line.0;
+                    // Shift by display_offset to get the viewport row (0 = top of display).
+                    let viewport_row = raw_row + display_offset as i32;
+                    if viewport_row < 0 || viewport_row as usize >= pane_rows {
                         continue;
                     }
                     if col >= pane_cols {
                         continue;
                     }
-                    buf.push((col, row_val, indexed.c, indexed.fg, indexed.bg));
+                    buf.push((col, raw_row, indexed.c, indexed.fg, indexed.bg));
                 }
                 (buf, cursor_col, cursor_row, sel_range, display_offset, history_size)
             };
 
-            for (col, row_val, ch, fg_c, bg_c) in cells {
+            for (col, raw_row, ch, fg_c, bg_c) in cells {
+                let viewport_row = raw_row + display_offset as i32;
                 let x = content_x + col as f32 * cell_w;
-                let y = content_y + row_val as f32 * cell_h;
+                let y = content_y + viewport_row as f32 * cell_h;
 
                 let fg = term_color_to_rgba(fg_c, state.theme.fg, &state.theme.ansi_colors);
                 let bg = term_color_to_rgba(bg_c, state.theme.bg, &state.theme.ansi_colors);
 
                 let is_cursor =
-                    is_active && col == cursor_col && row_val == cursor_row && cursor_blink_on;
+                    is_active && col == cursor_col && raw_row == cursor_row && cursor_blink_on;
 
                 let in_selection = is_active
                     && sel_range.as_ref().map(|r| {
                         r.contains(alacritty_terminal::index::Point::new(
-                            alacritty_terminal::index::Line(row_val),
+                            alacritty_terminal::index::Line(raw_row),
                             alacritty_terminal::index::Column(col),
                         ))
                     }).unwrap_or(false);
+
+                let in_match = is_active && match_set.contains(&(col, raw_row));
 
                 let (final_fg, final_bg) = if is_cursor {
                     ([0.067, 0.075, 0.102, 1.0], state.theme.cursor)
                 } else if in_selection {
                     (fg, [0.259, 0.522, 0.957, 0.5])
+                } else if in_match {
+                    ([0.067, 0.075, 0.102, 1.0], [0.98, 0.78, 0.15, 1.0])
                 } else {
                     (fg, bg)
                 };
 
                 let bg_is_default =
-                    !is_cursor && !in_selection && matches!(bg_c, TermColor::Named(_));
+                    !is_cursor && !in_selection && !in_match && matches!(bg_c, TermColor::Named(_));
 
                 if !bg_is_default {
                     cached_bg_rects.push(UIRect {
@@ -494,14 +501,15 @@ pub fn render_frame(
             }
 
             // Cursor styles (beam / underline). The block style is drawn inline above.
+            let cursor_viewport_row = cursor_row + display_offset as i32;
             if is_active
                 && cursor_blink_on
-                && cursor_row >= 0
-                && (cursor_row as usize) < pane_rows
+                && cursor_viewport_row >= 0
+                && (cursor_viewport_row as usize) < pane_rows
                 && cursor_col < pane_cols
             {
                 let cx = content_x + cursor_col as f32 * cell_w;
-                let cy = content_y + cursor_row as f32 * cell_h;
+                let cy = content_y + cursor_viewport_row as f32 * cell_h;
                 let cursor_color = state.theme.cursor;
                 match state.config.cursor_style {
                     synapse_config::CursorStyle::Block => {
