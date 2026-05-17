@@ -181,7 +181,7 @@ impl AppCore {
 
         let first_tab_id = TabId(0);
         let first_pane_id = PaneId(0);
-        let first_pane = create_pane(first_pane_id, cols, rows)
+        let first_pane = create_pane(first_pane_id, cols, rows, config.scrollback_lines)
             .expect("Pane creation failed");
         let first_tab = Tab::new(first_tab_id, first_pane_id);
         let tab_bar = TabBar::new(first_tab);
@@ -245,6 +245,7 @@ impl AppCore {
                         term.resize(TermSize {
                             cols: new_cols,
                             rows: new_rows,
+                            scrollback_lines: self.state.config.scrollback_lines,
                         });
                     }
                     if let Ok(master) = pane.pty_master.lock() {

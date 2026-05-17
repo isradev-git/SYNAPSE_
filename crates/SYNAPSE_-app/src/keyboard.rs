@@ -142,7 +142,7 @@ pub fn handle_keyboard(
                 let (_, pane_id) = tab_bar.new_tab();
                 let shell = state.config.shell_program.as_str();
                 let args = &state.config.shell_args;
-                match create_pane_full(pane_id, new_cols, new_rows, None, Some(shell), args) {
+                match create_pane_full(pane_id, new_cols, new_rows, None, Some(shell), args, state.config.scrollback_lines) {
                     Ok(pane) => panes.push(pane),
                     Err(e) => {
                         tracing::warn!("Failed to spawn PTY for new tab: {}", e);
@@ -241,6 +241,7 @@ pub fn handle_keyboard(
                             cwd_opt,
                             Some(shell),
                             args,
+                            state.config.scrollback_lines,
                         ) {
                             Ok(new_pane) => panes.push(new_pane),
                             Err(e) => {
@@ -271,6 +272,7 @@ pub fn handle_keyboard(
                             cwd_opt,
                             Some(shell),
                             args,
+                            state.config.scrollback_lines,
                         ) {
                             Ok(new_pane) => panes.push(new_pane),
                             Err(e) => {

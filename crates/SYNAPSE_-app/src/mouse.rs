@@ -142,6 +142,7 @@ pub fn handle_mouse_button(
     cell_w: f32,
     cell_h: f32,
     margin: f32,
+    scrollback_lines: usize,
 ) {
     let active_id = tab_bar.active_tab().active_pane;
     let shift_held = state.modifiers.shift_key();
@@ -194,7 +195,7 @@ pub fn handle_mouse_button(
                 let click = state.click_count;
 
                 if y < layout.tab_bar_height as f64 {
-                    handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset, cell_w, cell_h);
+                    handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset, cell_w, cell_h, scrollback_lines);
                 } else if state.hover_divider && click == 1 {
                     let pane_area = layout.pane_area();
                     let pane_rect = PaneRect {
@@ -369,6 +370,7 @@ impl AppCore {
         button: winit::event::MouseButton,
     ) {
         let was_selecting = self.state.selecting;
+        let scrollback_lines = self.state.config.scrollback_lines;
         handle_mouse_button(
             button_state,
             button,
@@ -379,6 +381,7 @@ impl AppCore {
             self.cell_w,
             self.cell_h,
             self.margin,
+            scrollback_lines,
         );
         // Auto-copy: copy selection to clipboard on release after any selection
         // (multi-click word/line or click-drag).

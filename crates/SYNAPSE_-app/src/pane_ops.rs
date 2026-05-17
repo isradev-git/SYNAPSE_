@@ -61,12 +61,12 @@ fn extract_osc7_paths(bytes: &[u8]) -> Vec<String> {
 pub(crate) struct TermSize {
     pub(crate) cols: usize,
     pub(crate) rows: usize,
+    pub(crate) scrollback_lines: usize,
 }
 
 impl Dimensions for TermSize {
     fn total_lines(&self) -> usize {
-        // visible rows + scrollback
-        self.rows + 10_000
+        self.rows + self.scrollback_lines
     }
     fn screen_lines(&self) -> usize {
         self.rows
@@ -76,8 +76,8 @@ impl Dimensions for TermSize {
     }
 }
 
-pub fn create_pane(id: PaneId, cols: usize, rows: usize) -> Result<Pane, String> {
-    create_pane_with_cwd(id, cols, rows, None)
+pub fn create_pane(id: PaneId, cols: usize, rows: usize, scrollback_lines: usize) -> Result<Pane, String> {
+    create_pane_with_cwd(id, cols, rows, None, scrollback_lines)
 }
 
 pub fn create_pane_with_cwd(
@@ -85,8 +85,9 @@ pub fn create_pane_with_cwd(
     cols: usize,
     rows: usize,
     cwd: Option<String>,
+    scrollback_lines: usize,
 ) -> Result<Pane, String> {
-    create_pane_full(id, cols, rows, cwd, None, &[])
+    create_pane_full(id, cols, rows, cwd, None, &[], scrollback_lines)
 }
 
 pub fn create_pane_full(
@@ -96,6 +97,7 @@ pub fn create_pane_full(
     cwd: Option<String>,
     shell_override: Option<&str>,
     shell_args: &[String],
+    scrollback_lines: usize,
 ) -> Result<Pane, String> {
     // 1. Open a PTY pair sized to the current pane geometry.
     let pty_system = native_pty_system();
@@ -148,7 +150,7 @@ pub fn create_pane_full(
     let proxy = EventProxy::new(event_tx);
 
     // 6. Construct the terminal.
-    let size = TermSize { cols, rows };
+    let size = TermSize { cols, rows, scrollback_lines };
     let term = Term::new(TermConfig::default(), &size, proxy);
     let term = Arc::new(Mutex::new(term));
 
@@ -313,6 +315,7 @@ pub fn adjacent_pane(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_tab_click(
     tab_bar: &mut TabBar,
     panes: &mut Vec<Pane>,
@@ -321,6 +324,7 @@ pub fn handle_tab_click(
     scroll_offset: &mut usize,
     cell_w: f32,
     cell_h: f32,
+    scrollback_lines: usize,
 ) {
     let tab_count = tab_bar.tabs.len();
     let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, *scroll_offset);
@@ -342,7 +346,7 @@ pub fn handle_tab_click(
         let new_cols = ((pane_area.2 as f64 - margin * 2.0) / cell_w as f64).max(1.0) as usize;
         let new_rows = ((pane_area.3 as f64 - margin * 2.0) / cell_h as f64).max(1.0) as usize;
         let (_, pane_id) = tab_bar.new_tab();
-        match create_pane(pane_id, new_cols, new_rows) {
+        match create_pane(pane_id, new_cols, new_rows, scrollback_lines) {
             Ok(pane) => panes.push(pane),
             Err(e) => {
                 tracing::warn!("Failed to spawn PTY for new tab: {}", e);
@@ -439,6 +443,7 @@ impl AppCore {
                     term.resize(TermSize {
                         cols: new_cols,
                         rows: new_rows,
+                        scrollback_lines: self.state.config.scrollback_lines,
                     });
                 }
                 if let Ok(master) = pane.pty_master.lock() {

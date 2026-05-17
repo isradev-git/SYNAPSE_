@@ -1004,7 +1004,7 @@ impl AppCore {
                     let new_pane_id = self.tab_bar.next_pane_id();
                     self.tab_bar.tabs[0].pane_tree = synapse_ui::PaneTree::leaf(new_pane_id);
                     self.tab_bar.tabs[0].active_pane = new_pane_id;
-                    match create_pane(new_pane_id, new_cols, new_rows) {
+                    match create_pane(new_pane_id, new_cols, new_rows, self.state.config.scrollback_lines) {
                         Ok(pane) => self.panes.push(pane),
                         Err(e) => tracing::warn!("Failed to spawn replacement PTY: {}", e),
                     }
