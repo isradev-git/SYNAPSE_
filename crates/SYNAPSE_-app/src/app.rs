@@ -163,7 +163,7 @@ impl AppCore {
                 )
                 .expect("Failed to create window"),
         );
-        let mut renderer = Renderer::new(window.clone()).expect("Renderer init failed");
+        let mut renderer = Renderer::new(window.clone(), &config.font_family).expect("Renderer init failed");
 
         let mut layout = Layout::new();
         let size = renderer.size();

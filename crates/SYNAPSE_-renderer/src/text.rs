@@ -55,6 +55,117 @@ pub struct ShapedGlyph {
     pub cluster: u32,
 }
 
+fn normalize_family(family: &str) -> String {
+    family
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+#[derive(Debug)]
+enum FontVariant {
+    Regular,
+    Bold,
+    Italic,
+}
+
+fn classify_variant(stem_norm: &str, family_key: &str) -> Option<FontVariant> {
+    let remainder = stem_norm.replacen(family_key, "", 1);
+    for skip in &["extralight", "extrabold", "semibold", "medium", "black", "heavy", "thin", "light", "condensed", "expanded"] {
+        if remainder.contains(skip) {
+            return None;
+        }
+    }
+    let is_bold = remainder.contains("bold");
+    let is_italic = remainder.contains("italic") || remainder.contains("oblique");
+    match (is_bold, is_italic) {
+        (false, false) => Some(FontVariant::Regular),
+        (true, false) => Some(FontVariant::Bold),
+        (false, true) => Some(FontVariant::Italic),
+        (true, true) => None,
+    }
+}
+
+fn collect_font_paths(
+    dir: &std::path::Path,
+    family_key: &str,
+    regular: &mut Option<std::path::PathBuf>,
+    bold: &mut Option<std::path::PathBuf>,
+    italic: &mut Option<std::path::PathBuf>,
+    depth: u8,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && depth > 0 {
+            collect_font_paths(&path, family_key, regular, bold, italic, depth - 1);
+        } else {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf") {
+                continue;
+            }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let stem_norm = normalize_family(stem);
+            if !stem_norm.contains(family_key) {
+                continue;
+            }
+            match classify_variant(&stem_norm, family_key) {
+                Some(FontVariant::Regular) if regular.is_none() => *regular = Some(path),
+                Some(FontVariant::Bold) if bold.is_none() => *bold = Some(path),
+                Some(FontVariant::Italic) if italic.is_none() => *italic = Some(path),
+                _ => {}
+            }
+        }
+    }
+}
+
+fn system_font_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = Vec::new();
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            dirs.push(std::path::PathBuf::from(home).join("Library/Fonts"));
+        }
+        dirs.push(std::path::PathBuf::from("/Library/Fonts"));
+        dirs.push(std::path::PathBuf::from("/System/Library/Fonts"));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            let home = std::path::PathBuf::from(home);
+            dirs.push(home.join(".local/share/fonts"));
+            dirs.push(home.join(".fonts"));
+        }
+        dirs.push(std::path::PathBuf::from("/usr/share/fonts"));
+        dirs.push(std::path::PathBuf::from("/usr/local/share/fonts"));
+    }
+    dirs
+}
+
+fn find_font_bytes(family_key: &str) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    let mut regular_path: Option<std::path::PathBuf> = None;
+    let mut bold_path: Option<std::path::PathBuf> = None;
+    let mut italic_path: Option<std::path::PathBuf> = None;
+
+    for dir in system_font_dirs() {
+        collect_font_paths(&dir, family_key, &mut regular_path, &mut bold_path, &mut italic_path, 4);
+        if regular_path.is_some() {
+            break;
+        }
+    }
+
+    let reg_bytes = std::fs::read(regular_path?).ok()?;
+    let bold_bytes = bold_path
+        .and_then(|p| std::fs::read(p).ok())
+        .unwrap_or_else(|| reg_bytes.clone());
+    let italic_bytes = italic_path
+        .and_then(|p| std::fs::read(p).ok())
+        .unwrap_or_else(|| reg_bytes.clone());
+
+    Some((reg_bytes, bold_bytes, italic_bytes))
+}
+
 pub struct TextShaping {
     font_regular: fontdue::Font,
     font_bold: fontdue::Font,
@@ -66,22 +177,52 @@ pub struct TextShaping {
 
 impl TextShaping {
     pub fn new() -> Self {
+        Self::from_static(JETBRAINS_MONO_REGULAR, JETBRAINS_MONO_BOLD, JETBRAINS_MONO_ITALIC)
+    }
+
+    /// Load the requested font family from system fonts, falling back to embedded
+    /// JetBrains Mono if the family is empty, "monospace", or not found.
+    pub fn with_family(family: &str) -> Self {
+        let key = normalize_family(family);
+        if key.is_empty() || key == "monospace" || key == "jetbrainsmono" {
+            return Self::new();
+        }
+        match find_font_bytes(&key) {
+            Some((reg, bold, italic)) => {
+                tracing::info!("Loaded font family '{family}' from system");
+                Self::from_owned(reg, bold, italic)
+            }
+            None => {
+                tracing::warn!("Font family '{family}' not found — using embedded JetBrains Mono");
+                Self::new()
+            }
+        }
+    }
+
+    fn from_static(reg: &'static [u8], bold: &'static [u8], italic: &'static [u8]) -> Self {
         let settings = fontdue::FontSettings::default();
-        let font_regular = fontdue::Font::from_bytes(JETBRAINS_MONO_REGULAR, settings)
-            .expect("embedded JetBrains Mono Regular is invalid");
-        let font_bold = fontdue::Font::from_bytes(JETBRAINS_MONO_BOLD, settings)
-            .expect("embedded JetBrains Mono Bold is invalid");
-        let font_italic = fontdue::Font::from_bytes(JETBRAINS_MONO_ITALIC, settings)
-            .expect("embedded JetBrains Mono Italic is invalid");
-
-        let rb_regular = rustybuzz::Face::from_slice(JETBRAINS_MONO_REGULAR, 0)
-            .expect("rustybuzz: JetBrains Mono Regular is invalid");
-        let rb_bold = rustybuzz::Face::from_slice(JETBRAINS_MONO_BOLD, 0)
-            .expect("rustybuzz: JetBrains Mono Bold is invalid");
-        let rb_italic = rustybuzz::Face::from_slice(JETBRAINS_MONO_ITALIC, 0)
-            .expect("rustybuzz: JetBrains Mono Italic is invalid");
-
+        let font_regular = fontdue::Font::from_bytes(reg, settings)
+            .expect("font Regular bytes invalid");
+        let font_bold = fontdue::Font::from_bytes(bold, settings)
+            .expect("font Bold bytes invalid");
+        let font_italic = fontdue::Font::from_bytes(italic, settings)
+            .expect("font Italic bytes invalid");
+        let rb_regular = rustybuzz::Face::from_slice(reg, 0)
+            .expect("rustybuzz: font Regular invalid");
+        let rb_bold = rustybuzz::Face::from_slice(bold, 0)
+            .expect("rustybuzz: font Bold invalid");
+        let rb_italic = rustybuzz::Face::from_slice(italic, 0)
+            .expect("rustybuzz: font Italic invalid");
         Self { font_regular, font_bold, font_italic, rb_regular, rb_bold, rb_italic }
+    }
+
+    fn from_owned(reg: Vec<u8>, bold: Vec<u8>, italic: Vec<u8>) -> Self {
+        // Leak so rustybuzz::Face can hold a 'static reference.
+        // Each font file is ~200–400 KB; leaking once at startup is acceptable.
+        let reg: &'static [u8] = Box::leak(reg.into_boxed_slice());
+        let bold: &'static [u8] = Box::leak(bold.into_boxed_slice());
+        let italic: &'static [u8] = Box::leak(italic.into_boxed_slice());
+        Self::from_static(reg, bold, italic)
     }
 
     fn font(&self, bold: bool, italic: bool) -> &fontdue::Font {

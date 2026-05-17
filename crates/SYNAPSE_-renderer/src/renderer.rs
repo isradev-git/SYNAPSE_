@@ -24,7 +24,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: Arc<Window>) -> Result<Self, String> {
+    pub fn new(window: Arc<Window>, font_family: &str) -> Result<Self, String> {
         let instance_desc = wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -119,7 +119,7 @@ impl Renderer {
             CellRenderer::new(Arc::clone(&device), &atlas.bind_group_layout, config.format);
         let ui_renderer_bg = UIRenderer::new(Arc::clone(&device), config.format);
         let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
-        let text = TextShaping::new();
+        let text = TextShaping::with_family(font_family);
 
         Ok(Self {
             surface,
