@@ -50,6 +50,45 @@ impl Suggester {
         Self { root }
     }
 
+    /// Insert or reinforce a command learned during the current session.
+    /// If the command already exists, its count is incremented; if new, it is
+    /// added with count 1. max_count is updated along the full path so that
+    /// query() immediately prefers recently-reinforced commands.
+    pub fn insert(&mut self, cmd: &str) {
+        if cmd.is_empty() {
+            return;
+        }
+        // Read existing count before mutating.
+        let new_count = {
+            let mut node = &self.root;
+            let mut count = 1u32;
+            let mut complete = true;
+            for c in cmd.chars() {
+                if let Some(n) = node.children.get(&c) {
+                    node = n;
+                } else {
+                    complete = false;
+                    break;
+                }
+            }
+            if complete {
+                count = node.own_count + 1;
+            }
+            count
+        };
+
+        let mut node = &mut self.root;
+        node.max_count = node.max_count.max(new_count);
+        for c in cmd.chars() {
+            node = node.children.entry(c).or_insert_with(TrieNode::new);
+            node.max_count = node.max_count.max(new_count);
+        }
+        node.own_count = new_count;
+        if node.full_cmd.is_none() {
+            node.full_cmd = Some(cmd.to_string());
+        }
+    }
+
     pub fn query(&self, prefix: &str) -> Option<&str> {
         if prefix.is_empty() {
             return None;
@@ -130,6 +169,24 @@ mod tests {
         let suffix = "ush origin main";
         let end = suffix.find(' ').map(|i| i + 1).unwrap_or(suffix.len());
         assert_eq!(&suffix[..end], "ush ");
+    }
+
+    #[test]
+    fn insert_new_command_is_queryable() {
+        let mut s = Suggester::new(vec![]);
+        s.insert("docker ps");
+        assert_eq!(s.query("docker"), Some("docker ps"));
+    }
+
+    #[test]
+    fn insert_increments_count_and_wins() {
+        let history = vec!["git pull".to_string(), "git push origin main".to_string()];
+        let mut s = Suggester::new(history);
+        // After startup "git p" suggests "git push origin main" (1 each; push is first)
+        // Reinforce "git pull" twice — it should win.
+        s.insert("git pull");
+        s.insert("git pull");
+        assert_eq!(s.query("git p"), Some("git pull"));
     }
 
     #[test]

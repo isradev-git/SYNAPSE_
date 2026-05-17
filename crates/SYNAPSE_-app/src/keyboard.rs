@@ -453,6 +453,14 @@ pub fn handle_keyboard(
                 let pane = active_pane_mut(panes, tab_bar);
                 pane.write_to_pty(&bytes);
 
+                // Learn executed command before suggest.update() clears the prefix.
+                if bytes.as_slice() == [0x0d] || bytes.as_slice() == [0x0a] {
+                    let cmd = state.suggest.prefix.trim().to_string();
+                    if !cmd.is_empty() {
+                        state.suggester.insert(&cmd);
+                    }
+                }
+
                 // Update suggestion prefix and re-query trie.
                 let needs_query = state.suggest.update(&bytes);
                 if needs_query {
