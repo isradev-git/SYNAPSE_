@@ -368,6 +368,7 @@ impl AppCore {
         button_state: winit::event::ElementState,
         button: winit::event::MouseButton,
     ) {
+        let was_selecting = self.state.selecting;
         handle_mouse_button(
             button_state,
             button,
@@ -379,8 +380,25 @@ impl AppCore {
             self.cell_h,
             self.margin,
         );
-        // Phase 1: auto-copy on multi-click is deferred until selection
-        // extraction is reimplemented against the alacritty grid.
+        // Auto-copy: copy selection to clipboard on release after any selection
+        // (multi-click word/line or click-drag).
+        if button == winit::event::MouseButton::Left
+            && button_state == winit::event::ElementState::Released
+            && (self.state.click_count >= 2 || was_selecting)
+        {
+            let active_id = self.tab_bar.active_tab().active_pane;
+            if let Some(pane) = self.panes.iter().find(|p| p.id == active_id) {
+                if let Ok(term) = pane.term.lock() {
+                    if let Some(text) = term.selection_to_string() {
+                        if !text.is_empty() {
+                            if let Some(cb) = self.clipboard.as_mut() {
+                                let _ = cb.set_text(text);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub(crate) fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
