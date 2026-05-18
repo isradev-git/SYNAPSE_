@@ -283,6 +283,11 @@ impl Theme {
         apply!(search_text);
         apply!(search_text_dim);
         apply!(ghost_text);
+        if let Some(ref ansi) = colors.ansi_colors {
+            for (i, s) in ansi.iter().enumerate().take(16) {
+                base.ansi_colors[i] = hex(s);
+            }
+        }
         base
     }
 }
@@ -316,6 +321,7 @@ struct ColorsToml {
     search_text: Option<String>,
     search_text_dim: Option<String>,
     ghost_text: Option<String>,
+    ansi_colors: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -361,5 +367,67 @@ mod tests {
                 name
             );
         }
+    }
+
+    #[test]
+    fn merge_overrides_ansi_colors() {
+        let base = Theme::synapse_();
+        let toml: ThemeToml = toml::from_str(
+            "[colors]\nansi_colors = [\"#000000\", \"#ff0000\"]\n",
+        )
+        .unwrap();
+        let merged = Theme::merge(base, &toml.colors);
+        // Index 0: override to black
+        assert!((merged.ansi_colors[0][0] - 0.0).abs() < 0.01);
+        // Index 1: override to red
+        assert!((merged.ansi_colors[1][0] - 1.0).abs() < 0.01);
+        // Index 2..15 remain unchanged from base
+        assert_eq!(merged.ansi_colors[2], Theme::synapse_().ansi_colors[2]);
+        // Did NOT clobber non-ansi fields
+        assert!((merged.fg[0] - Theme::synapse_().fg[0]).abs() < 0.001);
+    }
+
+    #[test]
+    fn merge_preserves_ansi_when_not_in_toml() {
+        let base = Theme::synapse_();
+        let toml: ThemeToml = toml::from_str(
+            "[colors]\nbg = \"#ffffff\"\n",
+        )
+        .unwrap();
+        let merged = Theme::merge(base, &toml.colors);
+        // bg got overridden
+        assert!((merged.bg[0] - 1.0).abs() < 0.01);
+        // ansi_colors are untouched
+        assert_eq!(merged.ansi_colors, Theme::synapse_().ansi_colors);
+    }
+
+    #[test]
+    fn custom_theme_from_file_with_ansi() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join("synapse_test_themes");
+        let themes_dir = dir.join("themes");
+        let _ = std::fs::create_dir_all(&themes_dir);
+        let theme_path = themes_dir.join("custom.toml");
+        let mut f = std::fs::File::create(&theme_path).unwrap();
+        writeln!(
+            f,
+            "[colors]\nbg = \"#111111\"\nfg = \"#eeeeee\"\nansi_colors = [\"#000000\", \"#ff0000\", \"#00ff00\", \"#0000ff\"]"
+        )
+        .unwrap();
+
+        let t = Theme::load("custom", Some(dir.clone()));
+        assert!((t.bg[0] - 0.0666).abs() < 0.01);
+        assert!((t.fg[0] - 0.9333).abs() < 0.01);
+        // ansi[0] = black, ansi[1] = red
+        assert!((t.ansi_colors[0][0] - 0.0).abs() < 0.01);
+        assert!((t.ansi_colors[1][0] - 1.0).abs() < 0.01);
+        // ansi[2] = green (from file), not from builtin
+        assert!((t.ansi_colors[2][1] - 1.0).abs() < 0.01);
+        // ansi[3] = blue (from file), not from builtin
+        assert!((t.ansi_colors[3][2] - 1.0).abs() < 0.01);
+        // ansi[4..15] should still be from base (not overridden)
+        assert_eq!(t.ansi_colors[4], Theme::synapse_().ansi_colors[4]);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

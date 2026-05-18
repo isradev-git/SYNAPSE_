@@ -505,9 +505,9 @@ pub fn render_frame(
 
                 // Block cursor is now a UIRect overlay — cell uses its natural colors.
                 let (final_fg, final_bg) = if in_selection {
-                    (fg, [0.259, 0.522, 0.957, 0.5])
+                    (fg, state.theme.selection)
                 } else if in_match {
-                    ([0.067, 0.075, 0.102, 1.0], [0.98, 0.78, 0.15, 1.0])
+                    (state.theme.search_current, state.theme.search_highlight)
                 } else {
                     (fg, bg)
                 };

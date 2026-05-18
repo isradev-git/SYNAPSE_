@@ -180,22 +180,22 @@ Marca cada paso con `[x]` al completarlo.
 
 ---
 
-## Tests — Estado actual (103 tests, todos pasan)
+## Tests — Estado actual (105 tests, todos pasan)
 
 | Crate | Tests |
 |---|---|
 | SYNAPSE_-app (image_protocol + KKP) | 13 |
-| SYNAPSE_-config | 26 |
+| SYNAPSE_-config | 29 |
 | SYNAPSE_-renderer | 8 |
-| SYNAPSE_-ui | 7 |
-| SYNAPSE_-suggest | 49 |
-| **Total** | **103** |
+| SYNAPSE_-suggest | 9 |
+| SYNAPSE_-ui | 49 |
+| **Total** | **108** |
 
 - [x] SYNAPSE_-renderer: atlas no-overlap, rasterize ASCII, draw_frame sin panic
 - [x] SYNAPSE_-ui: PaneTree split/close/layout, TabBar CRUD
 - [x] SYNAPSE_-config: round-trip TOML, valores por defecto, cursor styles
 - [x] SYNAPSE_-suggest: trie prefix match, empty history, corrupted line, accept
-- [x] Workspace total: ≥80 tests pasando (**103 actualmente**)
+- [x] Workspace total: ≥80 tests pasando (**108 actualmente**)
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` limpio
 
 ---
@@ -218,7 +218,7 @@ Marca cada paso con `[x]` al completarlo.
 ## Pendiente / Fase siguiente
 
 - [ ] OSC 7 CWD tracking (bloqueado por alacritty_terminal 0.24 API)
-- [ ] Custom themes vía TOML (`~/.config/SYNAPSE_/themes/`)
+- [x] Custom themes vía TOML (`~/.config/SYNAPSE_/themes/`) — ansi_colors sobreescribible, selection/search_highlight/search_current wireados
 - [ ] Renderizar imágenes Kitty en pantalla (ImageStore poblado pero sin draw call aún)
 - [ ] Benchmark formal scrollback >50k líneas con medición FPS
 - [ ] Validación performance targets (latency/FPS/RAM)
