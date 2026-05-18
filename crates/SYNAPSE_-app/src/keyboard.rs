@@ -84,9 +84,13 @@ pub fn handle_keyboard(
         return PostKeyAction::None;
     }
 
-    if event.state == winit::event::ElementState::Pressed && !event.repeat {
+    if event.state == winit::event::ElementState::Pressed {
         let logical_key = &event.logical_key;
+        let is_repeat = event.repeat;
 
+        // Only process keybinds and search UI on first press — repeats go
+        // straight to input encoding below so holding Backspace works.
+        if !is_repeat {
         // Search input handling (when active)
         if state.search.active {
             handle_search_input(logical_key, event, state, tab_bar, panes);
@@ -398,6 +402,7 @@ pub fn handle_keyboard(
         if keybind_handled {
             return PostKeyAction::None;
         }
+        } // end !is_repeat: keybinds handled, input encoding runs for both press+repeat
 
         let action = if kitty_active {
             InputAction::from_key_kitty(event, state.modifiers, kitty_flags, is_release)
@@ -425,8 +430,8 @@ pub fn handle_keyboard(
                     }
                 }
 
-                // Ghost text: Tab or Right → accept full suggestion.
-                if state.suggest.has_ghost() {
+                // Ghost text: Tab or Right → accept full suggestion (first press only).
+                if !is_repeat && state.suggest.has_ghost() {
                     let bslice = bytes.as_slice();
                     if bslice == b"\t" || bslice == b"\x1b[C" || bslice == b"\x1bOC" {
                         let suffix_opt = state.suggest.ghost_suffix_owned();
@@ -455,7 +460,9 @@ pub fn handle_keyboard(
                 let pane = active_pane_mut(panes, tab_bar);
                 pane.write_to_pty(&bytes);
 
-                // Learn executed command before suggest.update() clears the prefix.
+                // Learn executed command and update suggestions (first press only —
+                // repeats would corrupt the prefix trie with duplicate characters).
+                if !is_repeat {
                 if bytes.as_slice() == [0x0d] || bytes.as_slice() == [0x0a] {
                     let cmd = state.suggest.prefix.trim().to_string();
                     if !cmd.is_empty() {
@@ -470,22 +477,31 @@ pub fn handle_keyboard(
                         .map(|s| s.to_string());
                     state.suggest.ghost = new_ghost;
                 }
+                }
             }
             InputAction::ScrollUp(n) => {
-                let pane = active_pane_mut(panes, tab_bar);
-                pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(n as i32));
+                if !is_repeat {
+                    let pane = active_pane_mut(panes, tab_bar);
+                    pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(n as i32));
+                }
             }
             InputAction::ScrollDown(n) => {
-                let pane = active_pane_mut(panes, tab_bar);
-                pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(-(n as i32)));
+                if !is_repeat {
+                    let pane = active_pane_mut(panes, tab_bar);
+                    pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(-(n as i32)));
+                }
             }
             InputAction::ScrollToTop => {
-                let pane = active_pane_mut(panes, tab_bar);
-                pane.scroll_viewport(alacritty_terminal::grid::Scroll::Top);
+                if !is_repeat {
+                    let pane = active_pane_mut(panes, tab_bar);
+                    pane.scroll_viewport(alacritty_terminal::grid::Scroll::Top);
+                }
             }
             InputAction::ScrollToBottom => {
-                let pane = active_pane_mut(panes, tab_bar);
-                pane.scroll_viewport(alacritty_terminal::grid::Scroll::Bottom);
+                if !is_repeat {
+                    let pane = active_pane_mut(panes, tab_bar);
+                    pane.scroll_viewport(alacritty_terminal::grid::Scroll::Bottom);
+                }
             }
             InputAction::Copy => {
                 let active_id = tab_bar.active_tab().active_pane;
@@ -500,6 +516,7 @@ pub fn handle_keyboard(
                 }
             }
             InputAction::Paste => {
+                if !is_repeat {
                 if let Some(ref mut clip) = clipboard {
                     if let Ok(text) = clip.get_text() {
                         let pane = active_pane_mut(panes, tab_bar);
@@ -512,6 +529,7 @@ pub fn handle_keyboard(
                             pane.write_to_pty(b"\x1b[201~");
                         }
                     }
+                }
                 }
             }
             InputAction::Ignore => {}
