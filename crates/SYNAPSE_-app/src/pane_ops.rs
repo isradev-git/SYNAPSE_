@@ -215,19 +215,19 @@ pub fn create_pane_full(
                             let _ = osc7_tx.try_send(path);
                         }
 
-                        match term_reader.try_lock() {
+                        match term_reader.lock() {
                             Ok(mut term) => {
                                 for &byte in &staging {
                                     processor.advance(&mut *term, byte);
                                 }
                                 staging.clear();
+                                dirty_reader.store(true, Ordering::Release);
                             }
-                            Err(_) => {
-                                // Render thread holds the lock; bytes stay in
-                                // staging and are processed on the next read.
+                            Err(e) => {
+                                tracing::warn!("PTY reader: term lock poisoned: {}", e);
+                                break;
                             }
                         }
-                        dirty_reader.store(true, Ordering::Release);
                     }
                 }
             }
