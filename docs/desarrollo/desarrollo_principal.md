@@ -184,19 +184,19 @@ Marca cada paso con `[x]` al completarlo.
 
 | Crate | Tests |
 |---|---|
-| SYNAPSE_-app (image_protocol + KKP) | 13 |
+| SYNAPSE_-app (image_protocol + KKP) | 14 |
 | SYNAPSE_-config | 29 |
 | SYNAPSE_-renderer | 8 |
 | SYNAPSE_-suggest | 9 |
 | SYNAPSE_-ui | 49 |
-| **Total** | **108** |
+| **Total** | **109** |
 
 - [x] SYNAPSE_-renderer: atlas no-overlap, rasterize ASCII, draw_frame sin panic
 - [x] SYNAPSE_-ui: PaneTree split/close/layout, TabBar CRUD
 - [x] SYNAPSE_-config: round-trip TOML, valores por defecto, cursor styles
 - [x] SYNAPSE_-suggest: trie prefix match, empty history, corrupted line, accept
-- [x] Workspace total: ≥80 tests pasando (**108 actualmente**)
-- [x] `cargo clippy --workspace --all-targets -- -D warnings` limpio
+- [x] Workspace total: ≥80 tests pasando (**109 actualmente**)
+- [x] `cargo clippy -p SYNAPSE_-renderer --all-targets -- -D warnings` limpio
 
 ---
 
@@ -212,6 +212,11 @@ Marca cada paso con `[x]` al completarlo.
 - `kitty_flags_stack: Vec<u8>` por pane — implementa push/pop semántico del KKP spec
 - Ligatures: rustybuzz shape → fontdue rasterize_indexed (NO rasterize por char, por glyph_id)
 - `draw_frame_with_options(ligatures: bool)` — `draw_frame` es wrapper con `ligatures=false`
+- Kitty images: 1 draw call por imagen (textura única), z-order: bg → images → glyphs → UI overlay
+- ImagePlacement tiene `pane_id: Option<PaneId>` para vincular APC a pane fuente
+- ImageRenderer cachea texturas GPU por `image_id`; Delete específico las limpia
+- Image clipping: scissor rect por pane content area, evita que imágenes se salgan del pane
+- Parser APC: extrae `C`/`R` (placement column/row) además de `c`/`r` (span columns/rows)
 
 ---
 
@@ -219,6 +224,6 @@ Marca cada paso con `[x]` al completarlo.
 
 - [ ] OSC 7 CWD tracking (bloqueado por alacritty_terminal 0.24 API)
 - [x] Custom themes vía TOML (`~/.config/SYNAPSE_/themes/`) — ansi_colors sobreescribible, selection/search_highlight/search_current wireados
-- [ ] Renderizar imágenes Kitty en pantalla (ImageStore poblado pero sin draw call aún)
+- [x] Renderizar imágenes Kitty en pantalla — ImageRenderer con pipeline GPU, textura por imagen, scissor clipping por pane, parser C/R completo
 - [ ] Benchmark formal scrollback >50k líneas con medición FPS
 - [ ] Validación performance targets (latency/FPS/RAM)

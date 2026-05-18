@@ -37,7 +37,6 @@ pub struct StoredImage {
 
 /// A placement of an image in the terminal grid.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ImagePlacement {
     pub image_id: u32,
     /// Terminal column where the image starts.
@@ -48,6 +47,8 @@ pub struct ImagePlacement {
     pub columns: u32,
     /// How many rows the image spans (0 = auto from image height).
     pub rows: u32,
+    /// Which pane this placement belongs to.
+    pub pane_id: Option<synapse_ui::PaneId>,
 }
 
 /// A command parsed from an APC sequence, as sent from the render thread.
@@ -86,8 +87,8 @@ impl ImageStore {
         }
     }
 
-    /// Process a parsed APC command.
-    pub fn process(&mut self, cmd: ApcCommand) {
+    /// Process a parsed APC command with optional pane context.
+    pub fn process(&mut self, cmd: ApcCommand, pane_id: Option<synapse_ui::PaneId>) {
         match cmd.action {
             KittyAction::Delete => {
                 if cmd.image_id == 0 {
@@ -157,6 +158,7 @@ impl ImageStore {
                 row: cmd.row,
                 columns: cmd.columns,
                 rows: cmd.rows,
+                pane_id,
             });
         }
     }
@@ -221,6 +223,8 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
     let mut height: u32 = 0;
     let mut columns: u32 = 0;
     let mut rows: u32 = 0;
+    let mut col: usize = 0;
+    let mut row: usize = 0;
     let mut more = false;
 
     for kv in params_str.split(',') {
@@ -251,6 +255,8 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
             "v" => height = val.parse().unwrap_or(0),
             "c" => columns = val.parse().unwrap_or(0),
             "r" => rows = val.parse().unwrap_or(0),
+            "C" => col = val.parse().unwrap_or(0),
+            "R" => row = val.parse().unwrap_or(0),
             "m" => more = val == "1",
             _ => {}
         }
@@ -264,8 +270,8 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
         height,
         columns,
         rows,
-        col: 0,
-        row: 0,
+        col,
+        row,
         data,
         more,
     })
@@ -443,6 +449,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_apc_with_placement_coords() {
+        let cmd = parse_apc("Ga=T,f=32,i=1,s=2,v=2,c=4,r=3,C=10,R=5;AAAAAAAA")
+            .expect("parse failed");
+        assert_eq!(cmd.action, KittyAction::Transmit);
+        assert_eq!(cmd.columns, 4);
+        assert_eq!(cmd.rows, 3);
+        assert_eq!(cmd.col, 10);
+        assert_eq!(cmd.row, 5);
+    }
+
+    #[test]
     fn scan_kkp_query() {
         let data = b"\x1b[?u";
         let cmds = scan_kkp(data);
@@ -467,7 +484,7 @@ mod tests {
     fn image_store_delete_all() {
         let mut store = ImageStore::new();
         store.images.insert(1, StoredImage { id: 1, width: 1, height: 1, rgba: vec![0; 4] });
-        store.placements.push(ImagePlacement { image_id: 1, col: 0, row: 0, columns: 1, rows: 1 });
+        store.placements.push(ImagePlacement { image_id: 1, col: 0, row: 0, columns: 1, rows: 1, pane_id: None });
         store.process(ApcCommand {
             action: KittyAction::Delete,
             format: KittyFormat::Rgba,
@@ -475,7 +492,7 @@ mod tests {
             width: 0, height: 0, columns: 0, rows: 0, col: 0, row: 0,
             data: String::new(),
             more: false,
-        });
+        }, None);
         assert!(store.placements.is_empty());
     }
 
@@ -483,7 +500,7 @@ mod tests {
     fn image_store_delete_by_id() {
         let mut store = ImageStore::new();
         store.images.insert(2, StoredImage { id: 2, width: 1, height: 1, rgba: vec![0; 4] });
-        store.placements.push(ImagePlacement { image_id: 2, col: 0, row: 0, columns: 1, rows: 1 });
+        store.placements.push(ImagePlacement { image_id: 2, col: 0, row: 0, columns: 1, rows: 1, pane_id: None });
         store.process(ApcCommand {
             action: KittyAction::Delete,
             format: KittyFormat::Rgba,
@@ -491,7 +508,7 @@ mod tests {
             width: 0, height: 0, columns: 0, rows: 0, col: 0, row: 0,
             data: String::new(),
             more: false,
-        });
+        }, None);
         assert!(!store.images.contains_key(&2));
         assert!(store.placements.is_empty());
     }

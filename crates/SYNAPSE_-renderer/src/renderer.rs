@@ -4,6 +4,7 @@ use winit::window::Window;
 
 use crate::atlas::TextureAtlas;
 use crate::cell::{CellInstance, CellRenderer};
+use crate::image::{ImageInstance, ImageRenderer};
 use crate::text::TextShaping;
 use crate::ui::{UIRect, UIRenderer};
 
@@ -17,6 +18,7 @@ pub struct Renderer {
     cell_renderer: CellRenderer,
     ui_renderer_bg: UIRenderer,
     ui_renderer: UIRenderer,
+    image_renderer: ImageRenderer,
     text: TextShaping,
     clear_color: wgpu::Color,
     cell_w: f32,
@@ -120,6 +122,7 @@ impl Renderer {
             CellRenderer::new(Arc::clone(&device), &atlas.bind_group_layout, config.format);
         let ui_renderer_bg = UIRenderer::new(Arc::clone(&device), config.format);
         let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
+        let image_renderer = ImageRenderer::new(Arc::clone(&device), config.format);
         let text = TextShaping::with_family(font_family);
 
         Ok(Self {
@@ -138,6 +141,7 @@ impl Renderer {
             cell_renderer,
             ui_renderer_bg,
             ui_renderer,
+            image_renderer,
             text,
             cell_w: 0.0,
             cell_h: 0.0,
@@ -163,6 +167,23 @@ impl Renderer {
         self.cell_w = metrics.0;
         self.cell_h = metrics.1;
         metrics
+    }
+
+    pub fn has_image(&self, id: u32) -> bool {
+        self.image_renderer.has_image(id)
+    }
+
+    pub fn upload_image(&mut self, id: u32, rgba: &[u8], width: u32, height: u32) {
+        self.image_renderer
+            .upload_image(id, rgba, width, height, &self.queue);
+    }
+
+    pub fn remove_image(&mut self, id: u32) {
+        self.image_renderer.remove_image(id);
+    }
+
+    pub fn image_dimensions(&self, id: u32) -> Option<(u32, u32)> {
+        self.image_renderer.image_dimensions(id)
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -201,7 +222,7 @@ impl Renderer {
         self.cell_renderer.upload(&instances, &self.queue);
         self.ui_renderer_bg.upload(&[], &self.queue);
         self.ui_renderer.upload(&[], &self.queue);
-        self.render_instances();
+        self.render_instances(&[], &[], &[]);
     }
 
     #[allow(clippy::type_complexity)]
@@ -210,14 +231,14 @@ impl Renderer {
         self.cell_renderer.upload(&instances, &self.queue);
         self.ui_renderer_bg.upload(&[], &self.queue);
         self.ui_renderer.upload(&[], &self.queue);
-        self.render_instances();
+        self.render_instances(&[], &[], &[]);
     }
 
     pub fn draw_ui_rects(&mut self, rects: &[UIRect]) {
         self.cell_renderer.upload(&[], &self.queue);
         self.ui_renderer_bg.upload(&[], &self.queue);
         self.ui_renderer.upload(rects, &self.queue);
-        self.render_instances();
+        self.render_instances(&[], &[], &[]);
     }
 
     fn gray_to_rgba(gray: &[u8]) -> Vec<u8> {
@@ -419,8 +440,11 @@ impl Renderer {
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
         ui_rects: &[UIRect],
         bg_rects: &[UIRect],
+        images: &[ImageInstance],
+        image_ids: &[u32],
+        image_clips: &[[u32; 4]],
     ) {
-        self.draw_frame_with_options(cells, ui_rects, bg_rects, false, true, true);
+        self.draw_frame_with_options(cells, ui_rects, bg_rects, images, image_ids, image_clips, false, true, true);
     }
 
     /// Draw a frame, conditionally skipping GPU uploads when data hasn't changed.
@@ -429,11 +453,15 @@ impl Renderer {
     /// `ui_dirty`    — upload bg_rects and ui_rects to GPU.
     /// When both are false the render pass re-uses the buffers from the previous frame.
     #[allow(clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_frame_with_options(
         &mut self,
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
         ui_rects: &[UIRect],
         bg_rects: &[UIRect],
+        images: &[ImageInstance],
+        image_ids: &[u32],
+        image_clips: &[[u32; 4]],
         ligatures: bool,
         cells_dirty: bool,
         ui_dirty: bool,
@@ -453,15 +481,17 @@ impl Renderer {
             self.ui_renderer_bg.upload(bg_rects, &self.queue);
             self.ui_renderer.upload(ui_rects, &self.queue);
         }
-        self.render_instances();
+        self.render_instances(images, image_ids, image_clips);
     }
 
-    fn render_instances(&mut self) {
+    fn render_instances(&mut self, images: &[ImageInstance], image_ids: &[u32], clip_rects: &[[u32; 4]]) {
         self.cell_renderer
             .update_screen_size(&self.queue, self.size.width, self.size.height);
         self.ui_renderer_bg
             .update_screen_size(&self.queue, self.size.width, self.size.height);
         self.ui_renderer
+            .update_screen_size(&self.queue, self.size.width, self.size.height);
+        self.image_renderer
             .update_screen_size(&self.queue, self.size.width, self.size.height);
 
         let output = match self.surface.get_current_texture() {
@@ -504,6 +534,15 @@ impl Renderer {
 
             // bg layer: selection, search highlights, colored cell backgrounds
             self.ui_renderer_bg.draw(&mut render_pass);
+
+            // image layer: Kitty images (behind text)
+            self.image_renderer.draw_images(
+                &mut render_pass,
+                images,
+                image_ids,
+                clip_rects,
+                &self.queue,
+            );
 
             // glyph layer (transparent bg so bitmaps that overflow cell bounds blend correctly)
             self.cell_renderer.draw(&mut render_pass, &self.atlas.bind_group);

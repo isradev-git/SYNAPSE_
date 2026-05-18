@@ -3,10 +3,14 @@ use std::collections::HashSet;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::vte::ansi::Color as TermColor;
 use synapse_config::Theme;
-use synapse_renderer::{renderer::Renderer, ui::UIRect};
+use synapse_renderer::{image::ImageInstance, renderer::Renderer, ui::UIRect};
 use synapse_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
 
-use crate::{app::CellData, pane_ops::find_pane, search::build_match_set, state::AppState};
+use crate::app::CellData;
+use crate::image_protocol::ImageStore;
+use crate::pane_ops::find_pane;
+use crate::search::build_match_set;
+use crate::state::AppState;
 
 const TAB_FONT_SIZE: f32 = 12.0;
 
@@ -345,6 +349,7 @@ pub fn render_frame(
     layout: &Layout,
     tab_bar: &mut TabBar,
     panes: &mut Vec<Pane>,
+    image_store: &ImageStore,
     state: &AppState,
     cell_w: f32,
     cell_h: f32,
@@ -795,10 +800,109 @@ pub fn render_frame(
         *cached_blink = cursor_blink_on;
     }
 
+    // Build image draw list from placements in the active tab's panes.
+    let mut image_draws: Vec<ImageInstance> = Vec::new();
+    let mut image_draw_ids: Vec<u32> = Vec::new();
+    let mut image_clips: Vec<[u32; 4]> = Vec::new();
+    {
+        let pane_tree = &tab_bar.active_tab().pane_tree;
+        let pane_area = layout.pane_area();
+        let margin = layout.pane_margin();
+        let pane_rect = synapse_ui::PaneRect {
+            x: pane_area.0,
+            y: pane_area.1,
+            w: pane_area.2,
+            h: pane_area.3,
+        };
+        let layouts = pane_tree.get_layout(pane_rect);
+
+        for placement in &image_store.placements {
+            // Only render placements for panes in the active tab.
+            let placement_pane_id = match placement.pane_id {
+                Some(id) => id,
+                None => continue,
+            };
+            // Check if this pane belongs to the active tab's pane tree.
+            if !pane_tree.all_panes().contains(&placement_pane_id) {
+                continue;
+            }
+
+            let pane = match find_pane(panes, placement_pane_id) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let layout_rect = match layouts.iter().find(|(pid, _)| *pid == placement_pane_id) {
+                Some((_, r)) => *r,
+                None => continue,
+            };
+
+            let content_x = layout_rect.x + margin;
+            let content_y = layout_rect.y + margin;
+
+            // Snapshot display offset for the placement's pane.
+            let display_offset = {
+                let term = match pane.term.lock() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                let grid = term.grid();
+                grid.display_offset()
+            };
+
+            if let Some(image) = image_store.images.get(&placement.image_id) {
+                // Upload to GPU if not yet cached.
+                if !renderer.has_image(placement.image_id) {
+                    renderer.upload_image(
+                        placement.image_id,
+                        &image.rgba,
+                        image.width,
+                        image.height,
+                    );
+                }
+
+                let col = placement.col as f32;
+                let row = (placement.row as isize - display_offset as isize).max(0) as f32;
+
+                let img_w = if placement.columns > 0 {
+                    placement.columns as f32 * cell_w
+                } else {
+                    image.width as f32
+                };
+                let img_h = if placement.rows > 0 {
+                    placement.rows as f32 * cell_h
+                } else {
+                    image.height as f32
+                };
+
+                let px = content_x + col * cell_w;
+                let py = content_y + row * cell_h;
+
+                // Compute content area and clip rect for scissor.
+                let cw = (layout_rect.w - margin * 2.0).max(1.0);
+                let ch = (layout_rect.h - margin * 2.0).max(1.0);
+                let clip_x = content_x.max(0.0) as u32;
+                let clip_y = content_y.max(0.0) as u32;
+                let clip_w = cw as u32;
+                let clip_h = ch as u32;
+
+                image_draws.push(ImageInstance {
+                    pos: [px, py],
+                    size: [img_w, img_h],
+                });
+                image_draw_ids.push(placement.image_id);
+                image_clips.push([clip_x, clip_y, clip_w, clip_h]);
+            }
+        }
+    }
+
     renderer.draw_frame_with_options(
         cached_cell_data,
         cached_ui_rects,
         cached_bg_rects,
+        &image_draws,
+        &image_draw_ids,
+        &image_clips,
         state.config.font_ligatures,
         needs_cell_rebuild,
         needs_ui_rebuild,
@@ -928,11 +1032,11 @@ pub fn render_splash_screen(
         ));
     }
 
-    renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, false, true, true);
+    renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, &[], &[], &[], false, true, true);
 }
 
 use crate::app::AppCore;
-use crate::image_protocol::parse_apc;
+use crate::image_protocol::{parse_apc, KittyAction};
 use crate::pane_ops::create_pane;
 
 impl AppCore {
@@ -959,7 +1063,10 @@ impl AppCore {
         for pane in self.panes.iter_mut() {
             while let Ok(raw) = pane.apc_rx.try_recv() {
                 if let Some(cmd) = parse_apc(&raw) {
-                    self.image_store.process(cmd);
+                    if matches!(cmd.action, KittyAction::Delete) && cmd.image_id != 0 {
+                        self.renderer.remove_image(cmd.image_id);
+                    }
+                    self.image_store.process(cmd, Some(pane.id));
                 }
             }
         }
@@ -990,6 +1097,7 @@ impl AppCore {
             &self.layout,
             &mut self.tab_bar,
             &mut self.panes,
+            &self.image_store,
             &self.state,
             self.cell_w,
             self.cell_h,
