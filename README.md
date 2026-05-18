@@ -1,11 +1,11 @@
-# Luna
+# SYNAPSE_
 
 > Terminal emulator GPU-accelerated · Rust · wgpu · Multiplataforma
 
-[![CI](https://github.com/isradev-git/luna/actions/workflows/ci.yml/badge.svg)](https://github.com/isradev-git/luna/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/isradev-git/luna)](https://github.com/isradev-git/luna/releases/latest)
+[![CI](https://github.com/isradev-git/synapse_/actions/workflows/ci.yml/badge.svg)](https://github.com/isradev-git/synapse_/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/isradev-git/synapse_)](https://github.com/isradev-git/synapse_/releases/latest)
 
-Luna es un emulador de terminal moderno con rendering por GPU (Vulkan/Metal/DirectX 12), soporte completo VT100/xterm-256color, paneles divididos, tabs, y configuración en TOML.
+SYNAPSE_ es un emulador de terminal moderno con rendering por GPU (Vulkan/Metal/DirectX 12), soporte completo VT100/xterm-256color, paneles divididos, tabs, y configuración en TOML.
 
 ## Estado
 
@@ -18,9 +18,9 @@ Fase 10 (Calidad y Documentación) — MVP funcional con tabs, splits, búsqueda
 | Lenguaje      | Rust (stable, edition 2021)       |
 | Windowing     | winit 0.30                        |
 | GPU Rendering | wgpu 22 (Metal/Vulkan)            |
-| Text Shaping  | cosmic-text 0.12 + JetBrains Mono |
+| Text Shaping  | fontdue 0.9 + rustybuzz 0.14      |
 | PTY           | portable-pty 0.8                  |
-| VT Parser     | vte 0.13                          |
+| VT Parser     | alacritty_terminal 0.24           |
 | Async I/O     | tokio 1                           |
 | Config        | serde + TOML                      |
 
@@ -32,20 +32,20 @@ Fase 10 (Calidad y Documentación) — MVP funcional con tabs, splits, búsqueda
 - **Scrollback**: 100.000 líneas configurables
 - **Búsqueda**: Ctrl+Shift+F (buffer) + Ctrl+R (historial)
 - **Fuente dinámica**: Ctrl+=/-/0 en runtime
-- **Config TOML**: ~/.config/Luna/config.toml con keybinds personalizables
+- **Config TOML**: ~/.config/SYNAPSE_/config.toml con keybinds personalizables
 - **Plataformas**: macOS (Metal), Linux (X11/Wayland) y Windows (DirectX 12)
 
 ## Instalación rápida
 
 ```sh
 # Linux / macOS
-curl -fsSL https://github.com/isradev-git/luna/releases/latest/download/Luna-app-installer.sh | sh
+curl -fsSL https://github.com/isradev-git/synapse_/releases/latest/download/SYNAPSE_-app-installer.sh | sh
 
 # Windows (PowerShell)
-irm https://github.com/isradev-git/luna/releases/latest/download/Luna-app-installer.ps1 | iex
+irm https://github.com/isradev-git/synapse_/releases/latest/download/SYNAPSE_-app-installer.ps1 | iex
 ```
 
-También disponible como `.msi` (Windows) y tarballs en la [página de releases](https://github.com/isradev-git/luna/releases/latest).
+También disponible como `.msi` (Windows) y tarballs en la [página de releases](https://github.com/isradev-git/synapse_/releases/latest).
 
 Ver [INSTALL.md](INSTALL.md) para instrucciones detalladas por plataforma, compilar desde source, y configuración inicial.
 
@@ -59,16 +59,16 @@ Ver [INSTALL.md](INSTALL.md) para instrucciones detalladas por plataforma, compi
 | [BENCHMARKS.md](BENCHMARKS.md)                      | Métricas de rendimiento                  |
 | [CHANGELOG.md](CHANGELOG.md)                        | Historial de cambios                     |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                  | Guía para contribuir                     |
-| [documentacion/desarrollo/](documentacion/desarrollo/)| Docs técnicos por fase                 |
+| [docs/desarrollo/](docs/desarrollo/)                | Docs técnicos por fase                 |
 
 ## Comandos de desarrollo
 
 ```sh
-cargo build -p Luna-app          # Build
-cargo run -p Luna-app            # Ejecutar
-cargo test --workspace           # Tests (67 unit tests)
-cargo fmt --all -- --check       # Formato
-cargo clippy --workspace         # Lint
+cargo build -p SYNAPSE_-app          # Build
+cargo run -p SYNAPSE_-app            # Ejecutar
+cargo test --workspace               # Tests (103 unit tests)
+cargo fmt --all -- --check           # Formato
+cargo clippy --workspace             # Lint
 ```
 
 ## Licencia

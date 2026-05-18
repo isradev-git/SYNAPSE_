@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Luna — benchmark script
+# SYNAPSE_ — benchmark script
 # Usage: ./build/bench.sh [release|debug]
 #
 # Measures: startup time, RAM idle, RAM scrollback, FPS normal, FPS heavy output
@@ -8,8 +8,8 @@ set -euo pipefail
 
 BIN="${1:-release}"
 case "$BIN" in
-    release) BIN_PATH="./target/release/luna" ;;
-    debug)   BIN_PATH="./target/debug/luna" ;;
+    release) BIN_PATH="./target/release/synapse_" ;;
+    debug)   BIN_PATH="./target/debug/synapse_" ;;
     *)       echo "Usage: $0 [release|debug]"; exit 1 ;;
 esac
 
@@ -20,7 +20,7 @@ if [ ! -f "$BIN_PATH" ]; then
 fi
 
 BIN_SIZE=$(du -h "$BIN_PATH" | cut -f1)
-echo "=== Luna Benchmarks ==="
+echo "=== SYNAPSE_ Benchmarks ==="
 echo "Binary: $BIN_PATH ($BIN_SIZE)"
 echo ""
 
@@ -32,7 +32,7 @@ for i in 1 2 3; do
     PID=$!
     # Wait for window to appear (poll xdotool or wmctrl)
     for _ in $(seq 1 100); do
-        if command -v wmctrl &>/dev/null && wmctrl -l 2>/dev/null | grep -q "Luna"; then
+        if command -v wmctrl &>/dev/null && wmctrl -l 2>/dev/null | grep -q "SYNAPSE_"; then
             break
         fi
         sleep 0.01
@@ -63,7 +63,7 @@ PID=$!
 sleep 2
 # Send massive output to fill scrollback
 if command -v xdotool &>/dev/null; then
-    WID=$(xdotool search --name "Luna" 2>/dev/null | head -1)
+    WID=$(xdotool search --name "SYNAPSE_" 2>/dev/null | head -1)
     if [ -n "$WID" ]; then
         for _ in $(seq 1 10); do
             xdotool type --window "$WID" "yes 'scrollback fill test line' | head -n 10000" 2>/dev/null || true
@@ -81,7 +81,7 @@ echo ""
 
 # ── FPS idle / heavy ─────────────────────────────────────────────────────
 echo "--- FPS ---"
-echo "  Run with: RUST_LOG=luna::bench=info $BIN_PATH"
+echo "  Run with: RUST_LOG=synapse_::bench=info $BIN_PATH"
 echo "  Then cat a large file to measure FPS under load."
 echo ""
 

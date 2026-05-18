@@ -144,7 +144,7 @@ pub fn create_pane_full(
         .map_err(|e| format!("take_writer failed: {e}"))?;
     let pty_master = pty_pair.master;
 
-    // 5. Event channel for alacritty_terminal -> Luna events.
+    // 5. Event channel for alacritty_terminal -> SYNAPSE_ events.
     let (event_tx, event_rx) = mpsc::sync_channel::<Event>(256);
     let exit_tx = event_tx.clone();
     let proxy = EventProxy::new(event_tx);

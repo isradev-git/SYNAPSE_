@@ -1,6 +1,6 @@
-# Luna Test Suite
+# SYNAPSE_ Test Suite
 
-> Infraestructura completa de testing para el proyecto Luna — terminal emulator GPU-accelerated.
+> Infraestructura completa de testing para el proyecto SYNAPSE_ — terminal emulator GPU-accelerated.
 
 ---
 
@@ -75,21 +75,22 @@ Compila todos los crates en modo debug y release, y ejecuta `cargo check --all-t
 
 | Crate | Tipo | Descripción |
 |-------|------|-------------|
-| `Luna-app` | bin | Entry point, event loop |
-| `Luna-terminal` | lib | PTY, parser VT100, grid, buffer |
-| `Luna-renderer` | lib | wgpu, atlas, text shaping, cell rendering |
-| `Luna-ui` | lib | Tabs, panes, layouts, splitters |
-| `Luna-config` | lib | TOML config, keybinds |
+| `SYNAPSE_-app` | bin | Entry point, event loop |
+| `SYNAPSE_-renderer` | lib | wgpu, atlas, text shaping, cell rendering |
+| `SYNAPSE_-ui` | lib | Tabs, panes, layouts, splitters |
+| `SYNAPSE_-config` | lib | TOML config, keybinds |
+| `SYNAPSE_-suggest` | lib | Autosuggestions, shell history |
 
 ### Fase 3 — Unit Tests
 Ejecuta tests por crate con conteo de passed/failed.
 
 | Crate | Tests actuales | Cobertura |
 |-------|---------------|-----------|
-| `Luna-terminal` | 73 | parser (44), grid (9), buffer (3), pty (2), shell (1) + nuevos |
-| `Luna-renderer` | 2 | atlas (1), text (1) |
-| `Luna-ui` | 33 | splitter (6), tab_bar (14), layout (13) |
-| `Luna-config` | 26 | config (8), keybinds (18) |
+| `SYNAPSE_-app` | 13 | image_protocol, KKP |
+| `SYNAPSE_-renderer` | 8 | atlas, text, cell, renderer |
+| `SYNAPSE_-ui` | 7 | splitter, tab_bar, layout |
+| `SYNAPSE_-config` | 26 | config, keybinds |
+| `SYNAPSE_-suggest` | 49 | trie, history |
 
 ### Fase 4 — Lint Check
 - `cargo fmt --check` — verifica formato consistente
@@ -98,7 +99,7 @@ Ejecuta tests por crate con conteo de passed/failed.
 - Verificación de permisos de archivos
 
 ### Fase 5 — VT100/Xterm Conformance
-Ejecuta los 44 tests de parser VT100 y genera un reporte tabular de conformidad con el estándar:
+Ejecuta los tests de parser VT100 y genera un reporte tabular de conformidad con el estándar:
 
 - C0 controls (CR, LF, BS, TAB, FF)
 - CSI cursor (CUU, CUD, CUF, CUB, CUP)
@@ -172,10 +173,10 @@ Añadir `testing/reports/*.log` y `testing/reports/*.lcov` al `.gitignore`.
 cargo watch -x test
 
 # Solo un crate específico
-cargo watch -x "test -p Luna-terminal"
+cargo watch -x "test -p SYNAPSE_-config"
 
 # Con output visible
-cargo watch -x "test -p Luna-terminal -- --nocapture"
+cargo watch -x "test -p SYNAPSE_-config -- --nocapture"
 ```
 
 ## Añadir nuevos tests
@@ -195,18 +196,7 @@ mod tests {
 ```
 
 ### Test de integración (cross-crate)
-Crear `crates/<crate>/tests/<nombre>.rs`:
-```rust
-use luna_terminal::grid::Grid;
-use luna_terminal::parser::VteProcessor;
-
-#[test]
-fn test_cross_crate_scenario() {
-    let mut grid = Grid::new(80, 24);
-    let mut proc = VteProcessor::new();
-    // ...
-}
-```
+Crear `crates/<crate>/tests/<nombre>.rs`.
 
 ## CI/CD
 
@@ -224,12 +214,3 @@ Para replicar exactamente el comportamiento de CI localmente:
 ```sh
 ./testing/run_all.sh --quick --verbose
 ```
-
-## Historial de tests añadidos
-
-| Fecha | Archivo | Tests añadidos |
-|-------|---------|---------------|
-| 2026-05-09 | `Luna-config/src/config.rs` | 8 tests (defaults, serde, save/load, override) |
-| 2026-05-09 | `Luna-config/src/keybinds.rs` | 18 tests (lookup, overrides, named keys, navigation) |
-| 2026-05-09 | `Luna-ui/src/tab_bar.rs` | 14 tests (crud, circular nav, titles, id increment) |
-| 2026-05-09 | `Luna-ui/src/layout.rs` | 13 tests (pane area, tab width, visible range, scroll) |

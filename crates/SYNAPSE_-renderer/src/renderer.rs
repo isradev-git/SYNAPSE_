@@ -59,7 +59,7 @@ impl Renderer {
                     }
                     None => {
                         let msg = "No compatible GPU found.\n\
-                         Luna requires Vulkan (Linux), or Metal (macOS).\n\
+                         SYNAPSE_ requires Vulkan (Linux), or Metal (macOS).\n\
                          On VMs, enable 3D acceleration or GPU passthrough."
                             .to_string();
                         return Err(msg);

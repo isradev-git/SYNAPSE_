@@ -22,10 +22,10 @@ NC='\033[0m'
 
 # ─── Check if release binary exists ──────────────────────────────────────────
 
-RELEASE_BIN="$PROJECT_ROOT/target/release/Luna-app"
+RELEASE_BIN="$PROJECT_ROOT/target/release/synapse_"
 if [ ! -f "$RELEASE_BIN" ]; then
     echo "  Building release binary first..."
-    cargo build --release -p Luna-app 2>&1
+    cargo build --release -p SYNAPSE_-app 2>&1
     if [ ! -f "$RELEASE_BIN" ]; then
         echo "  ${RED}✗ Release binary not found — build may have failed${NC}"
         exit 1
@@ -46,20 +46,17 @@ fi
 
 echo "  Measuring startup time..."
 
-# Run 5 times and average (Uses GNU date or perl fallback)
 START_COUNT=5
 TOTAL_START=0
 
 for i in $(seq 1 $START_COUNT); do
     if date +'%s%N' &>/dev/null 2>&1; then
-        # macOS-compatible: use perl for microsecond timing
         START_NS=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || echo 0)
         timeout 3 "$RELEASE_BIN" --help 2>/dev/null || true
         END_NS=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || echo 0)
         ELAPSED=$((END_NS - START_NS))
         TOTAL_START=$((TOTAL_START + (ELAPSED > 0 ? ELAPSED : 0)))
     else
-        # Fallback to seconds-based timing
         START_S=$(date +%s 2>/dev/null || echo 0)
         timeout 3 "$RELEASE_BIN" --help 2>/dev/null || true
         END_S=$(date +%s 2>/dev/null || echo 0)
@@ -91,7 +88,7 @@ echo "  Measuring clean compile time..."
 
 CLEAN_START=$(date +%s 2>/dev/null)
 cargo clean 2>/dev/null || true
-cargo build --release -p Luna-app 2>&1 | tail -5
+cargo build --release -p SYNAPSE_-app 2>&1 | tail -5
 CLEAN_END=$(date +%s 2>/dev/null)
 COMPILE_TIME=$((CLEAN_END - CLEAN_START))
 echo "  ${CYAN}  Clean release build: ${COMPILE_TIME}s${NC}"

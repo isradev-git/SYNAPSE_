@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# run_all.sh — Luna Project Test Suite Orchestrator
-# ==================================================
+# run_all.sh — SYNAPSE_ Project Test Suite Orchestrator
+# =====================================================
 # Runs all testing phases in order. Each phase can also be run independently.
 # Exit code is 0 only if ALL phases pass.
 #
@@ -120,8 +120,6 @@ run_script() {
     fi
 
     if [ "$VERBOSE" = true ]; then
-        # Run with full output. Pipefail ensures we capture the script exit code.
-        # We use a temp file to capture the exit code reliably.
         local exit_file
         exit_file=$(mktemp)
         (
@@ -166,7 +164,7 @@ mkdir -p "$REPORTS_DIR"
 
 {
     echo "========================================="
-    echo " Luna Test Suite — Run $TIMESTAMP"
+    echo " SYNAPSE_ Test Suite — Run $TIMESTAMP"
     echo " Project: $PROJECT_ROOT"
     echo " Platform: $(uname -s) $(uname -m)"
     echo "========================================="

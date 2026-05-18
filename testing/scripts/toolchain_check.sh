@@ -39,7 +39,7 @@ echo "  toolchain: $TOOLCHAIN"
 
 # ─── Check edition support ───────────────────────────────────────────────────
 
-# Luna uses edition 2021, which requires Rust >= 1.56
+# SYNAPSE_ uses edition 2021, which requires Rust >= 1.56
 MIN_RUST_VERSION="1.56.0"
 if ! rustc --version | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
     echo "✗ Cannot parse rustc version"

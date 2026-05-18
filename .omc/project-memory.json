@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "lastScanned": 1779082328728,
-  "projectRoot": "/home/glitchbane-server/Documents/luna",
+  "projectRoot": "/home/glitchbane-server/Documents/synapse_",
   "techStack": {
     "languages": [
       {
@@ -109,7 +109,7 @@
   },
   "hotPaths": [
     {
-      "path": "crates/Luna-app/src/render.rs",
+      "path": "crates/SYNAPSE_-app/src/render.rs",
       "accessCount": 40,
       "lastAccessed": 1778824089493,
       "type": "file"
@@ -121,19 +121,19 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/src/renderer.rs",
+      "path": "crates/SYNAPSE_-renderer/src/renderer.rs",
       "accessCount": 30,
       "lastAccessed": 1778772581867,
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/keyboard.rs",
+      "path": "crates/SYNAPSE_-app/src/keyboard.rs",
       "accessCount": 19,
       "lastAccessed": 1778824063916,
       "type": "file"
     },
     {
-      "path": "crates/Luna-ui/src/pane.rs",
+      "path": "crates/SYNAPSE_-ui/src/pane.rs",
       "accessCount": 18,
       "lastAccessed": 1778772247396,
       "type": "file"
@@ -145,19 +145,19 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/src/atlas.rs",
+      "path": "crates/SYNAPSE_-renderer/src/atlas.rs",
       "accessCount": 17,
       "lastAccessed": 1778823866975,
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/mouse.rs",
+      "path": "crates/SYNAPSE_-app/src/mouse.rs",
       "accessCount": 15,
       "lastAccessed": 1778771643854,
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/app.rs",
+      "path": "crates/SYNAPSE_-app/src/app.rs",
       "accessCount": 15,
       "lastAccessed": 1778772420412,
       "type": "file"
@@ -169,13 +169,13 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/pane_ops.rs",
+      "path": "crates/SYNAPSE_-app/src/pane_ops.rs",
       "accessCount": 14,
       "lastAccessed": 1778824100555,
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/src/text.rs",
+      "path": "crates/SYNAPSE_-renderer/src/text.rs",
       "accessCount": 13,
       "lastAccessed": 1778738357156,
       "type": "file"
@@ -187,7 +187,7 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/state.rs",
+      "path": "crates/SYNAPSE_-app/src/state.rs",
       "accessCount": 11,
       "lastAccessed": 1778771927830,
       "type": "file"
@@ -199,7 +199,7 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/input.rs",
+      "path": "crates/SYNAPSE_-app/src/input.rs",
       "accessCount": 7,
       "lastAccessed": 1778823702511,
       "type": "file"
@@ -211,19 +211,19 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-ui/Cargo.toml",
+      "path": "crates/SYNAPSE_-ui/Cargo.toml",
       "accessCount": 6,
       "lastAccessed": 1778688567778,
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/Cargo.toml",
+      "path": "crates/SYNAPSE_-app/Cargo.toml",
       "accessCount": 6,
       "lastAccessed": 1778688665957,
       "type": "file"
     },
     {
-      "path": "crates/Luna-ui/src/splitter.rs",
+      "path": "crates/SYNAPSE_-ui/src/splitter.rs",
       "accessCount": 5,
       "lastAccessed": 1778824499852,
       "type": "file"
@@ -235,25 +235,25 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/Cargo.toml",
+      "path": "crates/SYNAPSE_-renderer/Cargo.toml",
       "accessCount": 4,
       "lastAccessed": 1778687654663,
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/src/cell.rs",
+      "path": "crates/SYNAPSE_-renderer/src/cell.rs",
       "accessCount": 4,
       "lastAccessed": 1778740799950,
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/search.rs",
+      "path": "crates/SYNAPSE_-app/src/search.rs",
       "accessCount": 4,
       "lastAccessed": 1778772207010,
       "type": "file"
     },
     {
-      "path": "crates/Luna-ui/src/tab_bar.rs",
+      "path": "crates/SYNAPSE_-ui/src/tab_bar.rs",
       "accessCount": 4,
       "lastAccessed": 1778824139931,
       "type": "file"
@@ -271,19 +271,19 @@
       "type": "file"
     },
     {
-      "path": "docs/superpowers/plans/2026-05-13-luna-v2-phase1-foundation.md",
+      "path": "docs/superpowers/plans/2026-05-13-synapse_-v2-phase1-foundation.md",
       "accessCount": 3,
       "lastAccessed": 1778770232952,
       "type": "file"
     },
     {
-      "path": "crates/Luna-config/src/config.rs",
+      "path": "crates/SYNAPSE_-config/src/config.rs",
       "accessCount": 3,
       "lastAccessed": 1778770244208,
       "type": "file"
     },
     {
-      "path": "crates/Luna-ui/src/layout.rs",
+      "path": "crates/SYNAPSE_-ui/src/layout.rs",
       "accessCount": 3,
       "lastAccessed": 1778824129158,
       "type": "file"
@@ -301,19 +301,19 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-ui/src/lib.rs",
+      "path": "crates/SYNAPSE_-ui/src/lib.rs",
       "accessCount": 2,
       "lastAccessed": 1778688332037,
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/src/shaders/cell.wgsl",
+      "path": "crates/SYNAPSE_-renderer/src/shaders/cell.wgsl",
       "accessCount": 2,
       "lastAccessed": 1778738543556,
       "type": "file"
     },
     {
-      "path": "docs/superpowers/specs/2026-05-13-luna-v2-rewrite-design.md",
+      "path": "docs/superpowers/specs/2026-05-13-synapse_-v2-rewrite-design.md",
       "accessCount": 2,
       "lastAccessed": 1778770232283,
       "type": "file"
@@ -343,43 +343,43 @@
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/src/ui.rs",
+      "path": "crates/SYNAPSE_-renderer/src/ui.rs",
       "accessCount": 1,
       "lastAccessed": 1778659883480,
       "type": "file"
     },
     {
-      "path": "crates/Luna-config/src/lib.rs",
+      "path": "crates/SYNAPSE_-config/src/lib.rs",
       "accessCount": 1,
       "lastAccessed": 1778685393385,
       "type": "file"
     },
     {
-      "path": "crates/Luna-terminal/src/lib.rs",
+      "path": "crates/SYNAPSE_-terminal/src/lib.rs",
       "accessCount": 1,
       "lastAccessed": 1778685393978,
       "type": "file"
     },
     {
-      "path": "crates/Luna-config/src/themes.rs",
+      "path": "crates/SYNAPSE_-config/src/themes.rs",
       "accessCount": 1,
       "lastAccessed": 1778737014040,
       "type": "file"
     },
     {
-      "path": "crates/Luna-renderer/src/shaders/ui.wgsl",
+      "path": "crates/SYNAPSE_-renderer/src/shaders/ui.wgsl",
       "accessCount": 1,
       "lastAccessed": 1778740550032,
       "type": "file"
     },
     {
-      "path": "crates/Luna-app/src/main.rs",
+      "path": "crates/SYNAPSE_-app/src/main.rs",
       "accessCount": 1,
       "lastAccessed": 1778770231292,
       "type": "file"
     },
     {
-      "path": "crates/Luna-config/src/keybinds.rs",
+      "path": "crates/SYNAPSE_-config/src/keybinds.rs",
       "accessCount": 1,
       "lastAccessed": 1778823946125,
       "type": "file"

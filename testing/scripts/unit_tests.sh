@@ -41,10 +41,10 @@ TOTAL_FAILED=0
 # ─── Run tests per crate ─────────────────────────────────────────────────────
 
 CRATES=(
-    "Luna-terminal"
-    "Luna-renderer"
-    "Luna-ui"
-    "Luna-config"
+    "SYNAPSE_-renderer"
+    "SYNAPSE_-ui"
+    "SYNAPSE_-config"
+    "SYNAPSE_-suggest"
 )
 
 for crate in "${CRATES[@]}"; do

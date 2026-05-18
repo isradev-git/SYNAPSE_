@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# build-linux.sh — Build and package Luna for Linux
+# build-linux.sh — Build and package SYNAPSE_ for Linux
 #
 # Produces:
-#   - luna binary in target/release/
+#   - synapse_ binary in target/release/
 #   - .deb package (Debian/Ubuntu)
 #   - .rpm package (Fedora/RHEL)
 #   - AppImage (universal)
@@ -43,18 +43,18 @@ done
 
 cd "$PROJECT_DIR"
 
-APP_NAME="luna"
-VERSION="0.1.0"
-MAINTAINER="Luna Team"
+APP_NAME="synapse_"
+VERSION="0.2.0"
+MAINTAINER="SYNAPSE_ Team"
 DESCRIPTION="A modern GPU-accelerated terminal emulator"
-HOMEPAGE="https://github.com/isradev-git/luna"
+HOMEPAGE="https://github.com/isradev-git/synapse_"
 
 # Build
 echo "[1/4] Building $APP_NAME ($PROFILE)..."
 if [ "$PROFILE" = "release" ]; then
-    cargo build --release -p Luna-app
+    cargo build --release -p SYNAPSE_-app
 else
-    cargo build -p Luna-app
+    cargo build -p SYNAPSE_-app
 fi
 
 BIN_DIR="target/$PROFILE"
@@ -85,7 +85,7 @@ if [ "$BUILD_DEB" = true ] || [ "$BUILD_ALL" = true ]; then
     cat > "$DEB_DIR/usr/share/applications/$APP_NAME.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=Luna
+Name=SYNAPSE_
 Comment=$DESCRIPTION
 Exec=$APP_NAME
 Terminal=false
@@ -103,7 +103,7 @@ Architecture: amd64
 Maintainer: $MAINTAINER
 Depends: libx11-6, libxkbcommon0, libwayland-client0
 Description: $DESCRIPTION
- Luna is a modern GPU-accelerated terminal emulator
+ SYNAPSE_ is a modern GPU-accelerated terminal emulator
  written in Rust with wgpu rendering, split panes,
  tabs, and full VT100/xterm support.
 CONTROL
@@ -126,7 +126,7 @@ if [ "$BUILD_RPM" = true ] || [ "$BUILD_ALL" = true ]; then
        "$RPM_ROOT/usr/share/applications/$APP_NAME.desktop" 2>/dev/null || true
 
     # Create spec file
-    cat > "$BIN_DIR/luna.spec" <<SPEC
+    cat > "$BIN_DIR/synapse_.spec" <<SPEC
 Name:        $APP_NAME
 Version:     $VERSION
 Release:     1%{?dist}
@@ -135,7 +135,7 @@ License:     MIT
 URL:         $HOMEPAGE
 
 %description
-Luna is a modern GPU-accelerated terminal emulator written in Rust
+SYNAPSE_ is a modern GPU-accelerated terminal emulator written in Rust
 with wgpu rendering, split panes, tabs, and full VT100/xterm support.
 
 %files
@@ -144,7 +144,7 @@ with wgpu rendering, split panes, tabs, and full VT100/xterm support.
 SPEC
 
     if command -v rpmbuild &> /dev/null; then
-        rpmbuild -bb --buildroot="$RPM_ROOT" "$BIN_DIR/luna.spec" \
+        rpmbuild -bb --buildroot="$RPM_ROOT" "$BIN_DIR/synapse_.spec" \
             --define "_rpmdir $BIN_DIR" 2>&1 | tail -5
         echo "  .rpm in $BIN_DIR/"
     else
@@ -176,7 +176,7 @@ APPRUN
     cat > "$APPDIR/$APP_NAME.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=Luna
+Name=SYNAPSE_
 Comment=$DESCRIPTION
 Exec=$APP_NAME
 Terminal=false

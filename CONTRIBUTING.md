@@ -1,4 +1,4 @@
-# Contributing to Luna
+# Contributing to SYNAPSE_
 
 ## Plataformas soportadas
 
@@ -9,8 +9,8 @@
 
 ```sh
 # Clonar
-git clone https://github.com/Luna/Luna.git
-cd Luna
+git clone https://github.com/isradev-git/synapse_.git
+cd synapse_
 
 # Instalar dependencias del sistema
 # Ubuntu/Debian:
@@ -21,10 +21,10 @@ sudo dnf install libX11-devel libxkbcommon-devel wayland-devel
 xcode-select --install
 
 # Build
-cargo build -p Luna-app
+cargo build -p SYNAPSE_-app
 
 # Ejecutar
-cargo run -p Luna-app
+cargo run -p SYNAPSE_-app
 
 # Tests
 cargo test --workspace
@@ -37,23 +37,23 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Estructura del proyecto
 
 ```
-Luna/
+SYNAPSE_/
 ├── crates/
-│   ├── Luna-app/         # Binario principal, event loop
-│   ├── Luna-terminal/    # PTY, VT parser, grid, scrollback
-│   ├── Luna-renderer/    # wgpu pipeline, atlas, text, cells, UI
-│   ├── Luna-ui/          # Tab bar, splitter, layout, theme
-│   └── Luna-config/      # Config TOML, keybinds
-└── assets/fonts/         # JetBrains Mono
+│   ├── SYNAPSE_-app/         # Binario principal, event loop
+│   ├── SYNAPSE_-renderer/    # wgpu pipeline, atlas, text, cells, UI
+│   ├── SYNAPSE_-ui/          # Tab bar, splitter, layout, theme
+│   ├── SYNAPSE_-config/      # Config TOML, keybinds
+│   └── SYNAPSE_-suggest/     # Autosuggestions, shell history
+└── assets/fonts/             # JetBrains Mono
 ```
 
 ## Convenciones de código
 
 - Rust edition 2021, stable
 - `cargo fmt` en cada commit
-- Nombres de crate: `Luna-app` (Cargo.toml), `Luna_app` (en imports Rust)
+- Nombres de crate: `SYNAPSE_-app` (Cargo.toml), `synapse_app` (en imports Rust)
 - Tests unitarios en módulo `#[cfg(test)] mod tests` al final de cada archivo
-- Documentación de fases en `documentacion/desarrollo/`
+- Documentación de fases en `docs/desarrollo/`
 - Sin dependencias externas innecesarias (sin HTTP, sin DB)
 
 ## Flujo de trabajo
@@ -70,4 +70,4 @@ Abrir un issue en GitHub con:
 - OS y versión
 - Pasos para reproducir
 - Output esperado vs observado
-- Logs: `RUST_LOG=debug luna 2> luna.log`
+- Logs: `RUST_LOG=debug synapse_ 2> synapse_.log`

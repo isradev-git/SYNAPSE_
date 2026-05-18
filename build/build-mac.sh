@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# build-mac.sh — Build and package Luna for macOS
+# build-mac.sh — Build and package SYNAPSE_ for macOS
 #
 # Produces:
-#   - Luna.app bundle in target/release/
-#   - Luna.dmg disk image
+#   - SYNAPSE_.app bundle in target/release/
+#   - SYNAPSE_.dmg disk image
 #
 # Requirements:
 #   - Apple Developer tools (Xcode or Command Line Tools)
@@ -32,20 +32,20 @@ done
 
 cd "$PROJECT_DIR"
 
-APP_NAME="Luna"
-BUNDLE_ID="com.luna.app"
-VERSION="0.1.0"
+APP_NAME="SYNAPSE_"
+BUNDLE_ID="com.synapse_.app"
+VERSION="0.2.0"
 
 # Build universal binary (x86_64 + arm64)
 echo "[1/4] Building $APP_NAME ($PROFILE)..."
 if [ "$PROFILE" = "release" ]; then
-    cargo build --release -p Luna-app
+    cargo build --release -p SYNAPSE_-app
 else
-    cargo build -p Luna-app
+    cargo build -p SYNAPSE_-app
 fi
 
 BIN_DIR="target/$PROFILE"
-BINARY="$BIN_DIR/luna"
+BINARY="$BIN_DIR/synapse_"
 
 if [ ! -f "$BINARY" ]; then
     echo "Error: binary not found at $BINARY"

@@ -267,7 +267,7 @@ scrollback_lines = 50000
     fn test_config_path_exists() {
         let path = Config::config_path();
         if let Some(p) = path {
-            // Path should point to the Luna config directory
+            // Path should point to the SYNAPSE_ config directory
             let dir = p.parent().unwrap();
             assert!(dir.ends_with("SYNAPSE_"));
         }

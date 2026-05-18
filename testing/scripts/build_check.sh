@@ -33,7 +33,7 @@ fi
 
 # ─── Check each crate individually ───────────────────────────────────────────
 
-for crate in Luna-app Luna-terminal Luna-renderer Luna-ui Luna-config; do
+for crate in SYNAPSE_-app SYNAPSE_-renderer SYNAPSE_-ui SYNAPSE_-config SYNAPSE_-suggest; do
     echo "  Building $crate..."
 
     if cargo build -p "$crate" --color always 2>&1; then

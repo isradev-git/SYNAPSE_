@@ -27,60 +27,38 @@ EXIT_CODE=0
     echo ""
 } > "$INTEG_LOG"
 
-# ─── Scenario 1: PTY round-trip ──────────────────────────────────────────────
+# ─── Scenario 1: PTY creation ────────────────────────────────────────────────
 
-echo "  Scenario 1: PTY round-trip (spawn + write + read)..."
+echo "  Scenario 1: PTY creation (spawn + write + read)..."
 
-if cargo test -p Luna-terminal -- test_pty 2>&1 | tee -a "$INTEG_LOG"; then
-    echo "    ${GREEN}✓ PTY round-trip${NC}"
+if cargo test -p SYNAPSE_-app 2>&1 | tee -a "$INTEG_LOG"; then
+    echo "    ${GREEN}✓ PTY creation${NC}"
 else
-    echo "    ${RED}✗ PTY round-trip FAILED${NC}"
+    echo "    ${RED}✗ PTY creation FAILED${NC}"
     EXIT_CODE=1
 fi
 
-# ─── Scenario 2: Full VT sequence pipeline ──────────────────────────────────
+# ─── Scenario 2: VT sequence pipeline ────────────────────────────────────────
 
-echo "  Scenario 2: VT sequence pipeline (parse + grid + buffer)..."
-
-VT_PIPELINE_TEST=$(cat <<'RUSTEOF'
-#[test]
-fn test_vt_pipeline_full() {
-    let mut grid = luna_terminal::grid::Grid::new(80, 24);
-    let mut processor = luna_terminal::parser::VteProcessor::new();
-    // Write multiline colored text with cursor movements
-    let input = b"\x1b[2J\x1b[H\x1b[1;32mHello\x1b[0m\nWorld!\x1b[38;2;255;128;0m RGB \x1b[0m";
-    for &byte in input {
-        processor.advance(byte);
-    }
-    // Verify grid state
-    assert_eq!(grid.cols(), 80);
-    assert_eq!(grid.rows(), 24);
-}
-RUSTEOF
-)
-
-echo "    ${CYAN}  (VT pipeline tested via existing parser tests)${NC}"
+echo "  Scenario 2: VT sequence pipeline (alacritty_terminal)..."
+echo "    ${CYAN}  (VT pipeline handled by alacritty_terminal 0.24)${NC}"
 
 # ─── Scenario 3: Config round-trip ───────────────────────────────────────────
 
 echo "  Scenario 3: Config round-trip (load + modify + save)..."
 
-CONFIG_TEST=$(mktemp -d)
-
-if cargo test -p Luna-config 2>&1 | tee -a "$INTEG_LOG"; then
+if cargo test -p SYNAPSE_-config 2>&1 | tee -a "$INTEG_LOG"; then
     echo "    ${GREEN}✓ Config round-trip${NC}"
 else
     echo "    ${RED}✗ Config round-trip FAILED${NC}"
     EXIT_CODE=1
 fi
 
-rm -rf "$CONFIG_TEST"
-
 # ─── Scenario 4: Keybind lookup ──────────────────────────────────────────────
 
 echo "  Scenario 4: Keybind lookup (defaults + overrides)..."
 
-if cargo test -p Luna-config 2>&1 | tee -a "$INTEG_LOG"; then
+if cargo test -p SYNAPSE_-config 2>&1 | tee -a "$INTEG_LOG"; then
     echo "    ${GREEN}✓ Keybind lookup${NC}"
 else
     echo "    ${RED}✗ Keybind lookup FAILED${NC}"
@@ -91,21 +69,20 @@ fi
 
 echo "  Scenario 5: PaneTree operations (split + layout + close)..."
 
-if cargo test -p Luna-ui 2>&1 | tee -a "$INTEG_LOG"; then
+if cargo test -p SYNAPSE_-ui 2>&1 | tee -a "$INTEG_LOG"; then
     echo "    ${GREEN}✓ PaneTree operations${NC}"
 else
     echo "    ${RED}✗ PaneTree operations FAILED${NC}"
     EXIT_CODE=1
 fi
 
-# ─── Scenario 6: Grid scrollback overflow ────────────────────────────────────
+# ─── Scenario 6: Autosuggestions ─────────────────────────────────────────────
 
-echo "  Scenario 6: Grid scrollback overflow (100K+ lines)..."
-
-if cargo test -p Luna-terminal -- test_large_buffer 2>&1 | tee -a "$INTEG_LOG"; then
-    echo "    ${GREEN}✓ Scrollback overflow${NC}"
+echo "  Scenario 6: Autosuggestions (trie + history)..."
+if cargo test -p SYNAPSE_-suggest 2>&1 | tee -a "$INTEG_LOG"; then
+    echo "    ${GREEN}✓ Autosuggestions${NC}"
 else
-    echo "    ${RED}✗ Scrollback overflow FAILED${NC}"
+    echo "    ${RED}✗ Autosuggestions FAILED${NC}"
     EXIT_CODE=1
 fi
 
@@ -113,7 +90,6 @@ fi
 
 echo "  Scenario 7: Cross-crate dependency tree..."
 
-# Build the dependency graph and verify no circular deps
 if cargo tree --workspace --depth 2 2>&1 | tee -a "$INTEG_LOG"; then
     echo "    ${GREEN}✓ Dependency tree OK${NC}"
 else

@@ -46,7 +46,6 @@ echo "  Running coverage with ${USE_TOOL}..."
 if [ "$USE_TOOL" = "llvm-cov" ]; then
     echo "  Using cargo-llvm-cov (source-based coverage)..."
 
-    # Run tests with coverage
     if cargo llvm-cov --workspace --lcov --output-path "$REPORTS_DIR/coverage.lcov" 2>&1 | tee "$COV_LOG"; then
         echo "  ${GREEN}✓ Coverage data generated${NC}"
     else
@@ -54,7 +53,6 @@ if [ "$USE_TOOL" = "llvm-cov" ]; then
         exit 1
     fi
 
-    # Extract summary
     if cargo llvm-cov --workspace --summary 2>&1; then
         cargo llvm-cov --workspace --summary 2>&1 | tee "$COV_REPORT"
     fi
@@ -62,14 +60,12 @@ if [ "$USE_TOOL" = "llvm-cov" ]; then
 elif [ "$USE_TOOL" = "tarpaulin" ]; then
     echo "  Using cargo-tarpaulin..."
 
-    # Run tarpaulin
     if cargo tarpaulin --workspace --out Html --output-dir "$REPORTS_DIR/coverage" \
         --out Json --output-dir "$REPORTS_DIR" \
         2>&1 | tee "$COV_LOG"; then
         echo "  ${GREEN}✓ Coverage generated${NC}"
         echo "  HTML report: $REPORTS_DIR/coverage/tarpaulin-report.html"
 
-        # Extract summary
         if grep -q 'Coverage' "$COV_LOG" 2>/dev/null; then
             grep 'Coverage' "$COV_LOG" > "$COV_REPORT"
         fi
@@ -85,15 +81,14 @@ echo ""
 echo "  ${BOLD}Coverage by crate:${NC}"
 echo ""
 
-# Count test functions per crate
 declare -A CRATE_TESTS
-CRATE_TESTS["Luna-terminal"]=57
-CRATE_TESTS["Luna-renderer"]=2
-CRATE_TESTS["Luna-ui"]=6
-CRATE_TESTS["Luna-config"]=0
-CRATE_TESTS["Luna-app"]=0
+CRATE_TESTS["SYNAPSE_-app"]=13
+CRATE_TESTS["SYNAPSE_-renderer"]=8
+CRATE_TESTS["SYNAPSE_-ui"]=7
+CRATE_TESTS["SYNAPSE_-config"]=26
+CRATE_TESTS["SYNAPSE_-suggest"]=49
 
-for crate in Luna-terminal Luna-renderer Luna-ui Luna-config Luna-app; do
+for crate in SYNAPSE_-app SYNAPSE_-renderer SYNAPSE_-ui SYNAPSE_-config SYNAPSE_-suggest; do
     count="${CRATE_TESTS[$crate]}"
     printf "  %-25s  %d tests" "$crate" "$count"
     if [ "$count" -eq 0 ]; then
@@ -108,7 +103,7 @@ done
 {
     echo ""
     echo "Coverage by crate (test count):"
-    for crate in Luna-terminal Luna-renderer Luna-ui Luna-config Luna-app; do
+    for crate in SYNAPSE_-app SYNAPSE_-renderer SYNAPSE_-ui SYNAPSE_-config SYNAPSE_-suggest; do
         echo "  $crate: ${CRATE_TESTS[$crate]} tests"
     done
 } >> "$COV_REPORT"
