@@ -325,6 +325,8 @@ pub fn handle_tab_click(
     cell_w: f32,
     cell_h: f32,
     scrollback_lines: usize,
+    shell: &str,
+    shell_args: &[String],
 ) {
     let tab_count = tab_bar.tabs.len();
     let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, *scroll_offset);
@@ -346,7 +348,7 @@ pub fn handle_tab_click(
         let new_cols = ((pane_area.2 as f64 - margin * 2.0) / cell_w as f64).max(1.0) as usize;
         let new_rows = ((pane_area.3 as f64 - margin * 2.0) / cell_h as f64).max(1.0) as usize;
         let (_, pane_id) = tab_bar.new_tab();
-        match create_pane(pane_id, new_cols, new_rows, scrollback_lines) {
+        match create_pane_full(pane_id, new_cols, new_rows, None, Some(shell), shell_args, scrollback_lines) {
             Ok(pane) => panes.push(pane),
             Err(e) => {
                 tracing::warn!("Failed to spawn PTY for new tab: {}", e);
@@ -430,10 +432,18 @@ impl AppCore {
             w: pane_area.2,
             h: pane_area.3,
         };
-        let layouts = self.tab_bar.active_tab().pane_tree.get_layout(pane_rect);
         let (margin, cell_w, cell_h) = (self.margin, self.cell_w, self.cell_h);
+        let scrollback_lines = self.state.config.scrollback_lines;
 
-        for (pane_id, rect) in &layouts {
+        // Resize panes across ALL tabs — background tabs keep correct PTY dimensions.
+        let all_layouts: Vec<(synapse_ui::PaneId, synapse_ui::PaneRect)> = self
+            .tab_bar
+            .tabs
+            .iter()
+            .flat_map(|tab| tab.pane_tree.get_layout(pane_rect))
+            .collect();
+
+        for (pane_id, rect) in &all_layouts {
             let new_cols = ((rect.w - margin * 2.0) / cell_w).max(1.0) as usize;
             let new_rows = ((rect.h - margin * 2.0) / cell_h).max(1.0) as usize;
             if let Some(pane) = self.panes.iter_mut().find(|p| p.id == *pane_id) {
@@ -443,7 +453,7 @@ impl AppCore {
                     term.resize(TermSize {
                         cols: new_cols,
                         rows: new_rows,
-                        scrollback_lines: self.state.config.scrollback_lines,
+                        scrollback_lines,
                     });
                 }
                 if let Ok(master) = pane.pty_master.lock() {

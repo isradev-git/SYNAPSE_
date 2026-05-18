@@ -292,8 +292,16 @@ impl TextShaping {
         let scale = font_size / units_per_em;
 
         let mut buffer = rustybuzz::UnicodeBuffer::new();
+        buffer.set_direction(rustybuzz::Direction::LeftToRight);
         buffer.push_str(text);
-        let output = rustybuzz::shape(face, &[], buffer);
+
+        // Explicitly enable contextual alternates (calt) and standard ligatures (liga).
+        // rustybuzz needs these named for JetBrains Mono arrow sequences like -> and =>.
+        let features: Vec<rustybuzz::Feature> = ["calt", "liga", "clig"]
+            .iter()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        let output = rustybuzz::shape(face, &features, buffer);
 
         let info = output.glyph_infos();
         let positions = output.glyph_positions();
@@ -372,12 +380,23 @@ mod tests {
     #[test]
     fn shape_run_arrow_ligature() {
         let shaping = TextShaping::new();
-        // JetBrains Mono has `->` and `=>` ligatures.
-        let glyphs = shaping.shape_run("->", 14.0, false, false);
-        // Shaped output should have at least 1 glyph (may be 1 ligature or 2 separate).
-        assert!(!glyphs.is_empty(), "shaped run must produce glyphs");
-        // Total x_advance should be approximately 2 * cell_w.
-        let total_adv: f32 = glyphs.iter().map(|g| g.x_advance).sum();
+        let combined = shaping.shape_run("->", 14.0, false, false);
+        let dash = shaping.shape_run("-", 14.0, false, false);
+        let gt = shaping.shape_run(">", 14.0, false, false);
+        println!(
+            "'->' shaped to {} glyph(s): {:?}",
+            combined.len(),
+            combined.iter().map(|g| g.glyph_id).collect::<Vec<_>>()
+        );
+        assert!(!combined.is_empty(), "shaped run must produce glyphs");
+        // JetBrains Mono uses calt (same count, alternate IDs) or liga (count drops).
+        let liga_fired = combined.len() == 1;
+        let calt_fired = combined.len() == 2
+            && dash.first().zip(combined.first()).map(|(d, c)| d.glyph_id != c.glyph_id).unwrap_or(false)
+            || combined.len() == 2
+            && gt.first().zip(combined.get(1)).map(|(g, c)| g.glyph_id != c.glyph_id).unwrap_or(false);
+        assert!(liga_fired || calt_fired, "'->' ligature should fire via liga or calt");
+        let total_adv: f32 = combined.iter().map(|g| g.x_advance).sum();
         let (cell_w, _) = shaping.cell_metrics(14.0);
         assert!(
             (total_adv - cell_w * 2.0).abs() < cell_w * 0.5,

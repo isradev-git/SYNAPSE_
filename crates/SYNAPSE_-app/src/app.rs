@@ -45,6 +45,8 @@ pub struct AppCore {
     pub cached_blink: bool,
     pub cached_font_size: f32,
     pub cached_active_tab: usize,
+    pub cached_cursor_rects_start: usize,
+    pub cached_cursor_pixel: Option<(f32, f32)>,
     pub frame_count: u64,
     pub fps_last_print: std::time::Instant,
     pub scale_factor: f32,
@@ -211,6 +213,8 @@ impl AppCore {
             cached_blink: true,
             cached_font_size: effective_initial_font_size,
             cached_active_tab: 0,
+            cached_cursor_rects_start: 0,
+            cached_cursor_pixel: None,
             frame_count: 0,
             fps_last_print: std::time::Instant::now(),
             scale_factor: scale,
@@ -231,10 +235,18 @@ impl AppCore {
             w: pane_area.2,
             h: pane_area.3,
         };
-        let layouts = self.tab_bar.active_tab().pane_tree.get_layout(pane_rect);
         let (margin, cell_w, cell_h) = (self.margin, self.cell_w, self.cell_h);
+        let scrollback_lines = self.state.config.scrollback_lines;
 
-        for (pane_id, rect) in &layouts {
+        // Resize panes across ALL tabs — background tabs keep correct PTY dimensions.
+        let all_layouts: Vec<(PaneId, synapse_ui::PaneRect)> = self
+            .tab_bar
+            .tabs
+            .iter()
+            .flat_map(|tab| tab.pane_tree.get_layout(pane_rect))
+            .collect();
+
+        for (pane_id, rect) in &all_layouts {
             let new_cols = ((rect.w - margin * 2.0) / cell_w).max(1.0) as usize;
             let new_rows = ((rect.h - margin * 2.0) / cell_h).max(1.0) as usize;
             if let Some(pane) = self.panes.iter_mut().find(|p| p.id == *pane_id) {
@@ -245,7 +257,7 @@ impl AppCore {
                         term.resize(TermSize {
                             cols: new_cols,
                             rows: new_rows,
-                            scrollback_lines: self.state.config.scrollback_lines,
+                            scrollback_lines,
                         });
                     }
                     if let Ok(master) = pane.pty_master.lock() {

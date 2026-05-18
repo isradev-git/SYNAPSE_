@@ -41,6 +41,7 @@ pub struct UIRenderer {
     screen_buffer: Buffer,
     instance_buffer: Buffer,
     device: Arc<Device>,
+    last_count: u32,
 }
 
 impl UIRenderer {
@@ -138,6 +139,7 @@ impl UIRenderer {
             screen_bind_group,
             screen_buffer,
             instance_buffer,
+            last_count: 0,
             device: device.clone(),
         }
     }
@@ -156,14 +158,9 @@ impl UIRenderer {
         queue.write_buffer(&self.screen_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
-    pub fn draw<'a>(
-        &'a mut self,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        instances: &'a [UIRect],
-        queue: &Queue,
-    ) {
+    /// Upload new rect data to the GPU buffer. Call only when UI changed.
+    pub fn upload(&mut self, instances: &[UIRect], queue: &Queue) {
         let needed = std::mem::size_of_val(instances) as u64;
-
         if needed > self.instance_buffer.size() {
             let new_size = (needed * 2).next_power_of_two().max(256);
             self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -173,12 +170,20 @@ impl UIRenderer {
                 mapped_at_creation: false,
             });
         }
+        if !instances.is_empty() {
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+        }
+        self.last_count = instances.len() as u32;
+    }
 
-        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
-
+    /// Draw cached rects already on the GPU — no upload.
+    pub fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
+        if self.last_count == 0 {
+            return;
+        }
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.screen_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-        render_pass.draw(0..4, 0..instances.len() as u32);
+        render_pass.draw(0..4, 0..self.last_count);
     }
 }

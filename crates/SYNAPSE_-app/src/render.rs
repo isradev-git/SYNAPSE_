@@ -311,6 +311,35 @@ pub fn build_tab_bar_text(
 }
 
 #[allow(clippy::too_many_arguments, clippy::ptr_arg, clippy::type_complexity)]
+fn push_cursor_rect(
+    ui_rects: &mut Vec<UIRect>,
+    cursor_pixel: Option<(f32, f32)>,
+    cursor_blink_on: bool,
+    cell_w: f32,
+    cell_h: f32,
+    state: &AppState,
+) {
+    if !cursor_blink_on {
+        return;
+    }
+    let (cx, cy) = match cursor_pixel {
+        Some(p) => p,
+        None => return,
+    };
+    let color = state.theme.cursor;
+    match state.config.cursor_style {
+        synapse_config::CursorStyle::Block => {
+            ui_rects.push(UIRect { pos: [cx, cy], size: [cell_w, cell_h], color });
+        }
+        synapse_config::CursorStyle::Beam => {
+            ui_rects.push(UIRect { pos: [cx, cy], size: [1.5, cell_h], color });
+        }
+        synapse_config::CursorStyle::Underline => {
+            ui_rects.push(UIRect { pos: [cx, cy + cell_h - 2.0], size: [cell_w, 2.0], color });
+        }
+    }
+}
+
 pub fn render_frame(
     renderer: &mut Renderer,
     layout: &Layout,
@@ -326,6 +355,8 @@ pub fn render_frame(
     cached_blink: &mut bool,
     cached_font_size: &mut f32,
     cached_active_tab: &mut usize,
+    cached_cursor_rects_start: &mut usize,
+    cached_cursor_pixel: &mut Option<(f32, f32)>,
     effective_font_size: f32,
     scale_factor: f32,
 ) -> Vec<PaneId> {
@@ -364,17 +395,18 @@ pub fn render_frame(
     let ui_active = state.selecting || state.search.active || state.history_search.active || state.suggest.ghost.is_some();
     let first_frame = cached_cell_data.is_empty();
 
-    let needs_rebuild = pty_received
-        || font_changed
-        || blink_changed
-        || tab_changed
-        || ui_active
-        || first_frame;
+    // Cell data only changes on real terminal events — not on cursor blink.
+    let needs_cell_rebuild = pty_received || font_changed || tab_changed || first_frame || ui_active;
+    // UI rects (cursor shape) also change on blink.
+    let needs_ui_rebuild = needs_cell_rebuild || blink_changed;
 
-    if needs_rebuild {
+    if needs_cell_rebuild {
         cached_cell_data.clear();
         cached_ui_rects.clear();
         cached_bg_rects.clear();
+
+        // Cursor pixel position computed during pane iteration, used at end of rebuild.
+        let mut cursor_pixel_for_frame: Option<(f32, f32)> = None;
 
         let active_pane_id = tab_bar.active_tab().active_pane;
         let pane_tree = &tab_bar.active_tab().pane_tree;
@@ -461,9 +493,6 @@ pub fn render_frame(
                 let fg = term_color_to_rgba(fg_c, state.theme.fg, &state.theme.ansi_colors);
                 let bg = term_color_to_rgba(bg_c, state.theme.bg, &state.theme.ansi_colors);
 
-                let is_cursor =
-                    is_active && col == cursor_col && raw_row == cursor_row && cursor_blink_on;
-
                 let in_selection = is_active
                     && sel_range.as_ref().map(|r| {
                         r.contains(alacritty_terminal::index::Point::new(
@@ -474,9 +503,8 @@ pub fn render_frame(
 
                 let in_match = is_active && match_set.contains(&(col, raw_row));
 
-                let (final_fg, final_bg) = if is_cursor {
-                    ([0.067, 0.075, 0.102, 1.0], state.theme.cursor)
-                } else if in_selection {
+                // Block cursor is now a UIRect overlay — cell uses its natural colors.
+                let (final_fg, final_bg) = if in_selection {
                     (fg, [0.259, 0.522, 0.957, 0.5])
                 } else if in_match {
                     ([0.067, 0.075, 0.102, 1.0], [0.98, 0.78, 0.15, 1.0])
@@ -485,7 +513,7 @@ pub fn render_frame(
                 };
 
                 let bg_is_default =
-                    !is_cursor && !in_selection && !in_match && matches!(bg_c, TermColor::Named(_));
+                    !in_selection && !in_match && matches!(bg_c, TermColor::Named(_));
 
                 if !bg_is_default {
                     cached_bg_rects.push(UIRect {
@@ -500,36 +528,17 @@ pub fn render_frame(
                 }
             }
 
-            // Cursor styles (beam / underline). The block style is drawn inline above.
+            // Track cursor pixel position for unified rendering after all panes.
+            // All cursor styles (block/beam/underline) are now UIRect overlays.
             let cursor_viewport_row = cursor_row + display_offset as i32;
             if is_active
-                && cursor_blink_on
                 && cursor_viewport_row >= 0
                 && (cursor_viewport_row as usize) < pane_rows
                 && cursor_col < pane_cols
             {
                 let cx = content_x + cursor_col as f32 * cell_w;
                 let cy = content_y + cursor_viewport_row as f32 * cell_h;
-                let cursor_color = state.theme.cursor;
-                match state.config.cursor_style {
-                    synapse_config::CursorStyle::Block => {
-                        // Block cursor is rendered via the per-cell pass above.
-                    }
-                    synapse_config::CursorStyle::Beam => {
-                        cached_ui_rects.push(UIRect {
-                            pos: [cx, cy],
-                            size: [1.5, cell_h],
-                            color: cursor_color,
-                        });
-                    }
-                    synapse_config::CursorStyle::Underline => {
-                        cached_ui_rects.push(UIRect {
-                            pos: [cx, cy + cell_h - 2.0],
-                            size: [cell_w, 2.0],
-                            color: cursor_color,
-                        });
-                    }
-                }
+                cursor_pixel_for_frame = Some((cx, cy));
             }
 
             // Ghost text overlay — fish-shell style suggestion after cursor.
@@ -769,12 +778,31 @@ pub fn render_frame(
             cached_cell_data.push(tab_cell);
         }
 
+        // Cursor rects go last so blink-only updates can truncate+re-push without
+        // touching the stable rects (borders, dividers, search bars, tab bar).
+        *cached_cursor_pixel = cursor_pixel_for_frame;
+        *cached_cursor_rects_start = cached_ui_rects.len();
+        push_cursor_rect(cached_ui_rects, cursor_pixel_for_frame, cursor_blink_on, cell_w, cell_h, state);
+
         *cached_font_size = font_size;
         *cached_blink = cursor_blink_on;
         *cached_active_tab = tab_bar.active;
+    } else if blink_changed {
+        // Blink-only: truncate cursor rects and re-push with new blink state.
+        // Cell instances and bg rects are untouched — skips atlas lookups + GPU upload.
+        cached_ui_rects.truncate(*cached_cursor_rects_start);
+        push_cursor_rect(cached_ui_rects, *cached_cursor_pixel, cursor_blink_on, cell_w, cell_h, state);
+        *cached_blink = cursor_blink_on;
     }
 
-    renderer.draw_frame_with_options(cached_cell_data, cached_ui_rects, cached_bg_rects, state.config.font_ligatures);
+    renderer.draw_frame_with_options(
+        cached_cell_data,
+        cached_ui_rects,
+        cached_bg_rects,
+        state.config.font_ligatures,
+        needs_cell_rebuild,
+        needs_ui_rebuild,
+    );
 
     exited_panes
 }
@@ -838,7 +866,7 @@ pub fn render_splash_screen(
     // ── Subtítulo ────────────────────────────────────────────────────────────
     let sub_fs: f32 = 11.0;
     let sub_char_w = sub_fs * 0.6;
-    let subtitle = "NEURAL INTERFACE // v0.1.0";
+    let subtitle = "NEURAL INTERFACE // v0.2.0";
     let sub_w = subtitle.chars().count() as f32 * sub_char_w;
     let sub_x = (w - sub_w) * 0.5;
     let sub_y = line_y + 10.0;
@@ -900,7 +928,7 @@ pub fn render_splash_screen(
         ));
     }
 
-    renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, false);
+    renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, false, true, true);
 }
 
 use crate::app::AppCore;
@@ -972,6 +1000,8 @@ impl AppCore {
             &mut self.cached_blink,
             &mut self.cached_font_size,
             &mut self.cached_active_tab,
+            &mut self.cached_cursor_rects_start,
+            &mut self.cached_cursor_pixel,
             effective_fs,
             self.scale_factor,
         );
@@ -980,6 +1010,8 @@ impl AppCore {
             self.handle_pane_exit(pane_id);
             self.cached_cell_data.clear();
             self.cached_ui_rects.clear();
+            self.cached_cursor_rects_start = 0;
+            self.cached_cursor_pixel = None;
         }
     }
 

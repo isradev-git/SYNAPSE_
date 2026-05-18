@@ -195,7 +195,7 @@ pub fn handle_mouse_button(
                 let click = state.click_count;
 
                 if y < layout.tab_bar_height as f64 {
-                    handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset, cell_w, cell_h, scrollback_lines);
+                    handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset, cell_w, cell_h, scrollback_lines, state.config.shell_program.as_str(), &state.config.shell_args);
                 } else if state.hover_divider && click == 1 {
                     let pane_area = layout.pane_area();
                     let pane_rect = PaneRect {

@@ -110,13 +110,22 @@ fn best_command(node: &TrieNode) -> Option<&str> {
         return node.full_cmd.as_deref();
     }
     // Follow the child whose subtree contains the best terminal.
-    if let Some(best_child) = node.children.values().find(|c| c.max_count == node.max_count) {
+    // Sort by char key for determinism when max_count is tied.
+    let mut candidates: Vec<(&char, &TrieNode)> = node
+        .children
+        .iter()
+        .filter(|(_, c)| c.max_count == node.max_count)
+        .collect();
+    candidates.sort_by_key(|(k, _)| *k);
+    if let Some((_, best_child)) = candidates.into_iter().next() {
         return best_command(best_child);
     }
-    // Fallback: return own terminal if present, otherwise scan children.
+    // Fallback: return own terminal if present, otherwise scan children sorted by key.
+    let mut fallback_children: Vec<(&char, &TrieNode)> = node.children.iter().collect();
+    fallback_children.sort_by_key(|(k, _)| *k);
     node.full_cmd
         .as_deref()
-        .or_else(|| node.children.values().find_map(best_command))
+        .or_else(|| fallback_children.into_iter().find_map(|(_, c)| best_command(c)))
 }
 
 #[cfg(test)]

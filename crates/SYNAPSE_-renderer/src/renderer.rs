@@ -21,6 +21,7 @@ pub struct Renderer {
     clear_color: wgpu::Color,
     cell_w: f32,
     cell_h: f32,
+    cached_instances: Vec<CellInstance>,
 }
 
 impl Renderer {
@@ -140,6 +141,7 @@ impl Renderer {
             text,
             cell_w: 0.0,
             cell_h: 0.0,
+            cached_instances: Vec::new(),
         })
     }
 
@@ -196,17 +198,26 @@ impl Renderer {
             x_offset += cell_w;
         }
 
-        self.render_instances(&instances, &[], &[]);
+        self.cell_renderer.upload(&instances, &self.queue);
+        self.ui_renderer_bg.upload(&[], &self.queue);
+        self.ui_renderer.upload(&[], &self.queue);
+        self.render_instances();
     }
 
     #[allow(clippy::type_complexity)]
     pub fn draw_cells(&mut self, cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])]) {
         let instances = self.build_simple_instances(cells);
-        self.render_instances(&instances, &[], &[]);
+        self.cell_renderer.upload(&instances, &self.queue);
+        self.ui_renderer_bg.upload(&[], &self.queue);
+        self.ui_renderer.upload(&[], &self.queue);
+        self.render_instances();
     }
 
     pub fn draw_ui_rects(&mut self, rects: &[UIRect]) {
-        self.render_instances(&[], &[], rects);
+        self.cell_renderer.upload(&[], &self.queue);
+        self.ui_renderer_bg.upload(&[], &self.queue);
+        self.ui_renderer.upload(rects, &self.queue);
+        self.render_instances();
     }
 
     fn gray_to_rgba(gray: &[u8]) -> Vec<u8> {
@@ -321,36 +332,35 @@ impl Renderer {
 
             if run_len >= 2 {
                 let shaped = self.text.shape_run(&run_text, fs0, false, false);
-                if shaped.len() < run_len {
-                    // Shaping merged characters → render as shaped glyphs.
-                    let mut x_cursor = x0;
-                    for sg in &shaped {
-                        if sg.glyph_id == 0 {
-                            x_cursor += cell_w;
-                            continue;
-                        }
-                        let key = crate::text::ShapedGlyphKey {
-                            glyph_id: sg.glyph_id,
-                            font_size_bits: fs0.to_bits(),
-                            bold: false,
-                            italic: false,
-                        };
-                        let bitmap =
-                            self.text.rasterize_glyph_id(sg.glyph_id, fs0, false, false);
-                        self.push_shaped_instance(
-                            &mut instances,
-                            &bitmap,
-                            key,
-                            x_cursor + sg.x_offset,
-                            y0,
-                            fs0,
-                            fg0,
-                        );
-                        x_cursor += sg.x_advance.max(cell_w);
+                // Always render via shaped glyph IDs — handles both:
+                //   liga: count drops (multiple chars → 1 merged glyph)
+                //   calt: count stays, IDs change (e.g. JetBrains Mono -> =>)
+                let mut x_cursor = x0;
+                for sg in &shaped {
+                    if sg.glyph_id == 0 {
+                        x_cursor += cell_w;
+                        continue;
                     }
-                    i = j;
-                    ligature_rendered = true;
+                    let key = crate::text::ShapedGlyphKey {
+                        glyph_id: sg.glyph_id,
+                        font_size_bits: fs0.to_bits(),
+                        bold: false,
+                        italic: false,
+                    };
+                    let bitmap = self.text.rasterize_glyph_id(sg.glyph_id, fs0, false, false);
+                    self.push_shaped_instance(
+                        &mut instances,
+                        &bitmap,
+                        key,
+                        x_cursor + sg.x_offset,
+                        y0,
+                        fs0,
+                        fg0,
+                    );
+                    x_cursor += sg.x_advance.max(cell_w);
                 }
+                i = j;
+                ligature_rendered = true;
             }
 
             if !ligature_rendered {
@@ -410,9 +420,14 @@ impl Renderer {
         ui_rects: &[UIRect],
         bg_rects: &[UIRect],
     ) {
-        self.draw_frame_with_options(cells, ui_rects, bg_rects, false);
+        self.draw_frame_with_options(cells, ui_rects, bg_rects, false, true, true);
     }
 
+    /// Draw a frame, conditionally skipping GPU uploads when data hasn't changed.
+    ///
+    /// `cells_dirty` — rebuild and upload cell instances (atlas lookups + vertex buffer write).
+    /// `ui_dirty`    — upload bg_rects and ui_rects to GPU.
+    /// When both are false the render pass re-uses the buffers from the previous frame.
     #[allow(clippy::type_complexity)]
     pub fn draw_frame_with_options(
         &mut self,
@@ -420,19 +435,28 @@ impl Renderer {
         ui_rects: &[UIRect],
         bg_rects: &[UIRect],
         ligatures: bool,
+        cells_dirty: bool,
+        ui_dirty: bool,
     ) {
-        self.atlas.begin_frame();
-
-        let instances = if ligatures {
-            self.build_ligature_instances(cells)
-        } else {
-            self.build_simple_instances(cells)
-        };
-
-        self.render_instances(&instances, bg_rects, ui_rects);
+        if cells_dirty {
+            self.atlas.begin_frame();
+            self.cached_instances = if ligatures {
+                self.build_ligature_instances(cells)
+            } else {
+                self.build_simple_instances(cells)
+            };
+            // Disjoint field borrows: cell_renderer ≠ cached_instances ≠ queue.
+            let inst = self.cached_instances.as_slice();
+            self.cell_renderer.upload(inst, &self.queue);
+        }
+        if ui_dirty {
+            self.ui_renderer_bg.upload(bg_rects, &self.queue);
+            self.ui_renderer.upload(ui_rects, &self.queue);
+        }
+        self.render_instances();
     }
 
-    fn render_instances(&mut self, cell_instances: &[CellInstance], bg_rects: &[UIRect], ui_rects: &[UIRect]) {
+    fn render_instances(&mut self) {
         self.cell_renderer
             .update_screen_size(&self.queue, self.size.width, self.size.height);
         self.ui_renderer_bg
@@ -479,24 +503,13 @@ impl Renderer {
             });
 
             // bg layer: selection, search highlights, colored cell backgrounds
-            if !bg_rects.is_empty() {
-                self.ui_renderer_bg
-                    .draw(&mut render_pass, bg_rects, &self.queue);
-            }
+            self.ui_renderer_bg.draw(&mut render_pass);
 
             // glyph layer (transparent bg so bitmaps that overflow cell bounds blend correctly)
-            self.cell_renderer.draw(
-                &mut render_pass,
-                &self.atlas.bind_group,
-                cell_instances,
-                &self.queue,
-            );
+            self.cell_renderer.draw(&mut render_pass, &self.atlas.bind_group);
 
             // overlay layer: cursor, tab bar, pane borders
-            if !ui_rects.is_empty() {
-                self.ui_renderer
-                    .draw(&mut render_pass, ui_rects, &self.queue);
-            }
+            self.ui_renderer.draw(&mut render_pass);
         }
 
         self.queue.submit(Some(encoder.finish()));

@@ -152,20 +152,35 @@ impl SuggestState {
                 self.ghost = None;
                 true
             }
+            // Ctrl+W: delete last word (shell word-erase)
+            [0x17] => {
+                let trimmed = self.prefix.trim_end_matches(' ');
+                let cut = trimmed.rfind(' ').map(|i| i + 1).unwrap_or(0);
+                self.prefix.truncate(cut);
+                self.ghost = None;
+                true
+            }
+            // Enter / Ctrl+C / Ctrl+U: clear state
             [0x0d] | [0x0a] | [0x03] | [0x15] => {
                 self.clear();
                 false
             }
+            // Any escape sequence (cursor keys, function keys, etc.) changes the
+            // command line in ways we can't track — reset prefix entirely.
             [0x1b, ..] => {
+                self.prefix.clear();
                 self.ghost = None;
                 false
             }
             bytes => {
-                if !bytes.is_empty() && bytes.iter().all(|&b| (0x20..=0x7e).contains(&b)) {
+                if !bytes.is_empty() {
                     if let Ok(s) = std::str::from_utf8(bytes) {
-                        self.prefix.push_str(s);
-                        self.ghost = None;
-                        return true;
+                        // Accept printable ASCII and valid multi-byte UTF-8.
+                        if s.chars().all(|c| !c.is_control()) {
+                            self.prefix.push_str(s);
+                            self.ghost = None;
+                            return true;
+                        }
                     }
                 }
                 self.ghost = None;

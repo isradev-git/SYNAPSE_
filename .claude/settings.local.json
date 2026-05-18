@@ -47,7 +47,13 @@
       "Bash(find ~/.cargo/registry/src/index.crates.io-*/alacritty_terminal-0.24.2/src -name \"*.rs\")",
       "Bash(~/.cargo/bin/cargo test *)",
       "Bash(grep -v '\\\\.d$')",
-      "Bash(grep -v '\\\\.rlib$')"
+      "Bash(grep -v '\\\\.rlib$')",
+      "Bash(~/.cargo/bin/cargo check *)",
+      "Bash(grep -v \"^$\\\\|Compiling\\\\|Finished\\\\|Running\\\\|Doc-tests\")",
+      "Bash(~/.cargo/bin/cargo metadata *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(p['name'], p['version']\\) for pkg in d['packages'] for p in pkg.get\\('dependencies',[]\\) if 'rustybuzz' in p['name']]\")",
+      "Bash(~/.cargo/bin/cargo doc *)",
+      "Bash(python3 -c \"import subprocess; r = subprocess.run\\(['grep', '-r', 'Feature', '/home/glitchbane-server/.cargo/registry/src/'], capture_output=True, text=True\\); print\\(r.stdout[:2000]\\)\")"
     ]
   }
 }
