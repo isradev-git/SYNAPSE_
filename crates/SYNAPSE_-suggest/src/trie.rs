@@ -89,6 +89,41 @@ impl Suggester {
         }
     }
 
+    /// Seed a builtin command at count=1 only if not already present in the trie.
+    /// This ensures user history always outranks static completions.
+    pub fn seed(&mut self, cmd: &str) {
+        if cmd.is_empty() {
+            return;
+        }
+        // Check if already present with any user-history count.
+        let exists = {
+            let mut node = &self.root;
+            let mut found = true;
+            for c in cmd.chars() {
+                if let Some(n) = node.children.get(&c) {
+                    node = n;
+                } else {
+                    found = false;
+                    break;
+                }
+            }
+            found && node.own_count > 0
+        };
+        if exists {
+            return;
+        }
+        let mut node = &mut self.root;
+        node.max_count = node.max_count.max(1);
+        for c in cmd.chars() {
+            node = node.children.entry(c).or_insert_with(TrieNode::new);
+            node.max_count = node.max_count.max(1);
+        }
+        node.own_count = 1;
+        if node.full_cmd.is_none() {
+            node.full_cmd = Some(cmd.to_string());
+        }
+    }
+
     pub fn query(&self, prefix: &str) -> Option<&str> {
         if prefix.is_empty() {
             return None;
@@ -196,6 +231,48 @@ mod tests {
         s.insert("git pull");
         s.insert("git pull");
         assert_eq!(s.query("git p"), Some("git pull"));
+    }
+
+    #[test]
+    fn seed_adds_builtin_when_absent() {
+        let mut s = Suggester::new(vec![]);
+        s.seed("git status");
+        assert_eq!(s.query("git"), Some("git status"));
+    }
+
+    #[test]
+    fn seed_does_not_override_history() {
+        let history = vec![
+            "git pull".to_string(),
+            "git pull".to_string(),
+            "git pull".to_string(),
+        ];
+        let mut s = Suggester::new(history);
+        s.seed("git status");
+        // history "git pull" has count=3, builtin "git status" has count=1 → pull wins
+        assert_eq!(s.query("git"), Some("git pull"));
+    }
+
+    #[test]
+    fn seed_skips_existing_command() {
+        let history = vec!["git status".to_string()];
+        let mut s = Suggester::new(history);
+        let count_before = {
+            let mut node = &s.root;
+            for c in "git status".chars() {
+                node = node.children.get(&c).unwrap();
+            }
+            node.own_count
+        };
+        s.seed("git status");
+        let count_after = {
+            let mut node = &s.root;
+            for c in "git status".chars() {
+                node = node.children.get(&c).unwrap();
+            }
+            node.own_count
+        };
+        assert_eq!(count_before, count_after, "seed must not increment existing count");
     }
 
     #[test]

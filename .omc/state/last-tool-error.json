@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"~/.cargo/bin/cargo test -p SYNAPSE_-renderer shape_run_arrow -- --nocapture 2>&1\",\"timeout\":120000,\"description\":\"Test ligature detection with correct Direction variant\"}",
-  "error": "Exit code 101\n   Compiling SYNAPSE_-renderer v0.2.0 (/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-renderer)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.16s\n     Running unittests src/lib.rs (target/debug/deps/synapse_renderer-0955172ee57595b2)\n\nrunning 1 test\n'->' shaped to 2 glyph(s): [1751, 841]\n\nthread 'text::tests::shape_run_arrow_ligature' (2194058) panicked at crates/SYNAPSE_-renderer/src/text.rs:388:9:\nassertion `left == right` failed: '->' should produc...",
-  "timestamp": "2026-05-18T06:24:29.527Z",
-  "retry_count": 2
+  "tool_input_preview": "{\"command\":\"cargo test -p SYNAPSE_-suggest 2>&1\",\"description\":\"Run suggest crate tests\",\"run_in_background\":false}",
+  "error": "Exit code 127\n/bin/bash: line 1: cargo: command not found",
+  "timestamp": "2026-05-19T06:46:58.996Z",
+  "retry_count": 1
 }
