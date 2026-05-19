@@ -28,6 +28,8 @@ pub struct Theme {
     pub search_text_dim: [f32; 4],
     // Ghost text (autosuggestion overlay)
     pub ghost_text: [f32; 4],
+    // Hyperlink / URL underline color
+    pub hyperlink: [f32; 4],
     // ANSI 16-color palette (indices 0-15)
     // 0=Black, 1=Red, 2=Green, 3=Yellow, 4=Blue, 5=Magenta, 6=Cyan, 7=White
     // 8=BrightBlack, 9=BrightRed, 10=BrightGreen, 11=BrightYellow,
@@ -76,6 +78,7 @@ impl Theme {
             search_text: hex("E8E8E8"),
             search_text_dim: hex("444444"),
             ghost_text: hex("405060"),
+            hyperlink: hex("4499FF"),
             // Cyberpunk ANSI palette: negro puro + rojos/neons
             ansi_colors: [
                 hex("0A0A0A"), // 0  Black
@@ -121,6 +124,7 @@ impl Theme {
             search_text: hex("f8f8f2"),
             search_text_dim: hex("6272a4"),
             ghost_text: hex("6272a4"),
+            hyperlink: hex("8be9fd"),
             ansi_colors: [
                 hex("21222c"), // 0  Black
                 hex("ff5555"), // 1  Red
@@ -165,6 +169,7 @@ impl Theme {
             search_text: hex("cdd6f4"),
             search_text_dim: hex("a6adc8"),
             ghost_text: hex("585b70"),
+            hyperlink: hex("89b4fa"),
             ansi_colors: [
                 hex("45475a"), // 0  Black (Surface1)
                 hex("f38ba8"), // 1  Red
@@ -209,6 +214,7 @@ impl Theme {
             search_text: hex("c0caf5"),
             search_text_dim: hex("565f89"),
             ghost_text: hex("414868"),
+            hyperlink: hex("7dcfff"),
             ansi_colors: [
                 hex("15161e"), // 0  Black
                 hex("f7768e"), // 1  Red
@@ -283,6 +289,7 @@ impl Theme {
         apply!(search_text);
         apply!(search_text_dim);
         apply!(ghost_text);
+        apply!(hyperlink);
         if let Some(ref ansi) = colors.ansi_colors {
             for (i, s) in ansi.iter().enumerate().take(16) {
                 base.ansi_colors[i] = hex(s);
@@ -321,6 +328,7 @@ struct ColorsToml {
     search_text: Option<String>,
     search_text_dim: Option<String>,
     ghost_text: Option<String>,
+    hyperlink: Option<String>,
     ansi_colors: Option<Vec<String>>,
 }
 

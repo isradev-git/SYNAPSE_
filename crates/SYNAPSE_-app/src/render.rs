@@ -10,7 +10,7 @@ use crate::app::CellData;
 use crate::image_protocol::ImageStore;
 use crate::pane_ops::find_pane;
 use crate::search::build_match_set;
-use crate::state::AppState;
+use crate::state::{AppState, UrlSpan};
 
 const TAB_FONT_SIZE: f32 = 12.0;
 
@@ -121,6 +121,61 @@ fn term_color_to_rgba(color: TermColor, fallback: [f32; 4], ansi: &[[f32; 4]; 16
             }
         }
     }
+}
+
+fn has_prefix_at(chars: &[char], pos: usize, prefix: &str) -> bool {
+    let pchars: Vec<char> = prefix.chars().collect();
+    pos + pchars.len() <= chars.len()
+        && chars[pos..pos + pchars.len()].iter().zip(&pchars).all(|(a, b)| a == b)
+}
+
+/// Scan visible terminal rows for bare `http://` / `https://` URLs.
+/// Returns `(col_start, raw_row, col_end_exclusive, url_string)`.
+fn detect_auto_urls(
+    cells: &[(usize, i32, char, TermColor, TermColor)],
+    display_offset: usize,
+    pane_rows: usize,
+) -> Vec<(usize, i32, usize, String)> {
+    let mut rows: std::collections::BTreeMap<i32, Vec<(usize, char)>> = Default::default();
+    for &(col, raw_row, ch, _, _) in cells {
+        let vrow = raw_row + display_offset as i32;
+        if vrow >= 0 && (vrow as usize) < pane_rows {
+            rows.entry(raw_row).or_default().push((col, ch));
+        }
+    }
+
+    let mut spans = Vec::new();
+    for (raw_row, mut row_cells) in rows {
+        row_cells.sort_by_key(|&(col, _)| col);
+        let chars: Vec<char> = row_cells.iter().map(|&(_, c)| c).collect();
+        let cols: Vec<usize> = row_cells.iter().map(|&(col, _)| col).collect();
+        let n = chars.len();
+
+        let mut i = 0;
+        while i < n {
+            let pfx_len = if has_prefix_at(&chars, i, "https://") {
+                8
+            } else if has_prefix_at(&chars, i, "http://") {
+                7
+            } else {
+                i += 1;
+                continue;
+            };
+
+            let mut end = i + pfx_len;
+            while end < n && !chars[end].is_whitespace() {
+                end += 1;
+            }
+            if end > i + pfx_len {
+                let url: String = chars[i..end].iter().collect();
+                let col_start = cols[i];
+                let col_end = cols[end - 1] + 1;
+                spans.push((col_start, raw_row, col_end, url));
+            }
+            i = end.max(i + 1);
+        }
+    }
+    spans
 }
 
 pub fn build_tab_bar_ui_rects(
@@ -344,6 +399,7 @@ fn push_cursor_rect(
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::ptr_arg, clippy::type_complexity)]
 pub fn render_frame(
     renderer: &mut Renderer,
     layout: &Layout,
@@ -362,6 +418,7 @@ pub fn render_frame(
     cached_active_tab: &mut usize,
     cached_cursor_rects_start: &mut usize,
     cached_cursor_pixel: &mut Option<(f32, f32)>,
+    cached_url_spans: &mut Vec<UrlSpan>,
     effective_font_size: f32,
     scale_factor: f32,
 ) -> Vec<PaneId> {
@@ -409,6 +466,7 @@ pub fn render_frame(
         cached_cell_data.clear();
         cached_ui_rects.clear();
         cached_bg_rects.clear();
+        cached_url_spans.clear();
 
         // Cursor pixel position computed during pane iteration, used at end of rebuild.
         let mut cursor_pixel_for_frame: Option<(f32, f32)> = None;
@@ -451,9 +509,10 @@ pub fn render_frame(
 
             let is_active = pane_id == active_pane_id;
 
-            // Snapshot grid contents, cursor, and selection range under the lock.
-            let (cells, cursor_col, cursor_row, sel_range, display_offset, history_size): (
+            // Snapshot grid contents, cursor, selection range, and OSC 8 hyperlinks under the lock.
+            let (cells, osc8_cells, cursor_col, cursor_row, sel_range, display_offset, history_size): (
                 Vec<(usize, i32, char, TermColor, TermColor)>,
+                Vec<(usize, i32, String)>,
                 usize,
                 i32,
                 Option<alacritty_terminal::selection::SelectionRange>,
@@ -474,6 +533,7 @@ pub fn render_frame(
                 let history_size = grid.history_size();
 
                 let mut buf = Vec::with_capacity(pane_cols * pane_rows);
+                let mut hyperlinks: Vec<(usize, i32, String)> = Vec::new();
                 for indexed in grid.display_iter() {
                     let col = indexed.point.column.0;
                     let raw_row = indexed.point.line.0;
@@ -485,10 +545,41 @@ pub fn render_frame(
                     if col >= pane_cols {
                         continue;
                     }
+                    if let Some(hl) = indexed.hyperlink() {
+                        hyperlinks.push((col, raw_row, hl.uri().to_string()));
+                    }
                     buf.push((col, raw_row, indexed.c, indexed.fg, indexed.bg));
                 }
-                (buf, cursor_col, cursor_row, sel_range, display_offset, history_size)
+                (buf, hyperlinks, cursor_col, cursor_row, sel_range, display_offset, history_size)
             };
+
+            // Pre-compute URL spans before consuming `cells` in the render loop.
+            let mut url_span_list: Vec<(usize, i32, usize, String)> = Vec::new();
+            {
+                if !osc8_cells.is_empty() {
+                    let mut sorted = osc8_cells.clone();
+                    sorted.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+                    let mut k = 0;
+                    while k < sorted.len() {
+                        let col_start = sorted[k].0;
+                        let row = sorted[k].1;
+                        let url = sorted[k].2.clone();
+                        let mut col_end = col_start + 1;
+                        let mut j = k + 1;
+                        while j < sorted.len()
+                            && sorted[j].1 == row
+                            && sorted[j].2 == url
+                            && sorted[j].0 == col_end
+                        {
+                            col_end += 1;
+                            j += 1;
+                        }
+                        url_span_list.push((col_start, row, col_end, url));
+                        k = j;
+                    }
+                }
+                url_span_list.extend(detect_auto_urls(&cells, display_offset, pane_rows));
+            }
 
             for (col, raw_row, ch, fg_c, bg_c) in cells {
                 let viewport_row = raw_row + display_offset as i32;
@@ -561,6 +652,29 @@ pub fn render_frame(
                         cached_cell_data.push((c, cx, cy, font_size, ghost_fg, transparent));
                     }
                 }
+            }
+
+            // Emit underline UIRects + populate cached_url_spans for mouse hover.
+            for (col_start, raw_row, col_end, url) in url_span_list {
+                let viewport_row = raw_row + display_offset as i32;
+                if viewport_row < 0 || viewport_row as usize >= pane_rows {
+                    continue;
+                }
+                let span_x = content_x + col_start as f32 * cell_w;
+                let span_y = content_y + viewport_row as f32 * cell_h;
+                let span_w = (col_end - col_start) as f32 * cell_w;
+                cached_ui_rects.push(UIRect {
+                    pos: [span_x, span_y + cell_h - 1.5],
+                    size: [span_w, 1.5],
+                    color: state.theme.hyperlink,
+                });
+                cached_url_spans.push(UrlSpan {
+                    url,
+                    x: span_x,
+                    y: span_y,
+                    w: span_w,
+                    h: cell_h,
+                });
             }
 
             // Scrollback position indicator: slim thumb on the right edge
@@ -1110,6 +1224,7 @@ impl AppCore {
             &mut self.cached_active_tab,
             &mut self.cached_cursor_rects_start,
             &mut self.cached_cursor_pixel,
+            &mut self.cached_url_spans,
             effective_fs,
             self.scale_factor,
         );

@@ -52,6 +52,7 @@ pub struct AppCore {
     pub scale_factor: f32,
     pub image_store: ImageStore,
     pub splash_start: Option<std::time::Instant>,
+    pub cached_url_spans: Vec<crate::state::UrlSpan>,
 }
 
 pub struct App {
@@ -220,6 +221,7 @@ impl AppCore {
             scale_factor: scale,
             image_store: ImageStore::new(),
             splash_start: Some(std::time::Instant::now()),
+            cached_url_spans: Vec::new(),
         }
     }
 

@@ -348,6 +348,13 @@ pub fn handle_cursor_moved(
     }
 }
 
+fn open_url(url: &str) {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+}
+
 use crate::app::AppCore;
 
 impl AppCore {
@@ -369,6 +376,17 @@ impl AppCore {
         button_state: winit::event::ElementState,
         button: winit::event::MouseButton,
     ) {
+        // Ctrl+Click: open hovered URL, skip normal click handling.
+        if button == winit::event::MouseButton::Left
+            && button_state == winit::event::ElementState::Pressed
+            && self.state.modifiers.control_key()
+        {
+            if let Some(ref url) = self.state.hovered_url.clone() {
+                open_url(url);
+                return;
+            }
+        }
+
         let was_selecting = self.state.selecting;
         let scrollback_lines = self.state.config.scrollback_lines;
         handle_mouse_button(
@@ -417,5 +435,21 @@ impl AppCore {
             self.cell_h,
             self.margin,
         );
+
+        // Detect URL hover: update cursor icon and hovered_url.
+        let cx = position.x as f32;
+        let cy = position.y as f32;
+        let hovered = self
+            .cached_url_spans
+            .iter()
+            .find(|s| cx >= s.x && cx < s.x + s.w && cy >= s.y && cy < s.y + s.h)
+            .map(|s| s.url.clone());
+        let was_hovering = self.state.hovered_url.is_some();
+        self.state.hovered_url = hovered.clone();
+        if hovered.is_some() && !self.state.hover_divider {
+            self.window.set_cursor(winit::window::CursorIcon::Pointer);
+        } else if hovered.is_none() && was_hovering && !self.state.hover_divider {
+            self.window.set_cursor(winit::window::CursorIcon::Text);
+        }
     }
 }

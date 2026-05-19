@@ -6,6 +6,16 @@ use synapse_ui::pane::PaneId;
 use synapse_ui::splitter::{PaneRect, SplitDirection};
 use winit::keyboard::ModifiersState;
 
+/// Pixel-space bounding box of a clickable URL in the terminal viewport.
+#[derive(Clone)]
+pub struct UrlSpan {
+    pub url: String,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
 pub struct DividerDrag {
     pub pane_id: PaneId,
     pub direction: SplitDirection,
@@ -210,6 +220,7 @@ pub struct AppState {
     pub font_size: f32,
     pub fullscreen: bool,
     pub tab_scroll_offset: usize,
+    pub hovered_url: Option<String>,
 }
 
 impl AppState {
@@ -236,6 +247,7 @@ impl AppState {
             font_size,
             fullscreen: false,
             tab_scroll_offset: 0,
+            hovered_url: None,
         }
     }
 }
