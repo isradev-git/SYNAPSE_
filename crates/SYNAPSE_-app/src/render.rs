@@ -544,6 +544,9 @@ pub fn render_frame(
                 HashSet::new()
             };
 
+        // Reused across pane iterations to avoid per-frame allocation.
+        let mut ul_buf: Vec<(usize, i32, u32, Option<TermColor>)> = Vec::new();
+
         for &(pane_id, rect) in &layouts {
             let pane = match find_pane(panes, pane_id) {
                 Some(p) => p,
@@ -559,8 +562,6 @@ pub fn render_frame(
             let pane_rows = ((content_h) / cell_h).max(1.0) as usize;
 
             let is_active = pane_id == active_pane_id;
-
-            let mut ul_buf: Vec<(usize, i32, u32, Option<TermColor>)> = Vec::new();
 
             // Snapshot grid contents, cursor, selection range, and OSC 8 hyperlinks under the lock.
             let (cells, osc8_cells, cursor_col, cursor_row, sel_range, display_offset, history_size): (
@@ -609,6 +610,8 @@ pub fn render_frame(
                                else if flags.contains(Flags::DOTTED_UNDERLINE) { 3 }
                                else if flags.contains(Flags::DASHED_UNDERLINE) { 4 }
                                else                                            { 0 };
+                        // buf uses raw_row; ul_buf uses viewport_row already shifted by display_offset.
+                        // build_underline_spans expects viewport-relative rows (0 = top of pane).
                         ul_buf.push((col, viewport_row, style, indexed.underline_color()));
                     }
                 }
@@ -617,7 +620,7 @@ pub fn render_frame(
 
             if !ul_buf.is_empty() {
                 let ul_cells: Vec<(usize, i32, u32, [f32; 4])> = ul_buf
-                    .into_iter()
+                    .drain(..)
                     .map(|(col, viewport_row, style, ul_color)| {
                         let rgba = ul_color
                             .map(|c| term_color_to_rgba(c, state.theme.fg, &state.theme.ansi_colors))
