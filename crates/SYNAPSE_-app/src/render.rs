@@ -1330,22 +1330,6 @@ impl AppCore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use synapse_renderer::underline::UnderlineInstance;
-
-    fn inst(col: usize, row: i32, w: usize, style: u32, color: [f32; 4]) -> UnderlineInstance {
-        let (y_off, h) = match style {
-            1 => (16.0_f32 - 3.5, 3.0_f32),
-            2 => (16.0_f32 - 4.0, 4.0_f32),
-            _ => (16.0_f32 - 2.0, 1.5_f32),
-        };
-        UnderlineInstance {
-            pos:   [col as f32 * 8.0, row as f32 * 16.0 + y_off],
-            size:  [w as f32 * 8.0, h],
-            color,
-            style,
-            _pad:  [0; 3],
-        }
-    }
 
     #[test]
     fn empty_input_returns_empty() {
