@@ -11,6 +11,31 @@ use portable_pty::MasterPty;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PaneId(pub u64);
 
+/// A clipboard operation queued from OSC 52 (alacritty event).
+pub enum ClipboardOp {
+    Write(alacritty_terminal::term::ClipboardType, String),
+    /// fmt: alacritty-provided formatter that encodes the OSC 52 response bytes.
+    Read(
+        alacritty_terminal::term::ClipboardType,
+        std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>,
+    ),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MarkKind {
+    PromptStart,
+    CommandStart,
+    CommandEnd,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticMark {
+    pub kind: MarkKind,
+    /// `term.grid().history_size()` at capture time (requires Dimensions in scope).
+    /// Used to compute how far into history the mark is: `current_history - history_snapshot`.
+    pub history_snapshot: usize,
+}
+
 #[derive(Clone)]
 pub struct EventProxy {
     sender: mpsc::SyncSender<Event>,
@@ -62,6 +87,10 @@ pub struct Pane {
     osc7_rx: mpsc::Receiver<String>,
     title: String,
     cwd: String,
+    pub pending_bell: bool,
+    pub clipboard_pending: std::collections::VecDeque<ClipboardOp>,
+    pub notifications: std::collections::VecDeque<String>,
+    pub semantic_marks: Vec<SemanticMark>,
 }
 
 impl Pane {
@@ -98,6 +127,10 @@ impl Pane {
             osc7_rx,
             title: String::new(),
             cwd: String::new(),
+            pending_bell: false,
+            clipboard_pending: std::collections::VecDeque::new(),
+            notifications: std::collections::VecDeque::new(),
+            semantic_marks: Vec::new(),
         }
     }
 
@@ -134,6 +167,20 @@ impl Pane {
             match event {
                 Event::Exit | Event::ChildExit(_) => exited = true,
                 Event::Title(title) => self.title = title,
+                Event::Bell => {
+                    self.pending_bell = true;
+                }
+                Event::ClipboardStore(kind, data) => {
+                    self.clipboard_pending.push_back(ClipboardOp::Write(kind, data));
+                }
+                Event::ClipboardLoad(kind, fmt) => {
+                    self.clipboard_pending.push_back(ClipboardOp::Read(kind, fmt));
+                }
+                Event::PtyWrite(s) => {
+                    if let Ok(mut w) = self.pty_writer.lock() {
+                        let _ = std::io::Write::write_all(&mut *w, s.as_bytes());
+                    }
+                }
                 _ => {}
             }
         }
@@ -188,5 +235,26 @@ mod tests {
         assert!(was_dirty);
         let now_dirty = dirty.load(Ordering::Acquire);
         assert!(!now_dirty);
+    }
+
+    #[test]
+    fn test_clipboard_op_write_variant() {
+        let op = ClipboardOp::Write(
+            alacritty_terminal::term::ClipboardType::Clipboard,
+            "hello".to_string(),
+        );
+        assert!(matches!(op, ClipboardOp::Write(_, ref s) if s == "hello"));
+    }
+
+    #[test]
+    fn test_mark_kind_variants() {
+        assert_ne!(MarkKind::PromptStart, MarkKind::CommandStart);
+        assert_ne!(MarkKind::CommandStart, MarkKind::CommandEnd);
+    }
+
+    #[test]
+    fn test_semantic_mark_has_fields() {
+        let m = SemanticMark { kind: MarkKind::PromptStart, history_snapshot: 42 };
+        assert_eq!(m.history_snapshot, 42);
     }
 }
