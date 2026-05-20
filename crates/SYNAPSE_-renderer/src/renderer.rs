@@ -7,6 +7,7 @@ use crate::cell::{CellInstance, CellRenderer};
 use crate::image::{ImageInstance, ImageRenderer};
 use crate::text::TextShaping;
 use crate::ui::{UIRect, UIRenderer};
+use crate::underline::{UnderlineInstance, UnderlineRenderer};
 
 pub struct Renderer {
     surface: Surface<'static>,
@@ -19,6 +20,7 @@ pub struct Renderer {
     ui_renderer_bg: UIRenderer,
     ui_renderer: UIRenderer,
     image_renderer: ImageRenderer,
+    underline_renderer: UnderlineRenderer,
     text: TextShaping,
     clear_color: wgpu::Color,
     cell_w: f32,
@@ -123,6 +125,7 @@ impl Renderer {
         let ui_renderer_bg = UIRenderer::new(Arc::clone(&device), config.format);
         let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
         let image_renderer = ImageRenderer::new(Arc::clone(&device), config.format);
+        let underline_renderer = UnderlineRenderer::new(Arc::clone(&device), config.format);
         let text = TextShaping::with_family(font_family);
 
         Ok(Self {
@@ -142,6 +145,7 @@ impl Renderer {
             ui_renderer_bg,
             ui_renderer,
             image_renderer,
+            underline_renderer,
             text,
             cell_w: 0.0,
             cell_h: 0.0,
@@ -222,6 +226,7 @@ impl Renderer {
         self.cell_renderer.upload(&instances, &self.queue);
         self.ui_renderer_bg.upload(&[], &self.queue);
         self.ui_renderer.upload(&[], &self.queue);
+        self.underline_renderer.upload(&[], &self.queue);
         self.render_instances(&[], &[], &[]);
     }
 
@@ -231,6 +236,7 @@ impl Renderer {
         self.cell_renderer.upload(&instances, &self.queue);
         self.ui_renderer_bg.upload(&[], &self.queue);
         self.ui_renderer.upload(&[], &self.queue);
+        self.underline_renderer.upload(&[], &self.queue);
         self.render_instances(&[], &[], &[]);
     }
 
@@ -238,6 +244,7 @@ impl Renderer {
         self.cell_renderer.upload(&[], &self.queue);
         self.ui_renderer_bg.upload(&[], &self.queue);
         self.ui_renderer.upload(rects, &self.queue);
+        self.underline_renderer.upload(&[], &self.queue);
         self.render_instances(&[], &[], &[]);
     }
 
@@ -440,11 +447,12 @@ impl Renderer {
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
         ui_rects: &[UIRect],
         bg_rects: &[UIRect],
+        underlines: &[UnderlineInstance],
         images: &[ImageInstance],
         image_ids: &[u32],
         image_clips: &[[u32; 4]],
     ) {
-        self.draw_frame_with_options(cells, ui_rects, bg_rects, images, image_ids, image_clips, false, true, true);
+        self.draw_frame_with_options(cells, ui_rects, bg_rects, underlines, images, image_ids, image_clips, false, true, true);
     }
 
     /// Draw a frame, conditionally skipping GPU uploads when data hasn't changed.
@@ -459,6 +467,7 @@ impl Renderer {
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
         ui_rects: &[UIRect],
         bg_rects: &[UIRect],
+        underlines: &[UnderlineInstance],
         images: &[ImageInstance],
         image_ids: &[u32],
         image_clips: &[[u32; 4]],
@@ -476,6 +485,7 @@ impl Renderer {
             // Disjoint field borrows: cell_renderer ≠ cached_instances ≠ queue.
             let inst = self.cached_instances.as_slice();
             self.cell_renderer.upload(inst, &self.queue);
+            self.underline_renderer.upload(underlines, &self.queue);
         }
         if ui_dirty {
             self.ui_renderer_bg.upload(bg_rects, &self.queue);
@@ -492,6 +502,8 @@ impl Renderer {
         self.ui_renderer
             .update_screen_size(&self.queue, self.size.width, self.size.height);
         self.image_renderer
+            .update_screen_size(&self.queue, self.size.width, self.size.height);
+        self.underline_renderer
             .update_screen_size(&self.queue, self.size.width, self.size.height);
 
         let output = match self.surface.get_current_texture() {
@@ -546,6 +558,9 @@ impl Renderer {
 
             // glyph layer (transparent bg so bitmaps that overflow cell bounds blend correctly)
             self.cell_renderer.draw(&mut render_pass, &self.atlas.bind_group);
+
+            // underline layer: between glyphs and cursor/border overlays
+            self.underline_renderer.draw(&mut render_pass);
 
             // overlay layer: cursor, tab bar, pane borders
             self.ui_renderer.draw(&mut render_pass);
