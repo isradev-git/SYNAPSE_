@@ -60,6 +60,25 @@ fn apply_scanlines(color: vec3<f32>, screen_y: f32, intensity: f32, freq: f32) -
     return color * (1.0 - intensity * (1.0 - line));
 }
 
+fn sample_bloom_v(uv: vec2<f32>, sigma: f32) -> vec3<f32> {
+    let pixel_h = 1.0 / u.screen_size.y;
+    let step_size = pixel_h * max(sigma, 1.0);
+    var result = vec3(0.0);
+    var weight_sum = 0.0;
+
+    for (var i: i32 = -6; i <= 6; i++) {
+        let sample_uv = vec2(uv.x, uv.y + f32(i) * step_size);
+        let s = textureSample(bloom_tex, scene_sampler, clamp(sample_uv, vec2(0.0), vec2(1.0))).rgb;
+        let fi = f32(i);
+        let w = exp(-0.5 * fi * fi / (sigma * sigma));
+        result += s * w;
+        weight_sum += w;
+    }
+
+    if weight_sum > 0.0 { result /= weight_sum; }
+    return result;
+}
+
 @fragment
 fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     var uv = frag_pos.xy / u.screen_size;
@@ -74,6 +93,13 @@ fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     if (u.effects_mask & EFFECT_SCANLINES) != 0u {
         color = apply_scanlines(color, frag_pos.y, u.scanline_intensity, u.scanline_freq);
         color = color * apply_vignette(uv);
+    }
+
+    if (u.effects_mask & EFFECT_BLOOM) != 0u {
+        let bloom_v = sample_bloom_v(uv, u.bloom_sigma);
+        let tinted = bloom_v * u.bloom_tint.rgb * 2.0;
+        color = color + tinted;
+        color = color / (color + vec3(1.0));
     }
 
     return vec4(color, 1.0);
