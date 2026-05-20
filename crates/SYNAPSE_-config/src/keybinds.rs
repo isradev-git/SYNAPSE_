@@ -44,6 +44,7 @@ pub enum Action {
     Copy,
     Paste,
     ReloadConfig,
+    EffectsToggle,
 }
 
 impl Action {
@@ -80,6 +81,7 @@ impl Action {
             "copy" => Some(Action::Copy),
             "paste" => Some(Action::Paste),
             "reload_config" => Some(Action::ReloadConfig),
+            "effects_toggle" => Some(Action::EffectsToggle),
             _ => None,
         }
     }
@@ -179,6 +181,14 @@ impl Keybinds {
 
     pub fn entries(&self) -> &[KeyBindEntry] {
         &self.entries
+    }
+
+    pub fn bindings(&self) -> impl Iterator<Item = (KeyCombo, Action)> + '_ {
+        self.entries.iter().filter_map(|e| {
+            let combo = entry_to_combo(e)?;
+            let action = Action::from_str(&e.action)?;
+            Some((combo, action))
+        })
     }
 }
 
@@ -319,11 +329,18 @@ fn default_entries() -> Vec<KeyBindEntry> {
             action: "split_vertical".into(),
         },
         KeyBindEntry {
-            key: "e".into(),
+            key: "h".into(),
             ctrl: true,
             shift: true,
             alt: false,
             action: "split_horizontal".into(),
+        },
+        KeyBindEntry {
+            key: "e".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "effects_toggle".into(),
         },
         KeyBindEntry {
             key: "w".into(),
@@ -590,5 +607,18 @@ mod tests {
             kb.lookup(&Key::Named(NamedKey::ArrowRight), mods(true, true, false)),
             Some(Action::NavigateRight)
         );
+    }
+
+    #[test]
+    fn test_effects_toggle_action() {
+        assert_eq!(Action::from_str("effects_toggle"), Some(Action::EffectsToggle));
+        assert_eq!(Action::from_str("unknown_xyz"), None);
+    }
+
+    #[test]
+    fn test_effects_toggle_default_binding() {
+        let kb = Keybinds::default();
+        let has_effects = kb.bindings().any(|(_, a)| a == Action::EffectsToggle);
+        assert!(has_effects, "EffectsToggle must have a default binding");
     }
 }
