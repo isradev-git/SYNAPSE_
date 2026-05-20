@@ -51,6 +51,7 @@ pub struct AppCore {
     pub cached_cursor_pixel: Option<(f32, f32)>,
     pub frame_count: u64,
     pub fps_last_print: std::time::Instant,
+    pub start_time: std::time::Instant,
     pub scale_factor: f32,
     pub image_store: ImageStore,
     pub splash_start: Option<std::time::Instant>,
@@ -196,6 +197,8 @@ impl AppCore {
         let clipboard = arboard::Clipboard::new().ok();
         let state = AppState::new(config, keybinds, logical_font_size);
         renderer.set_clear_color(state.theme.bg);
+        renderer.set_effects_config(state.config.effects.clone());
+        renderer.set_effects_enabled(state.config.effects.enabled);
 
         AppCore {
             window,
@@ -221,6 +224,7 @@ impl AppCore {
             cached_cursor_pixel: None,
             frame_count: 0,
             fps_last_print: std::time::Instant::now(),
+            start_time: std::time::Instant::now(),
             scale_factor: scale,
             image_store: ImageStore::new(),
             splash_start: Some(std::time::Instant::now()),

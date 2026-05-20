@@ -471,6 +471,7 @@ pub fn render_frame(
     cached_url_spans: &mut Vec<UrlSpan>,
     effective_font_size: f32,
     scale_factor: f32,
+    time_secs: f32,
 ) -> Vec<PaneId> {
     let font_size = effective_font_size;
 
@@ -777,7 +778,14 @@ pub fn render_frame(
             // the tab bar — which looks like a stray UI element.
             if layouts.len() > 1 {
                 let border_color = if is_active {
-                    state.theme.panel_active_border
+                    if state.effects_enabled && state.config.effects.pane_pulse {
+                        let pulse = (time_secs * std::f32::consts::PI).sin() * 0.5 + 0.5;
+                        let alpha = 0.6 + pulse * 0.4;
+                        let c = state.theme.panel_active_border;
+                        [c[0], c[1], c[2], alpha]
+                    } else {
+                        state.theme.panel_active_border
+                    }
                 } else {
                     state.theme.panel_inactive_border
                 };
@@ -1308,6 +1316,7 @@ impl AppCore {
             &mut self.cached_url_spans,
             effective_fs,
             self.scale_factor,
+            self.start_time.elapsed().as_secs_f32(),
         );
 
         for pane_id in exited {
