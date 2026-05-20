@@ -102,6 +102,43 @@ fn apply_glitch(color: vec3<f32>, uv: vec2<f32>, time: f32, intensity: f32) -> v
     return color;
 }
 
+fn matrix_rain(frag_pos: vec2<f32>, time: f32, density: f32) -> f32 {
+    let char_h   = 16.0;
+    let char_w   = 9.0;
+    let col = floor(frag_pos.x / char_w);
+    let row = floor(frag_pos.y / char_h);
+
+    let col_speed  = hash(col * 3.71) * 20.0 + 8.0;
+    let col_start  = hash(col * 9.13 + 1.0) * 40.0;
+    let trail_len  = hash(col * 2.37 + 2.0) * 12.0 + 4.0;
+
+    let period      = 60.0;
+    let head_row    = fract((time * col_speed / period + col_start)) * period;
+    let dist_from_head = head_row - row;
+
+    if hash(col * 1.337 + floor(time * 0.3)) > density { return 0.0; }
+    if dist_from_head < 0.0 || dist_from_head > trail_len { return 0.0; }
+
+    let t = 1.0 - dist_from_head / trail_len;
+    return pow(t, 2.2);
+}
+
+fn hex_dist(p: vec2<f32>) -> f32 {
+    let pa = abs(p);
+    return max(pa.x * 0.866025 + pa.y * 0.5, pa.y);
+}
+
+fn hex_grid(uv: vec2<f32>, time: f32) -> f32 {
+    let scale   = vec2(0.035, 0.06);
+    let p       = uv / scale;
+    let grid_id = round(p);
+    let local   = p - grid_id;
+    let d       = hex_dist(local);
+    let edge    = smoothstep(0.42, 0.46, d);
+    let pulse   = sin(time * 1.1 + grid_id.x * 0.4 + grid_id.y * 0.7) * 0.5 + 0.5;
+    return edge * pulse * 0.12;
+}
+
 @fragment
 fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     var uv = frag_pos.xy / u.screen_size;
@@ -131,6 +168,17 @@ fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
 
     if u.glitch_intensity > 0.001 {
         color = apply_glitch(color, uv, u.time, u.glitch_intensity);
+    }
+
+    if (u.effects_mask & EFFECT_MATRIX_BG) != 0u {
+        let intensity = matrix_rain(frag_pos.xy, u.time, u.matrix_density);
+        color += u.matrix_color.rgb * intensity * 0.45;
+    }
+
+    if (u.effects_mask & EFFECT_HEX_GRID) != 0u {
+        let hex_uv = frag_pos.xy / u.screen_size;
+        let intensity = hex_grid(hex_uv, u.time);
+        color += vec3(0.08, 0.35, 0.9) * intensity;
     }
 
     return vec4(color, 1.0);
