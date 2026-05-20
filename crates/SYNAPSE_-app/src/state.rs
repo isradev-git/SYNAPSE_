@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::time::Instant;
 
 use synapse_config::{Config, Keybinds, Theme};
@@ -221,12 +222,15 @@ pub struct AppState {
     pub fullscreen: bool,
     pub tab_scroll_offset: usize,
     pub hovered_url: Option<String>,
+    pub effects_enabled: bool,
+    pub cursor_trail: VecDeque<(f32, f32)>,
 }
 
 impl AppState {
     pub fn new(config: Config, keybinds: Keybinds, font_size: f32) -> Self {
         let theme = Theme::load(&config.theme, synapse_config::Config::config_dir());
         let suggester = synapse_suggest::load_suggester();
+        let effects_enabled = config.effects.enabled;
         Self {
             config,
             keybinds,
@@ -248,6 +252,18 @@ impl AppState {
             fullscreen: false,
             tab_scroll_offset: 0,
             hovered_url: None,
+            effects_enabled,
+            cursor_trail: VecDeque::new(),
+        }
+    }
+
+    pub fn push_cursor_trail(&mut self, x: f32, y: f32, max_len: usize) {
+        if max_len == 0 { return; }
+        if self.cursor_trail.front() != Some(&(x, y)) {
+            self.cursor_trail.push_front((x, y));
+            while self.cursor_trail.len() > max_len {
+                self.cursor_trail.pop_back();
+            }
         }
     }
 }
@@ -335,5 +351,44 @@ impl HistorySearchState {
 
     pub fn backspace(&mut self) {
         self.term.pop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use synapse_config::{Config, Keybinds};
+
+    fn make_state() -> AppState {
+        AppState::new(Config::default(), Keybinds::default(), 14.0)
+    }
+
+    #[test]
+    fn test_cursor_trail_push() {
+        let mut state = make_state();
+        state.push_cursor_trail(10.0, 20.0, 4);
+        state.push_cursor_trail(15.0, 20.0, 4);
+        state.push_cursor_trail(20.0, 20.0, 4);
+        assert_eq!(state.cursor_trail.len(), 3);
+        assert_eq!(state.cursor_trail[0], (20.0, 20.0));
+
+        state.push_cursor_trail(25.0, 20.0, 4);
+        state.push_cursor_trail(30.0, 20.0, 4);
+        assert_eq!(state.cursor_trail.len(), 4);
+    }
+
+    #[test]
+    fn test_cursor_trail_no_duplicate() {
+        let mut state = make_state();
+        state.push_cursor_trail(10.0, 10.0, 4);
+        state.push_cursor_trail(10.0, 10.0, 4);
+        assert_eq!(state.cursor_trail.len(), 1);
+    }
+
+    #[test]
+    fn test_cursor_trail_max_zero() {
+        let mut state = make_state();
+        state.push_cursor_trail(10.0, 10.0, 0);
+        assert_eq!(state.cursor_trail.len(), 0);
     }
 }

@@ -425,7 +425,7 @@ fn push_cursor_rect(
     cursor_blink_on: bool,
     cell_w: f32,
     cell_h: f32,
-    state: &AppState,
+    state: &mut AppState,
 ) {
     if !cursor_blink_on {
         return;
@@ -434,6 +434,20 @@ fn push_cursor_rect(
         Some(p) => p,
         None => return,
     };
+
+    // Push current position and render fading trail rects behind cursor
+    let max_trail = state.config.effects.cursor_trail as usize;
+    state.push_cursor_trail(cx, cy, max_trail);
+    if max_trail > 0 && state.effects_enabled {
+        let trail_len = state.cursor_trail.len();
+        for (i, &(tx, ty)) in state.cursor_trail.iter().enumerate().skip(1) {
+            let alpha = 1.0 - (i as f32 / trail_len as f32);
+            let c = state.theme.cursor;
+            let faded = [c[0], c[1], c[2], c[3] * alpha * 0.6];
+            ui_rects.push(UIRect { pos: [tx, ty], size: [cell_w, cell_h], color: faded });
+        }
+    }
+
     let color = state.theme.cursor;
     match state.config.cursor_style {
         synapse_config::CursorStyle::Block => {
@@ -455,7 +469,7 @@ pub fn render_frame(
     tab_bar: &mut TabBar,
     panes: &mut Vec<Pane>,
     image_store: &ImageStore,
-    state: &AppState,
+    state: &mut AppState,
     cell_w: f32,
     cell_h: f32,
     cursor_blink_on: bool,
@@ -1300,7 +1314,7 @@ impl AppCore {
             &mut self.tab_bar,
             &mut self.panes,
             &self.image_store,
-            &self.state,
+            &mut self.state,
             self.cell_w,
             self.cell_h,
             self.cursor_blink_on,
