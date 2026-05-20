@@ -100,10 +100,13 @@ pub fn parse_hex_color(s: &str) -> [f32; 4] {
     if s.len() != 6 {
         return [0.0, 1.0, 1.0, 1.0];
     }
-    let r = u8::from_str_radix(&s[0..2], 16).unwrap_or(0) as f32 / 255.0;
-    let g = u8::from_str_radix(&s[2..4], 16).unwrap_or(255) as f32 / 255.0;
-    let b = u8::from_str_radix(&s[4..6], 16).unwrap_or(255) as f32 / 255.0;
-    [r, g, b, 1.0]
+    let r = u8::from_str_radix(&s[0..2], 16);
+    let g = u8::from_str_radix(&s[2..4], 16);
+    let b = u8::from_str_radix(&s[4..6], 16);
+    match (r, g, b) {
+        (Ok(r), Ok(g), Ok(b)) => [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0],
+        _ => [0.0, 1.0, 1.0, 1.0],
+    }
 }
 
 #[cfg(test)]
@@ -170,6 +173,10 @@ pane_pulse = true
         assert!((c[2] - 0.333).abs() < 0.01);
 
         let c = parse_hex_color("notacolor");
+        assert_eq!(c, [0.0, 1.0, 1.0, 1.0]);
+
+        // Partially malformed (invalid hex chars) → cyan fallback
+        let c = parse_hex_color("#FFZZ00");
         assert_eq!(c, [0.0, 1.0, 1.0, 1.0]);
     }
 }
