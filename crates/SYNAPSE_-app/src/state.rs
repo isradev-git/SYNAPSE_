@@ -224,6 +224,8 @@ pub struct AppState {
     pub hovered_url: Option<String>,
     pub effects_enabled: bool,
     pub cursor_trail: VecDeque<(f32, f32)>,
+    pub bell_flash_end: Option<std::time::Instant>,
+    pub window_focused: bool,
 }
 
 impl AppState {
@@ -254,6 +256,8 @@ impl AppState {
             hovered_url: None,
             effects_enabled,
             cursor_trail: VecDeque::new(),
+            bell_flash_end: None,
+            window_focused: true,
         }
     }
 
@@ -390,5 +394,18 @@ mod tests {
         let mut state = make_state();
         state.push_cursor_trail(10.0, 10.0, 0);
         assert_eq!(state.cursor_trail.len(), 0);
+    }
+
+    #[test]
+    fn test_bell_flash_end_initial_none() {
+        let state = make_state();
+        assert!(state.bell_flash_end.is_none());
+    }
+
+    #[test]
+    fn test_bell_flash_active() {
+        let mut state = make_state();
+        state.bell_flash_end = Some(std::time::Instant::now() + std::time::Duration::from_millis(200));
+        assert!(state.bell_flash_end.map(|t| t > std::time::Instant::now()).unwrap_or(false));
     }
 }

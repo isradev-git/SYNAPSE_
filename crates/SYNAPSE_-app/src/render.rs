@@ -792,7 +792,13 @@ pub fn render_frame(
             // the tab bar — which looks like a stray UI element.
             if layouts.len() > 1 {
                 let border_color = if is_active {
-                    if state.effects_enabled && state.config.effects.pane_pulse {
+                    let bell_active = state
+                        .bell_flash_end
+                        .map(|t| t > std::time::Instant::now())
+                        .unwrap_or(false);
+                    if bell_active {
+                        [1.0_f32, 0.0, 0.047, 1.0] // #FF000C cyberpunk red
+                    } else if state.effects_enabled && state.config.effects.pane_pulse {
                         let pulse = (time_secs * std::f32::consts::PI).sin() * 0.5 + 0.5;
                         let alpha = 0.6 + pulse * 0.4;
                         let c = state.theme.panel_active_border;
@@ -1284,6 +1290,17 @@ impl AppCore {
                     }
                     self.image_store.process(cmd, Some(pane.id));
                 }
+            }
+        }
+
+        // Drain bell signals from all panes.
+        for pane in self.panes.iter_mut() {
+            if pane.pending_bell {
+                pane.pending_bell = false;
+                self.state.bell_flash_end = Some(
+                    std::time::Instant::now() + std::time::Duration::from_millis(200),
+                );
+                // Desktop notification if unfocused added in Task 5.
             }
         }
 

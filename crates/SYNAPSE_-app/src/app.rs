@@ -287,6 +287,7 @@ impl AppCore {
     }
 
     fn handle_focus(&mut self, focused: bool) {
+        self.state.window_focused = focused;
         let active_id = self.tab_bar.active_tab().active_pane;
         if let Some(pane) = self.panes.iter().find(|p| p.id == active_id) {
             let send_focus = pane
