@@ -4,3 +4,4 @@ pub mod image;
 pub mod renderer;
 pub mod text;
 pub mod ui;
+pub mod underline;
