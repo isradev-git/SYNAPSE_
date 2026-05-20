@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::vte::ansi::Color as TermColor;
 use synapse_config::Theme;
-use synapse_renderer::{image::ImageInstance, renderer::Renderer, ui::UIRect};
+use synapse_renderer::{image::ImageInstance, renderer::Renderer, ui::UIRect, underline::UnderlineInstance};
 use synapse_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
 
 use crate::app::CellData;
@@ -121,6 +121,54 @@ fn term_color_to_rgba(color: TermColor, fallback: [f32; 4], ansi: &[[f32; 4]; 16
             }
         }
     }
+}
+
+pub(crate) fn build_underline_spans(
+    ul_cells: &[(usize, i32, u32, [f32; 4])],
+    content_x: f32,
+    content_y: f32,
+    cell_w: f32,
+    cell_h: f32,
+) -> Vec<UnderlineInstance> {
+    let mut result = Vec::new();
+    if ul_cells.is_empty() {
+        return result;
+    }
+
+    let make = |col: usize, row: i32, w: usize, style: u32, color: [f32; 4]| {
+        let (y_off, h) = match style {
+            1 => (cell_h - 3.5, 3.0_f32),
+            2 => (cell_h - 4.0, 4.0_f32),
+            _ => (cell_h - 2.0, 1.5_f32),
+        };
+        UnderlineInstance {
+            pos:   [content_x + col as f32 * cell_w, content_y + row as f32 * cell_h + y_off],
+            size:  [w as f32 * cell_w, h],
+            color,
+            style,
+            _pad:  [0; 3],
+        }
+    };
+
+    let (mut s_col, mut s_row, mut s_style, mut s_color) =
+        (ul_cells[0].0, ul_cells[0].1, ul_cells[0].2, ul_cells[0].3);
+    let mut span_w = 1usize;
+
+    for &(col, row, style, color) in &ul_cells[1..] {
+        let extends = row == s_row
+            && col == s_col + span_w
+            && style == s_style
+            && color == s_color;
+        if extends {
+            span_w += 1;
+        } else {
+            result.push(make(s_col, s_row, span_w, s_style, s_color));
+            (s_col, s_row, s_style, s_color) = (col, row, style, color);
+            span_w = 1;
+        }
+    }
+    result.push(make(s_col, s_row, span_w, s_style, s_color));
+    result
 }
 
 fn has_prefix_at(chars: &[char], pos: usize, prefix: &str) -> bool {
@@ -1014,6 +1062,7 @@ pub fn render_frame(
         cached_cell_data,
         cached_ui_rects,
         cached_bg_rects,
+        &[],
         &image_draws,
         &image_draw_ids,
         &image_clips,
@@ -1146,7 +1195,7 @@ pub fn render_splash_screen(
         ));
     }
 
-    renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, &[], &[], &[], false, true, true);
+    renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, &[], &[], &[], &[], false, true, true);
 }
 
 use crate::app::AppCore;
@@ -1275,5 +1324,85 @@ impl AppCore {
         }
 
         self.panes.retain(|p| p.id != pane_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use synapse_renderer::underline::UnderlineInstance;
+
+    fn inst(col: usize, row: i32, w: usize, style: u32, color: [f32; 4]) -> UnderlineInstance {
+        let (y_off, h) = match style {
+            1 => (16.0_f32 - 3.5, 3.0_f32),
+            2 => (16.0_f32 - 4.0, 4.0_f32),
+            _ => (16.0_f32 - 2.0, 1.5_f32),
+        };
+        UnderlineInstance {
+            pos:   [col as f32 * 8.0, row as f32 * 16.0 + y_off],
+            size:  [w as f32 * 8.0, h],
+            color,
+            style,
+            _pad:  [0; 3],
+        }
+    }
+
+    #[test]
+    fn empty_input_returns_empty() {
+        assert!(build_underline_spans(&[], 0.0, 0.0, 8.0, 16.0).is_empty());
+    }
+
+    #[test]
+    fn single_cell_one_instance() {
+        let color = [1.0f32, 0.0, 0.0, 1.0];
+        let result = build_underline_spans(&[(0, 0, 0, color)], 0.0, 0.0, 8.0, 16.0);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].style, 0);
+        assert!((result[0].size[0] - 8.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn consecutive_same_style_merged() {
+        let color = [1.0f32, 0.0, 0.0, 1.0];
+        let cells = [(0, 0, 2, color), (1, 0, 2, color), (2, 0, 2, color)];
+        let result = build_underline_spans(&cells, 0.0, 0.0, 8.0, 16.0);
+        assert_eq!(result.len(), 1);
+        assert!((result[0].size[0] - 24.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn different_style_breaks_span() {
+        let color = [1.0f32, 0.0, 0.0, 1.0];
+        let cells = [(0, 0, 0, color), (1, 0, 2, color)];
+        let result = build_underline_spans(&cells, 0.0, 0.0, 8.0, 16.0);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].style, 0);
+        assert_eq!(result[1].style, 2);
+    }
+
+    #[test]
+    fn different_row_breaks_span() {
+        let color = [1.0f32, 0.0, 0.0, 1.0];
+        let cells = [(0, 0, 0, color), (1, 1, 0, color)];
+        let result = build_underline_spans(&cells, 0.0, 0.0, 8.0, 16.0);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn undercurl_y_offset_and_height() {
+        let cells = [(0, 0, 2, [1.0f32, 0.0, 0.0, 1.0])];
+        let result = build_underline_spans(&cells, 0.0, 0.0, 8.0, 16.0);
+        assert_eq!(result.len(), 1);
+        // y = content_y + 0 * 16.0 + (16.0 - 4.0) = 12.0
+        assert!((result[0].pos[1] - 12.0).abs() < 0.001);
+        assert!((result[0].size[1] - 4.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn non_consecutive_column_breaks_span() {
+        let color = [1.0f32, 0.0, 0.0, 1.0];
+        let cells = [(0, 0, 0, color), (2, 0, 0, color)]; // col gap: 0 then 2
+        let result = build_underline_spans(&cells, 0.0, 0.0, 8.0, 16.0);
+        assert_eq!(result.len(), 2);
     }
 }
