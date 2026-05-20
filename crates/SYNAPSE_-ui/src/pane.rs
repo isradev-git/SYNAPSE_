@@ -87,6 +87,8 @@ pub struct Pane {
     osc7_rx: mpsc::Receiver<String>,
     /// Channel for OSC 133 semantic marks from the PTY reader thread.
     pub osc133_rx: mpsc::Receiver<SemanticMark>,
+    /// Channel for OSC 9/777 notification strings from the PTY reader thread.
+    pub osc9_rx: mpsc::Receiver<String>,
     title: String,
     cwd: String,
     pub pending_bell: bool,
@@ -112,6 +114,7 @@ impl Pane {
         apc_rx: mpsc::Receiver<String>,
         osc7_rx: mpsc::Receiver<String>,
         osc133_rx: mpsc::Receiver<SemanticMark>,
+        osc9_rx: mpsc::Receiver<String>,
     ) -> Self {
         Self {
             id,
@@ -129,6 +132,7 @@ impl Pane {
             apc_rx,
             osc7_rx,
             osc133_rx,
+            osc9_rx,
             title: String::new(),
             cwd: String::new(),
             pending_bell: false,
@@ -200,6 +204,9 @@ impl Pane {
             if self.semantic_marks.len() > 500 {
                 self.semantic_marks.remove(0);
             }
+        }
+        while let Ok(notif) = self.osc9_rx.try_recv() {
+            self.notifications.push_back(notif);
         }
         while let Ok(cmd) = self.kkp_rx.try_recv() {
             match cmd {

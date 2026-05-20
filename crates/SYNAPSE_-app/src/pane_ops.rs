@@ -109,6 +109,90 @@ fn extract_osc133_marks(bytes: &[u8]) -> Vec<synapse_ui::pane::MarkKind> {
     results
 }
 
+/// Scan `bytes` for OSC 9 and OSC 777 notification sequences.
+///
+/// OSC 9 ; <message> BEL|ST  → returns "<message>".
+/// OSC 777 ; notify ; <title> ; <body> BEL|ST → returns "<title>\x00<body>".
+/// Empty messages are skipped.
+fn extract_osc9_notifications(bytes: &[u8]) -> Vec<String> {
+    let mut results = Vec::new();
+    let mut i = 0;
+
+    while i + 3 < bytes.len() {
+        if bytes[i] != 0x1b || bytes[i + 1] != b']' {
+            i += 1;
+            continue;
+        }
+
+        let payload_start;
+        let is_777;
+
+        // Check for OSC 777: ESC ] 7 7 7 ;
+        if i + 5 < bytes.len()
+            && bytes[i + 2] == b'7'
+            && bytes[i + 3] == b'7'
+            && bytes[i + 4] == b'7'
+            && bytes[i + 5] == b';'
+        {
+            payload_start = i + 6;
+            is_777 = true;
+        // Check for OSC 9: ESC ] 9 ;
+        } else if i + 3 < bytes.len() && bytes[i + 2] == b'9' && bytes[i + 3] == b';' {
+            payload_start = i + 4;
+            is_777 = false;
+        } else {
+            i += 1;
+            continue;
+        }
+
+        // Find BEL or ST terminator
+        let mut j = payload_start;
+        let mut end = None;
+        while j < bytes.len() {
+            if bytes[j] == 0x07 {
+                end = Some((j, j + 1));
+                break;
+            }
+            if j + 1 < bytes.len() && bytes[j] == 0x1b && bytes[j + 1] == b'\\' {
+                end = Some((j, j + 2));
+                break;
+            }
+            j += 1;
+        }
+
+        if let Some((term_pos, next_i)) = end {
+            if term_pos > payload_start {
+                if let Ok(payload) = std::str::from_utf8(&bytes[payload_start..term_pos]) {
+                    let encoded = if is_777 {
+                        // OSC 777: "notify ; <title> ; <body>"
+                        let payload = payload.strip_prefix("notify;").unwrap_or(payload);
+                        if let Some(sep) = payload.find(';') {
+                            let title = &payload[..sep];
+                            let body = &payload[sep + 1..];
+                            if !title.is_empty() || !body.is_empty() {
+                                format!("{}\x00{}", title, body)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        payload.to_string()
+                    };
+                    if !encoded.is_empty() {
+                        results.push(encoded);
+                    }
+                }
+            }
+            i = next_i;
+            continue;
+        }
+        i += 1;
+    }
+    results
+}
+
 /// Minimal `Dimensions` impl used to construct and resize a `Term`.
 pub(crate) struct TermSize {
     pub(crate) cols: usize,
@@ -215,6 +299,7 @@ pub fn create_pane_full(
     let (apc_tx, apc_rx) = mpsc::sync_channel::<String>(64);
     let (osc7_tx, osc7_rx) = mpsc::sync_channel::<String>(16);
     let (osc133_tx, osc133_rx) = mpsc::sync_channel::<synapse_ui::pane::SemanticMark>(64);
+    let (osc9_tx, osc9_rx) = mpsc::sync_channel::<String>(32);
 
     // 7. Spin up the reader thread: PTY bytes -> VTE parser -> Term handler.
     let term_reader = Arc::clone(&term);
@@ -273,6 +358,9 @@ pub fn create_pane_full(
                                 history_snapshot: 0, // corrected in poll_events under term lock
                             });
                         }
+                        for notif in extract_osc9_notifications(&staging) {
+                            let _ = osc9_tx.try_send(notif);
+                        }
 
                         match term_reader.lock() {
                             Ok(mut term) => {
@@ -308,6 +396,7 @@ pub fn create_pane_full(
         apc_rx,
         osc7_rx,
         osc133_rx,
+        osc9_rx,
     ))
 }
 
@@ -599,5 +688,45 @@ mod tests {
         let bytes = b"\x1b]133;Z\x07";
         let marks = extract_osc133_marks(bytes);
         assert!(marks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_osc9_simple() {
+        let bytes = b"\x1b]9;Build complete\x07";
+        let notifs = extract_osc9_notifications(bytes);
+        assert_eq!(notifs.len(), 1);
+        assert_eq!(notifs[0], "Build complete");
+    }
+
+    #[test]
+    fn test_extract_osc9_st_terminator() {
+        let bytes = b"\x1b]9;Hello\x1b\\";
+        let notifs = extract_osc9_notifications(bytes);
+        assert_eq!(notifs.len(), 1);
+        assert_eq!(notifs[0], "Hello");
+    }
+
+    #[test]
+    fn test_extract_osc777_title_body() {
+        let bytes = b"\x1b]777;notify;My Title;The body text\x07";
+        let notifs = extract_osc9_notifications(bytes);
+        assert_eq!(notifs.len(), 1);
+        let parts: Vec<&str> = notifs[0].splitn(2, '\x00').collect();
+        assert_eq!(parts[0], "My Title");
+        assert_eq!(parts[1], "The body text");
+    }
+
+    #[test]
+    fn test_extract_osc9_multiple() {
+        let bytes = b"\x1b]9;First\x07\x1b]9;Second\x07";
+        let notifs = extract_osc9_notifications(bytes);
+        assert_eq!(notifs.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_osc9_empty_ignored() {
+        let bytes = b"\x1b]9;\x07";
+        let notifs = extract_osc9_notifications(bytes);
+        assert!(notifs.is_empty(), "empty message should not produce notification");
     }
 }
