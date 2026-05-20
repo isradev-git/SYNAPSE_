@@ -1,3 +1,4 @@
+use crate::effects::EffectsConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -35,6 +36,8 @@ pub struct Config {
     pub cursor_blink_ms: u64,
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default)]
+    pub effects: EffectsConfig,
 }
 
 fn default_font_size() -> f32 {
@@ -80,6 +83,7 @@ impl Default for Config {
             cursor_blink: default_cursor_blink(),
             cursor_blink_ms: default_cursor_blink_ms(),
             theme: default_theme(),
+            effects: EffectsConfig::default(),
         }
     }
 }
