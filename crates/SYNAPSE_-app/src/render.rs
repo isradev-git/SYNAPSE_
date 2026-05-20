@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::vte::ansi::Color as TermColor;
 use synapse_config::Theme;
 use synapse_renderer::{image::ImageInstance, renderer::Renderer, ui::UIRect, underline::UnderlineInstance};
@@ -461,6 +462,7 @@ pub fn render_frame(
     cached_cell_data: &mut CellData,
     cached_ui_rects: &mut Vec<UIRect>,
     cached_bg_rects: &mut Vec<UIRect>,
+    cached_underline_instances: &mut Vec<UnderlineInstance>,
     cached_blink: &mut bool,
     cached_font_size: &mut f32,
     cached_active_tab: &mut usize,
@@ -515,6 +517,7 @@ pub fn render_frame(
         cached_ui_rects.clear();
         cached_bg_rects.clear();
         cached_url_spans.clear();
+        cached_underline_instances.clear();
 
         // Cursor pixel position computed during pane iteration, used at end of rebuild.
         let mut cursor_pixel_for_frame: Option<(f32, f32)> = None;
@@ -557,6 +560,8 @@ pub fn render_frame(
 
             let is_active = pane_id == active_pane_id;
 
+            let mut ul_buf: Vec<(usize, i32, u32, Option<TermColor>)> = Vec::new();
+
             // Snapshot grid contents, cursor, selection range, and OSC 8 hyperlinks under the lock.
             let (cells, osc8_cells, cursor_col, cursor_row, sel_range, display_offset, history_size): (
                 Vec<(usize, i32, char, TermColor, TermColor)>,
@@ -597,9 +602,32 @@ pub fn render_frame(
                         hyperlinks.push((col, raw_row, hl.uri().to_string()));
                     }
                     buf.push((col, raw_row, indexed.c, indexed.fg, indexed.bg));
+                    let flags = indexed.flags;
+                    if flags.intersects(Flags::ALL_UNDERLINES) {
+                        let style = if flags.contains(Flags::UNDERCURL)        { 2u32 }
+                               else if flags.contains(Flags::DOUBLE_UNDERLINE) { 1 }
+                               else if flags.contains(Flags::DOTTED_UNDERLINE) { 3 }
+                               else if flags.contains(Flags::DASHED_UNDERLINE) { 4 }
+                               else                                            { 0 };
+                        ul_buf.push((col, viewport_row, style, indexed.underline_color()));
+                    }
                 }
                 (buf, hyperlinks, cursor_col, cursor_row, sel_range, display_offset, history_size)
             };
+
+            if !ul_buf.is_empty() {
+                let ul_cells: Vec<(usize, i32, u32, [f32; 4])> = ul_buf
+                    .into_iter()
+                    .map(|(col, viewport_row, style, ul_color)| {
+                        let rgba = ul_color
+                            .map(|c| term_color_to_rgba(c, state.theme.fg, &state.theme.ansi_colors))
+                            .unwrap_or(state.theme.fg);
+                        (col, viewport_row, style, rgba)
+                    })
+                    .collect();
+                let spans = build_underline_spans(&ul_cells, content_x, content_y, cell_w, cell_h);
+                cached_underline_instances.extend(spans);
+            }
 
             // Pre-compute URL spans before consuming `cells` in the render loop.
             let mut url_span_list: Vec<(usize, i32, usize, String)> = Vec::new();
@@ -1062,7 +1090,7 @@ pub fn render_frame(
         cached_cell_data,
         cached_ui_rects,
         cached_bg_rects,
-        &[],
+        cached_underline_instances,
         &image_draws,
         &image_draw_ids,
         &image_clips,
@@ -1268,6 +1296,7 @@ impl AppCore {
             &mut self.cached_cell_data,
             &mut self.cached_ui_rects,
             &mut self.cached_bg_rects,
+            &mut self.cached_underline_instances,
             &mut self.cached_blink,
             &mut self.cached_font_size,
             &mut self.cached_active_tab,

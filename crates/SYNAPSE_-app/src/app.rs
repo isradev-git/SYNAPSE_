@@ -11,6 +11,7 @@ use winit::{
 use alacritty_terminal::term::TermMode;
 use synapse_renderer::renderer::Renderer;
 use synapse_renderer::ui::UIRect;
+use synapse_renderer::underline::UnderlineInstance;
 use synapse_ui::{
     layout::Layout,
     pane::{Pane, PaneId},
@@ -42,6 +43,7 @@ pub struct AppCore {
     pub cached_cell_data: CellData,
     pub cached_ui_rects: Vec<UIRect>,
     pub cached_bg_rects: Vec<UIRect>,
+    pub cached_underline_instances: Vec<UnderlineInstance>,
     pub cached_blink: bool,
     pub cached_font_size: f32,
     pub cached_active_tab: usize,
@@ -211,6 +213,7 @@ impl AppCore {
             cached_cell_data: Vec::new(),
             cached_ui_rects: Vec::new(),
             cached_bg_rects: Vec::new(),
+            cached_underline_instances: Vec::new(),
             cached_blink: true,
             cached_font_size: effective_initial_font_size,
             cached_active_tab: 0,
@@ -276,6 +279,7 @@ impl AppCore {
         self.cached_cell_data.clear();
         self.cached_ui_rects.clear();
         self.cached_bg_rects.clear();
+        self.cached_underline_instances.clear();
     }
 
     fn handle_focus(&mut self, focused: bool) {

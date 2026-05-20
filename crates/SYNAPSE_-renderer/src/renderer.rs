@@ -442,6 +442,7 @@ impl Renderer {
     }
 
     #[allow(clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_frame(
         &mut self,
         cells: &[(char, f32, f32, f32, [f32; 4], [f32; 4])],
