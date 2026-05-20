@@ -79,6 +79,29 @@ fn sample_bloom_v(uv: vec2<f32>, sigma: f32) -> vec3<f32> {
     return result;
 }
 
+fn apply_chroma(uv: vec2<f32>, strength: f32) -> vec3<f32> {
+    let center = uv - 0.5;
+    let dist = length(center);
+    let dir = normalize(center + vec2(0.0001));
+    let r = textureSample(scene_tex, scene_sampler, clamp(uv + dir * strength * dist, vec2(0.0), vec2(1.0))).r;
+    let g = textureSample(scene_tex, scene_sampler, uv).g;
+    let b = textureSample(scene_tex, scene_sampler, clamp(uv - dir * strength * dist, vec2(0.0), vec2(1.0))).b;
+    return vec3(r, g, b);
+}
+
+fn apply_glitch(color: vec3<f32>, uv: vec2<f32>, time: f32, intensity: f32) -> vec3<f32> {
+    if intensity <= 0.001 { return color; }
+    let block_y  = floor(uv.y * 24.0);
+    let glitch_t = floor(time * 12.0);
+    let noise    = hash(block_y * 13.7 + glitch_t * 0.31);
+    if noise > 1.0 - intensity * 0.4 {
+        let shift    = (hash(block_y * 7.3 + glitch_t) - 0.5) * intensity * 0.08;
+        let glitch_uv = vec2(fract(uv.x + shift), uv.y);
+        return textureSample(scene_tex, scene_sampler, glitch_uv).rgb;
+    }
+    return color;
+}
+
 @fragment
 fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     var uv = frag_pos.xy / u.screen_size;
@@ -100,6 +123,14 @@ fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
         let tinted = bloom_v * u.bloom_tint.rgb * 2.0;
         color = color + tinted;
         color = color / (color + vec3(1.0));
+    }
+
+    if (u.effects_mask & EFFECT_CHROMA) != 0u {
+        color = apply_chroma(uv, u.chroma_strength);
+    }
+
+    if u.glitch_intensity > 0.001 {
+        color = apply_glitch(color, uv, u.time, u.glitch_intensity);
     }
 
     return vec4(color, 1.0);
