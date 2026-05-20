@@ -481,6 +481,7 @@ mod tests {
             "copy",
             "paste",
             "reload_config",
+            "effects_toggle",
         ];
         for &action_str in &actions {
             assert!(
