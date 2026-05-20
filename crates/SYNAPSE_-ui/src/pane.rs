@@ -85,6 +85,8 @@ pub struct Pane {
     pub apc_rx: mpsc::Receiver<String>,
     /// Channel for OSC 7 CWD updates from the PTY reader thread.
     osc7_rx: mpsc::Receiver<String>,
+    /// Channel for OSC 133 semantic marks from the PTY reader thread.
+    pub osc133_rx: mpsc::Receiver<SemanticMark>,
     title: String,
     cwd: String,
     pub pending_bell: bool,
@@ -109,6 +111,7 @@ impl Pane {
         kkp_rx: mpsc::Receiver<KkpCommand>,
         apc_rx: mpsc::Receiver<String>,
         osc7_rx: mpsc::Receiver<String>,
+        osc133_rx: mpsc::Receiver<SemanticMark>,
     ) -> Self {
         Self {
             id,
@@ -125,6 +128,7 @@ impl Pane {
             kitty_flags_stack: Vec::new(),
             apc_rx,
             osc7_rx,
+            osc133_rx,
             title: String::new(),
             cwd: String::new(),
             pending_bell: false,
@@ -186,6 +190,16 @@ impl Pane {
         }
         while let Ok(path) = self.osc7_rx.try_recv() {
             self.cwd = path;
+        }
+        while let Ok(mut mark) = self.osc133_rx.try_recv() {
+            if let Ok(term) = self.term.lock() {
+                use alacritty_terminal::grid::Dimensions;
+                mark.history_snapshot = term.grid().history_size();
+            }
+            self.semantic_marks.push(mark);
+            if self.semantic_marks.len() > 500 {
+                self.semantic_marks.remove(0);
+            }
         }
         while let Ok(cmd) = self.kkp_rx.try_recv() {
             match cmd {

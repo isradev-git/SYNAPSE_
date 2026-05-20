@@ -57,6 +57,58 @@ fn extract_osc7_paths(bytes: &[u8]) -> Vec<String> {
     results
 }
 
+/// Scan `bytes` for OSC 133 sequences and return the mark kinds found.
+/// OSC 133 format: `ESC ] 133 ; <kind>[;<data>] BEL|ST`
+/// Kinds: A=PromptStart, B=CommandStart, C/D=CommandEnd.
+fn extract_osc133_marks(bytes: &[u8]) -> Vec<synapse_ui::pane::MarkKind> {
+    use synapse_ui::pane::MarkKind;
+    let mut results = Vec::new();
+    let mut i = 0;
+    while i + 6 < bytes.len() {
+        // Match: ESC ] 1 3 3 ;
+        if bytes[i] == 0x1b
+            && bytes[i + 1] == b']'
+            && bytes[i + 2] == b'1'
+            && bytes[i + 3] == b'3'
+            && bytes[i + 4] == b'3'
+            && bytes[i + 5] == b';'
+        {
+            let start = i + 6;
+            let mut j = start;
+            let mut end = None;
+            while j < bytes.len() {
+                if bytes[j] == 0x07 {
+                    end = Some((j, j + 1));
+                    break;
+                }
+                if j + 1 < bytes.len() && bytes[j] == 0x1b && bytes[j + 1] == b'\\' {
+                    end = Some((j, j + 2));
+                    break;
+                }
+                j += 1;
+            }
+            if let Some((term_pos, next_i)) = end {
+                if term_pos > start {
+                    let kind_byte = bytes[start];
+                    let mark = match kind_byte {
+                        b'A' => Some(MarkKind::PromptStart),
+                        b'B' => Some(MarkKind::CommandStart),
+                        b'C' | b'D' => Some(MarkKind::CommandEnd),
+                        _ => None,
+                    };
+                    if let Some(k) = mark {
+                        results.push(k);
+                    }
+                }
+                i = next_i;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    results
+}
+
 /// Minimal `Dimensions` impl used to construct and resize a `Term`.
 pub(crate) struct TermSize {
     pub(crate) cols: usize,
@@ -162,6 +214,7 @@ pub fn create_pane_full(
     let (kkp_tx, kkp_rx) = mpsc::sync_channel::<KkpCommand>(64);
     let (apc_tx, apc_rx) = mpsc::sync_channel::<String>(64);
     let (osc7_tx, osc7_rx) = mpsc::sync_channel::<String>(16);
+    let (osc133_tx, osc133_rx) = mpsc::sync_channel::<synapse_ui::pane::SemanticMark>(64);
 
     // 7. Spin up the reader thread: PTY bytes -> VTE parser -> Term handler.
     let term_reader = Arc::clone(&term);
@@ -214,6 +267,12 @@ pub fn create_pane_full(
                         for path in extract_osc7_paths(&staging) {
                             let _ = osc7_tx.try_send(path);
                         }
+                        for kind in extract_osc133_marks(&staging) {
+                            let _ = osc133_tx.try_send(synapse_ui::pane::SemanticMark {
+                                kind,
+                                history_snapshot: 0, // corrected in poll_events under term lock
+                            });
+                        }
 
                         match term_reader.lock() {
                             Ok(mut term) => {
@@ -248,6 +307,7 @@ pub fn create_pane_full(
         kkp_rx,
         apc_rx,
         osc7_rx,
+        osc133_rx,
     ))
 }
 
@@ -474,5 +534,70 @@ impl AppCore {
         self.change_font_size(current_size);
         self.cached_cell_data.clear();
         self.cached_ui_rects.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use synapse_ui::pane::MarkKind;
+
+    #[test]
+    fn test_extract_osc133_prompt_start() {
+        // ESC ] 133 ; A BEL
+        let bytes = b"\x1b]133;A\x07";
+        let marks = extract_osc133_marks(bytes);
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0], MarkKind::PromptStart);
+    }
+
+    #[test]
+    fn test_extract_osc133_command_start() {
+        let bytes = b"\x1b]133;B\x07";
+        let marks = extract_osc133_marks(bytes);
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0], MarkKind::CommandStart);
+    }
+
+    #[test]
+    fn test_extract_osc133_command_end_c() {
+        let bytes = b"\x1b]133;C\x07";
+        let marks = extract_osc133_marks(bytes);
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0], MarkKind::CommandEnd);
+    }
+
+    #[test]
+    fn test_extract_osc133_command_end_d_with_code() {
+        // D;1 = CommandEnd with exit code 1
+        let bytes = b"\x1b]133;D;1\x07";
+        let marks = extract_osc133_marks(bytes);
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0], MarkKind::CommandEnd);
+    }
+
+    #[test]
+    fn test_extract_osc133_st_terminator() {
+        // ESC \ (ST) terminator instead of BEL
+        let bytes = b"\x1b]133;A\x1b\\";
+        let marks = extract_osc133_marks(bytes);
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0], MarkKind::PromptStart);
+    }
+
+    #[test]
+    fn test_extract_osc133_multiple() {
+        let bytes = b"\x1b]133;A\x07some output\x1b]133;B\x07";
+        let marks = extract_osc133_marks(bytes);
+        assert_eq!(marks.len(), 2);
+        assert_eq!(marks[0], MarkKind::PromptStart);
+        assert_eq!(marks[1], MarkKind::CommandStart);
+    }
+
+    #[test]
+    fn test_extract_osc133_unknown_kind_ignored() {
+        let bytes = b"\x1b]133;Z\x07";
+        let marks = extract_osc133_marks(bytes);
+        assert!(marks.is_empty());
     }
 }
