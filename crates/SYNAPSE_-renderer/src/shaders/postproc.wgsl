@@ -40,10 +40,41 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> @builtin(position) vec4<f32> {
     return vec4(x, y, 0.0, 1.0);
 }
 
+fn hash(n: f32) -> f32 {
+    return fract(sin(n) * 43758.5453123);
+}
+
+fn barrel_uv(uv: vec2<f32>, strength: f32) -> vec2<f32> {
+    let c = uv * 2.0 - 1.0;
+    let r2 = dot(c, c);
+    return (c * (1.0 + strength * r2)) * 0.5 + 0.5;
+}
+
+fn apply_vignette(uv: vec2<f32>) -> f32 {
+    let v = uv * (1.0 - uv.yx);
+    return clamp(pow(v.x * v.y * 12.0, 0.35), 0.0, 1.0);
+}
+
+fn apply_scanlines(color: vec3<f32>, screen_y: f32, intensity: f32, freq: f32) -> vec3<f32> {
+    let line = sin(screen_y * 3.14159265 * freq) * 0.5 + 0.5;
+    return color * (1.0 - intensity * (1.0 - line));
+}
+
 @fragment
 fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
-    let uv = frag_pos.xy / u.screen_size;
-    // Passthrough — effects added in Tasks 5-8
-    let color = textureSample(scene_tex, scene_sampler, uv).rgb;
+    var uv = frag_pos.xy / u.screen_size;
+
+    if (u.effects_mask & EFFECT_SCANLINES) != 0u {
+        uv = barrel_uv(uv, 0.05);
+        uv = clamp(uv, vec2(0.001), vec2(0.999));
+    }
+
+    var color = textureSample(scene_tex, scene_sampler, uv).rgb;
+
+    if (u.effects_mask & EFFECT_SCANLINES) != 0u {
+        color = apply_scanlines(color, frag_pos.y, u.scanline_intensity, u.scanline_freq);
+        color = color * apply_vignette(uv);
+    }
+
     return vec4(color, 1.0);
 }
