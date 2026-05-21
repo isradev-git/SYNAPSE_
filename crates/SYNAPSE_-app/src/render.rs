@@ -1257,6 +1257,14 @@ pub fn render_splash_screen(
     renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, &[], &[], &[], &[], false, true, true);
 }
 
+fn send_desktop_notification(title: &str, body: &str) {
+    let _ = notify_rust::Notification::new()
+        .summary(title)
+        .body(body)
+        .timeout(notify_rust::Timeout::Milliseconds(4000))
+        .show();
+}
+
 use crate::app::AppCore;
 use crate::image_protocol::{parse_apc, KittyAction};
 use crate::pane_ops::create_pane;
@@ -1300,7 +1308,20 @@ impl AppCore {
                 self.state.bell_flash_end = Some(
                     std::time::Instant::now() + std::time::Duration::from_millis(200),
                 );
-                // Desktop notification if unfocused added in Task 5.
+            }
+        }
+
+        // Drain OSC 9/777 desktop notifications from all panes (only when unfocused).
+        for pane in self.panes.iter_mut() {
+            while let Some(raw) = pane.notifications.pop_front() {
+                if !self.state.window_focused {
+                    let (title, body) = if let Some(sep) = raw.find('\x00') {
+                        (&raw[..sep], &raw[sep + 1..])
+                    } else {
+                        ("SYNAPSE_", raw.as_str())
+                    };
+                    send_desktop_notification(title, body);
+                }
             }
         }
 
