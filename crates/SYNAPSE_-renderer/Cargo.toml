@@ -18,3 +18,4 @@ tracing = { workspace = true }
 pollster = { workspace = true }
 bytemuck = { workspace = true }
 rustybuzz = { workspace = true }
+SYNAPSE_-config = { path = "../SYNAPSE_-config" }

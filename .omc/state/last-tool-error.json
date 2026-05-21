@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cargo test -p SYNAPSE_-suggest 2>&1\",\"description\":\"Run suggest crate tests\",\"run_in_background\":false}",
-  "error": "Exit code 127\n/bin/bash: line 1: cargo: command not found",
-  "timestamp": "2026-05-19T06:46:58.996Z",
+  "tool_input_preview": "{\"command\":\"~/.cargo/bin/cargo test -p synapse-app -- test_term_cursor_style 2>&1\",\"description\":\"Run the specific new test\"}",
+  "error": "Exit code 101\nerror: package ID specification `synapse-app` did not match any packages\n\nhelp: a package with a similar name exists: `SYNAPSE_-app`",
+  "timestamp": "2026-05-21T11:46:25.972Z",
   "retry_count": 1
 }

@@ -1,10 +1,17 @@
 use std::sync::Arc;
+use std::time::Instant;
+use synapse_config::EffectsConfig;
 use wgpu::{Device, Instance, Queue, Surface, SurfaceConfiguration};
 use winit::window::Window;
 
 use crate::atlas::TextureAtlas;
 use crate::cell::{CellInstance, CellRenderer};
 use crate::image::{ImageInstance, ImageRenderer};
+use crate::postproc::{
+    PostProcRenderer, PostProcUniform,
+    EFFECT_BLOOM, EFFECT_CHROMA, EFFECT_GLITCH,
+    EFFECT_HEX_GRID, EFFECT_MATRIX_BG, EFFECT_SCANLINES,
+};
 use crate::text::TextShaping;
 use crate::ui::{UIRect, UIRenderer};
 use crate::underline::{UnderlineInstance, UnderlineRenderer};
@@ -26,6 +33,11 @@ pub struct Renderer {
     cell_w: f32,
     cell_h: f32,
     cached_instances: Vec<CellInstance>,
+    postproc:        PostProcRenderer,
+    effects_enabled: bool,
+    effects_config:  EffectsConfig,
+    start_time:      Instant,
+    glitch_timer:    f32,
 }
 
 impl Renderer {
@@ -128,6 +140,13 @@ impl Renderer {
         let underline_renderer = UnderlineRenderer::new(Arc::clone(&device), config.format);
         let text = TextShaping::with_family(font_family);
 
+        let postproc = PostProcRenderer::new(
+            Arc::clone(&device),
+            format,
+            size.width,
+            size.height,
+        );
+
         Ok(Self {
             surface,
             device,
@@ -150,6 +169,11 @@ impl Renderer {
             cell_w: 0.0,
             cell_h: 0.0,
             cached_instances: Vec::new(),
+            postproc,
+            effects_enabled: false,
+            effects_config: EffectsConfig::default(),
+            start_time: Instant::now(),
+            glitch_timer: 0.0,
         })
     }
 
@@ -186,6 +210,18 @@ impl Renderer {
         self.image_renderer.remove_image(id);
     }
 
+    pub fn set_effects_enabled(&mut self, enabled: bool) {
+        self.effects_enabled = enabled;
+    }
+
+    pub fn set_effects_config(&mut self, config: EffectsConfig) {
+        self.effects_config = config;
+    }
+
+    pub fn trigger_glitch(&mut self, duration_secs: f32) {
+        self.glitch_timer = duration_secs;
+    }
+
     pub fn image_dimensions(&self, id: u32) -> Option<(u32, u32)> {
         self.image_renderer.image_dimensions(id)
     }
@@ -196,6 +232,7 @@ impl Renderer {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.postproc.resize(new_size.width, new_size.height, &self.queue);
         }
     }
 
@@ -496,6 +533,10 @@ impl Renderer {
     }
 
     fn render_instances(&mut self, images: &[ImageInstance], image_ids: &[u32], clip_rects: &[[u32; 4]]) {
+        if self.glitch_timer > 0.0 {
+            self.glitch_timer = (self.glitch_timer - 0.016).max(0.0);
+        }
+
         self.cell_renderer
             .update_screen_size(&self.queue, self.size.width, self.size.height);
         self.ui_renderer_bg
@@ -519,7 +560,7 @@ impl Renderer {
             }
         };
 
-        let view = output
+        let surface_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -533,7 +574,7 @@ impl Renderer {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("SYNAPSE_ Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: self.postproc.offscreen_view(),
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(self.clear_color),
@@ -567,7 +608,45 @@ impl Renderer {
             self.ui_renderer.draw(&mut render_pass);
         }
 
+        let uniform = self.build_postproc_uniform();
+        self.postproc.render(&mut encoder, &surface_view, &self.queue, &uniform);
+
         self.queue.submit(Some(encoder.finish()));
         output.present();
+    }
+
+    fn build_postproc_uniform(&self) -> PostProcUniform {
+        use synapse_config::effects::parse_hex_color;
+
+        let cfg = &self.effects_config;
+        let time = self.start_time.elapsed().as_secs_f32();
+
+        let mut mask = 0u32;
+        if self.effects_enabled && cfg.enabled {
+            if cfg.scanlines.intensity > 0.0 { mask |= EFFECT_SCANLINES; }
+            if cfg.bloom.threshold < 1.0     { mask |= EFFECT_BLOOM; }
+            if cfg.chroma.strength > 0.0     { mask |= EFFECT_CHROMA; }
+            if cfg.matrix_bg.enabled         { mask |= EFFECT_MATRIX_BG; }
+            if cfg.hex_grid                  { mask |= EFFECT_HEX_GRID; }
+        }
+        if self.glitch_timer > 0.0 {
+            mask |= EFFECT_GLITCH;
+        }
+
+        PostProcUniform {
+            screen_size:        [self.size.width as f32, self.size.height as f32],
+            time,
+            effects_mask:       mask,
+            scanline_intensity: cfg.scanlines.intensity,
+            scanline_freq:      cfg.scanlines.freq,
+            bloom_threshold:    cfg.bloom.threshold,
+            bloom_sigma:        cfg.bloom.sigma,
+            bloom_tint:         parse_hex_color(&cfg.bloom.tint),
+            chroma_strength:    cfg.chroma.strength,
+            glitch_intensity:   self.glitch_timer,
+            matrix_density:     cfg.matrix_bg.density,
+            _pad:               0.0,
+            matrix_color:       parse_hex_color(&cfg.matrix_bg.color),
+        }
     }
 }

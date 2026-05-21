@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1779082328728,
-  "projectRoot": "/home/glitchbane-server/Documents/synapse_",
+  "lastScanned": 1779258429220,
+  "projectRoot": "/home/glitchbane-server/Documents/luna",
   "techStack": {
     "languages": [
       {
@@ -48,14 +48,14 @@
       "path": "assets",
       "purpose": "Static assets",
       "fileCount": 0,
-      "lastAccessed": 1779082328720,
+      "lastAccessed": 1779258429213,
       "keyFiles": []
     },
     "build": {
       "path": "build",
       "purpose": "Build output",
       "fileCount": 3,
-      "lastAccessed": 1779082328723,
+      "lastAccessed": 1779258429216,
       "keyFiles": [
         "bench.sh",
         "build-linux.sh",
@@ -66,21 +66,21 @@
       "path": "crates",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1779082328724,
+      "lastAccessed": 1779258429217,
       "keyFiles": []
     },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 0,
-      "lastAccessed": 1779082328724,
+      "lastAccessed": 1779258429217,
       "keyFiles": []
     },
     "target": {
       "path": "target",
       "purpose": null,
-      "fileCount": 2,
-      "lastAccessed": 1779082328725,
+      "fileCount": 3,
+      "lastAccessed": 1779258429217,
       "keyFiles": [
         "CACHEDIR.TAG"
       ]
@@ -89,7 +89,7 @@
       "path": "testing",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1779082328725,
+      "lastAccessed": 1779258429218,
       "keyFiles": [
         "README.md",
         "run_all.sh"
@@ -99,7 +99,7 @@
       "path": "testing/scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 9,
-      "lastAccessed": 1779082328726,
+      "lastAccessed": 1779258429219,
       "keyFiles": [
         "bench_quick.sh",
         "build_check.sh",
@@ -110,302 +110,188 @@
   "hotPaths": [
     {
       "path": "crates/SYNAPSE_-app/src/render.rs",
-      "accessCount": 40,
-      "lastAccessed": 1778824089493,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/render.rs",
-      "accessCount": 36,
-      "lastAccessed": 1779084270592,
+      "accessCount": 91,
+      "lastAccessed": 1779364187984,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-renderer/src/renderer.rs",
-      "accessCount": 30,
-      "lastAccessed": 1778772581867,
+      "accessCount": 32,
+      "lastAccessed": 1779290924534,
       "type": "file"
     },
     {
-      "path": "crates/SYNAPSE_-app/src/keyboard.rs",
-      "accessCount": 19,
-      "lastAccessed": 1778824063916,
+      "path": "crates/SYNAPSE_-config/src/keybinds.rs",
+      "accessCount": 25,
+      "lastAccessed": 1779364144152,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-ui/src/pane.rs",
-      "accessCount": 18,
-      "lastAccessed": 1778772247396,
-      "type": "file"
-    },
-    {
-      "path": "docs/desarrollo/desarrollo_principal.md",
-      "accessCount": 18,
-      "lastAccessed": 1778841667302,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-renderer/src/atlas.rs",
-      "accessCount": 17,
-      "lastAccessed": 1778823866975,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/mouse.rs",
-      "accessCount": 15,
-      "lastAccessed": 1778771643854,
+      "accessCount": 21,
+      "lastAccessed": 1779364100445,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-app/src/app.rs",
-      "accessCount": 15,
-      "lastAccessed": 1778772420412,
+      "accessCount": 20,
+      "lastAccessed": 1779342177580,
       "type": "file"
     },
     {
-      "path": "crates/SYNAPSE_-app/src/app.rs",
-      "accessCount": 15,
-      "lastAccessed": 1779084218691,
+      "path": "crates/SYNAPSE_-app/src/state.rs",
+      "accessCount": 20,
+      "lastAccessed": 1779363921425,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-renderer/src/shaders/postproc.wgsl",
+      "accessCount": 18,
+      "lastAccessed": 1779290915505,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-app/src/pane_ops.rs",
-      "accessCount": 14,
-      "lastAccessed": 1778824100555,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-renderer/src/text.rs",
-      "accessCount": 13,
-      "lastAccessed": 1778738357156,
-      "type": "file"
-    },
-    {
-      "path": "Cargo.toml",
-      "accessCount": 12,
-      "lastAccessed": 1778838336527,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/state.rs",
-      "accessCount": 11,
-      "lastAccessed": 1778771927830,
+      "accessCount": 18,
+      "lastAccessed": 1779295054249,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-app/src/keyboard.rs",
-      "accessCount": 10,
-      "lastAccessed": 1779082384232,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/input.rs",
-      "accessCount": 7,
-      "lastAccessed": 1778823702511,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/state.rs",
-      "accessCount": 7,
-      "lastAccessed": 1779082684282,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-ui/Cargo.toml",
-      "accessCount": 6,
-      "lastAccessed": 1778688567778,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/Cargo.toml",
-      "accessCount": 6,
-      "lastAccessed": 1778688665957,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-suggest/src/trie.rs",
-      "accessCount": 6,
-      "lastAccessed": 1779173211726,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-ui/src/splitter.rs",
-      "accessCount": 5,
-      "lastAccessed": 1778824499852,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/input.rs",
-      "accessCount": 5,
-      "lastAccessed": 1778839265318,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-renderer/Cargo.toml",
-      "accessCount": 4,
-      "lastAccessed": 1778687654663,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-renderer/src/cell.rs",
-      "accessCount": 4,
-      "lastAccessed": 1778740799950,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/search.rs",
-      "accessCount": 4,
-      "lastAccessed": 1778772207010,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-ui/src/tab_bar.rs",
-      "accessCount": 4,
-      "lastAccessed": 1778824139931,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/Cargo.toml",
-      "accessCount": 4,
-      "lastAccessed": 1778838345668,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-config/src/themes.rs",
-      "accessCount": 4,
-      "lastAccessed": 1779082613790,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-suggest/src/lib.rs",
-      "accessCount": 4,
-      "lastAccessed": 1779173215940,
-      "type": "file"
-    },
-    {
-      "path": "docs/superpowers/plans/2026-05-13-synapse_-v2-phase1-foundation.md",
-      "accessCount": 3,
-      "lastAccessed": 1778770232952,
+      "accessCount": 16,
+      "lastAccessed": 1779364230615,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-config/src/config.rs",
-      "accessCount": 3,
-      "lastAccessed": 1778770244208,
+      "accessCount": 13,
+      "lastAccessed": 1779364116851,
       "type": "file"
     },
     {
-      "path": "crates/SYNAPSE_-ui/src/layout.rs",
+      "path": "crates/SYNAPSE_-renderer/src/lib.rs",
+      "accessCount": 10,
+      "lastAccessed": 1779275469272,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-config/src/effects.rs",
+      "accessCount": 10,
+      "lastAccessed": 1779290914524,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-config/src/lib.rs",
+      "accessCount": 7,
+      "lastAccessed": 1779364119964,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-renderer/src/underline.rs",
+      "accessCount": 6,
+      "lastAccessed": 1779275203141,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-renderer/src/postproc.rs",
+      "accessCount": 6,
+      "lastAccessed": 1779290915124,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-renderer/src/shaders/bloom_h.wgsl",
+      "accessCount": 6,
+      "lastAccessed": 1779290916172,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-renderer/src/shaders/underline.wgsl",
+      "accessCount": 5,
+      "lastAccessed": 1779270441925,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-05-20-synapse_-master-roadmap.md",
+      "accessCount": 4,
+      "lastAccessed": 1779291859267,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-05-20-phase13-cyberpunk-shaders.md",
       "accessCount": 3,
-      "lastAccessed": 1778824129158,
+      "lastAccessed": 1779274484666,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-renderer/Cargo.toml",
       "accessCount": 3,
-      "lastAccessed": 1778838344637,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-suggest/src/history.rs",
-      "accessCount": 3,
-      "lastAccessed": 1779172822170,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-ui/src/lib.rs",
-      "accessCount": 2,
-      "lastAccessed": 1778688332037,
+      "lastAccessed": 1779275489885,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-renderer/src/shaders/cell.wgsl",
       "accessCount": 2,
-      "lastAccessed": 1778738543556,
+      "lastAccessed": 1779273643957,
       "type": "file"
     },
     {
-      "path": "docs/superpowers/specs/2026-05-13-synapse_-v2-rewrite-design.md",
+      "path": "crates/SYNAPSE_-config/Cargo.toml",
       "accessCount": 2,
-      "lastAccessed": 1778770232283,
+      "lastAccessed": 1779275484696,
       "type": "file"
     },
     {
-      "path": "CLAUDE.md",
+      "path": "docs/superpowers/specs/2026-05-20-phase11a-vt-compliance-design.md",
       "accessCount": 2,
-      "lastAccessed": 1778832587768,
+      "lastAccessed": 1779293320644,
       "type": "file"
     },
     {
-      "path": "crates/SYNAPSE_-config/src/config.rs",
+      "path": "docs/superpowers/plans/2026-05-20-phase11a-vt-compliance.md",
       "accessCount": 2,
-      "lastAccessed": 1779082401397,
+      "lastAccessed": 1779294164860,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-app/Cargo.toml",
+      "accessCount": 2,
+      "lastAccessed": 1779341751942,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-05-20-underline-styles.md",
+      "accessCount": 1,
+      "lastAccessed": 1779258455512,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-renderer/src/cell.rs",
+      "accessCount": 1,
+      "lastAccessed": 1779262722296,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-renderer/src/ui.rs",
       "accessCount": 1,
-      "lastAccessed": 1778659883480,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-config/src/lib.rs",
-      "accessCount": 1,
-      "lastAccessed": 1778685393385,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-terminal/src/lib.rs",
-      "accessCount": 1,
-      "lastAccessed": 1778685393978,
+      "lastAccessed": 1779270437279,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-config/src/themes.rs",
       "accessCount": 1,
-      "lastAccessed": 1778737014040,
+      "lastAccessed": 1779273185431,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-renderer/src/shaders/ui.wgsl",
       "accessCount": 1,
-      "lastAccessed": 1778740550032,
+      "lastAccessed": 1779273644484,
       "type": "file"
     },
     {
-      "path": "crates/SYNAPSE_-app/src/main.rs",
+      "path": "crates/SYNAPSE_-app/src/input.rs",
       "accessCount": 1,
-      "lastAccessed": 1778770231292,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-config/src/keybinds.rs",
-      "accessCount": 1,
-      "lastAccessed": 1778823946125,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-config/Cargo.toml",
-      "accessCount": 1,
-      "lastAccessed": 1778832062260,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-ui/Cargo.toml",
-      "accessCount": 1,
-      "lastAccessed": 1778832065625,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-suggest/Cargo.toml",
-      "accessCount": 1,
-      "lastAccessed": 1778833276047,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-config/src/lib.rs",
-      "accessCount": 1,
-      "lastAccessed": 1778837835808,
+      "lastAccessed": 1779293437761,
       "type": "file"
     }
   ],
