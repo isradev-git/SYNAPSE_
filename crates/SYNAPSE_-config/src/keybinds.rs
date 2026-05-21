@@ -47,6 +47,7 @@ pub enum Action {
     EffectsToggle,
     JumpPrevMark,
     JumpNextMark,
+    ToggleCopyMode,
 }
 
 impl Action {
@@ -86,6 +87,7 @@ impl Action {
             "effects_toggle" => Some(Action::EffectsToggle),
             "jump_prev_mark" => Some(Action::JumpPrevMark),
             "jump_next_mark" => Some(Action::JumpNextMark),
+            "toggle_copy_mode" => Some(Action::ToggleCopyMode),
             _ => None,
         }
     }
@@ -444,6 +446,13 @@ fn default_entries() -> Vec<KeyBindEntry> {
             alt: false,
             action: "jump_next_mark".into(),
         },
+        KeyBindEntry {
+            key: "Space".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "toggle_copy_mode".into(),
+        },
     ]
 }
 
@@ -628,6 +637,18 @@ mod tests {
             kb.lookup(&Key::Named(NamedKey::ArrowRight), mods(true, true, false)),
             Some(Action::NavigateRight)
         );
+    }
+
+    #[test]
+    fn test_toggle_copy_mode_action_from_str() {
+        assert_eq!(Action::from_str("toggle_copy_mode"), Some(Action::ToggleCopyMode));
+    }
+
+    #[test]
+    fn test_toggle_copy_mode_default_binding() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Named(NamedKey::Space), mods(true, true, false));
+        assert_eq!(action, Some(Action::ToggleCopyMode));
     }
 
     #[test]

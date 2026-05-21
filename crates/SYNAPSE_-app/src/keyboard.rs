@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
-use winit::{event::KeyEvent, window::Window};
+use winit::{event::KeyEvent, keyboard::ModifiersState, window::Window};
 
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::TermMode;
+use std::sync::atomic::Ordering;
 use synapse_config::Action;
+use synapse_ui::pane::{CopyModeState, CopySelMode};
 use synapse_ui::{layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::TabBar};
 
 use crate::{
@@ -55,6 +57,51 @@ fn app_cursor_active(pane: &Pane) -> bool {
         .unwrap_or(false)
 }
 
+fn enter_copy_mode(pane: &mut Pane, state: &mut AppState) {
+    let cursor = pane.term.lock()
+        .map(|t| t.grid().cursor.point)
+        .unwrap_or_default();
+    pane.copy_mode = Some(CopyModeState {
+        cursor,
+        anchor: None,
+        sel_mode: CopySelMode::None,
+    });
+    state.in_copy_mode = true;
+    pane.dirty.store(true, Ordering::Release);
+}
+
+fn exit_copy_mode(pane: &mut Pane, state: &mut AppState) {
+    if let Ok(mut term) = pane.term.lock() {
+        term.selection = None;
+    }
+    pane.copy_mode = None;
+    state.in_copy_mode = false;
+    pane.dirty.store(true, Ordering::Release);
+}
+
+fn handle_copy_mode_key(
+    key: &winit::keyboard::Key,
+    _modifiers: ModifiersState,
+    pane: &mut Pane,
+    state: &mut AppState,
+    clipboard: &mut Option<arboard::Clipboard>,
+) {
+    use winit::keyboard::NamedKey;
+    let key_char: Option<&str> = match key {
+        winit::keyboard::Key::Character(c) => Some(c.as_str()),
+        _ => None,
+    };
+    let is_escape = matches!(key, winit::keyboard::Key::Named(NamedKey::Escape));
+
+    if is_escape || key_char == Some("q") || key_char == Some("Q") {
+        exit_copy_mode(pane, state);
+        return;
+    }
+
+    // Motion and selection handled in Tasks 3–5.
+    let _ = clipboard; // suppress unused warning until T5
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn handle_keyboard(
     event: &KeyEvent,
@@ -92,6 +139,26 @@ pub fn handle_keyboard(
     if event.state == winit::event::ElementState::Pressed {
         let logical_key = &event.logical_key;
         let is_repeat = event.repeat;
+
+        // ToggleCopyMode: first press only, processed before the copy mode gate.
+        if !is_repeat {
+            if let Some(Action::ToggleCopyMode) = state.keybinds.lookup(logical_key, state.modifiers) {
+                let pane = active_pane_mut(panes, tab_bar);
+                if state.in_copy_mode {
+                    exit_copy_mode(pane, state);
+                } else {
+                    enter_copy_mode(pane, state);
+                }
+                return PostKeyAction::None;
+            }
+        }
+
+        // Copy mode gate: consume all keypresses (including repeats) when active.
+        if state.in_copy_mode {
+            let pane = active_pane_mut(panes, tab_bar);
+            handle_copy_mode_key(logical_key, state.modifiers, pane, state, clipboard);
+            return PostKeyAction::None;
+        }
 
         // Only process keybinds and search UI on first press — repeats go
         // straight to input encoding below so holding Backspace works.
@@ -454,6 +521,9 @@ pub fn handle_keyboard(
             Some(Action::EffectsToggle) => {
                 state.effects_enabled = !state.effects_enabled;
                 return PostKeyAction::EffectsToggle;
+            }
+            Some(Action::ToggleCopyMode) => {
+                // Handled by the routing gate above; unreachable here.
             }
             Some(Action::ReloadConfig) => {
                 state.config.reload();
