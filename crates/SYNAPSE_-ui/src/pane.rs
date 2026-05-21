@@ -71,7 +71,7 @@ pub enum CopySelMode {
     Line,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CopyModeState {
     pub cursor: alacritty_terminal::index::Point,
     pub anchor: Option<alacritty_terminal::index::Point>,
