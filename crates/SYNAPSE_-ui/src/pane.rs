@@ -278,4 +278,17 @@ mod tests {
         let m = SemanticMark { kind: MarkKind::PromptStart, history_snapshot: 42 };
         assert_eq!(m.history_snapshot, 42);
     }
+
+    #[test]
+    fn test_clipboard_op_read_has_formatter() {
+        let fmt: std::sync::Arc<dyn Fn(&str) -> String + Send + Sync> =
+            std::sync::Arc::new(|s: &str| format!("response:{}", s));
+        let op = ClipboardOp::Read(
+            alacritty_terminal::term::ClipboardType::Clipboard,
+            fmt.clone(),
+        );
+        if let ClipboardOp::Read(_, f) = op {
+            assert_eq!(f("clipboard_text"), "response:clipboard_text");
+        }
+    }
 }

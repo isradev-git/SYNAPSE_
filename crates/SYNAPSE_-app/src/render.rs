@@ -1325,6 +1325,30 @@ impl AppCore {
             }
         }
 
+        // Drain OSC 52 clipboard operations.
+        for pane in self.panes.iter_mut() {
+            while let Some(op) = pane.clipboard_pending.pop_front() {
+                match op {
+                    synapse_ui::pane::ClipboardOp::Write(_, data) => {
+                        if let Some(cb) = self.clipboard.as_mut() {
+                            let _ = cb.set_text(data);
+                        }
+                    }
+                    synapse_ui::pane::ClipboardOp::Read(_, fmt) => {
+                        let text = self
+                            .clipboard
+                            .as_mut()
+                            .and_then(|cb| cb.get_text().ok())
+                            .unwrap_or_default();
+                        let response = fmt(&text);
+                        if let Ok(mut w) = pane.pty_writer.lock() {
+                            let _ = std::io::Write::write_all(&mut *w, response.as_bytes());
+                        }
+                    }
+                }
+            }
+        }
+
         self.frame_count += 1;
         let now = std::time::Instant::now();
         let elapsed = now.duration_since(self.fps_last_print);
