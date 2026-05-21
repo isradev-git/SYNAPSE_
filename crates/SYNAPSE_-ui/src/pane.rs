@@ -64,6 +64,20 @@ pub enum KkpCommand {
     Pop,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum CopySelMode {
+    None,
+    Char,
+    Line,
+}
+
+#[derive(Debug, Clone)]
+pub struct CopyModeState {
+    pub cursor: alacritty_terminal::index::Point,
+    pub anchor: Option<alacritty_terminal::index::Point>,
+    pub sel_mode: CopySelMode,
+}
+
 pub struct Pane {
     pub id: PaneId,
     pub term: Arc<Mutex<Term<EventProxy>>>,
@@ -95,6 +109,7 @@ pub struct Pane {
     pub clipboard_pending: std::collections::VecDeque<ClipboardOp>,
     pub notifications: std::collections::VecDeque<String>,
     pub semantic_marks: Vec<SemanticMark>,
+    pub copy_mode: Option<CopyModeState>,
 }
 
 impl Pane {
@@ -139,6 +154,7 @@ impl Pane {
             clipboard_pending: std::collections::VecDeque::new(),
             notifications: std::collections::VecDeque::new(),
             semantic_marks: Vec::new(),
+            copy_mode: None,
         }
     }
 
@@ -290,5 +306,23 @@ mod tests {
         if let ClipboardOp::Read(_, f) = op {
             assert_eq!(f("clipboard_text"), "response:clipboard_text");
         }
+    }
+
+    #[test]
+    fn test_copy_sel_mode_eq() {
+        assert_eq!(CopySelMode::None, CopySelMode::None);
+        assert_ne!(CopySelMode::Char, CopySelMode::Line);
+        assert_ne!(CopySelMode::None, CopySelMode::Char);
+    }
+
+    #[test]
+    fn test_copy_mode_state_fields() {
+        let cms = CopyModeState {
+            cursor: alacritty_terminal::index::Point::default(),
+            anchor: None,
+            sel_mode: CopySelMode::None,
+        };
+        assert!(cms.anchor.is_none());
+        assert_eq!(cms.sel_mode, CopySelMode::None);
     }
 }

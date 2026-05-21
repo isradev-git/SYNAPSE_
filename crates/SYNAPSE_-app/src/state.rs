@@ -229,6 +229,7 @@ pub struct AppState {
     pub window_focused: bool,
     /// Cursor shape/blink set by the app via DECSCUSR. Overrides TOML when Some.
     pub term_cursor_style: Option<(CursorShape, bool)>,
+    pub in_copy_mode: bool,
 }
 
 impl AppState {
@@ -262,6 +263,7 @@ impl AppState {
             bell_flash_end: None,
             window_focused: true,
             term_cursor_style: None,
+            in_copy_mode: false,
         }
     }
 
@@ -417,5 +419,11 @@ mod tests {
         let mut state = make_state();
         state.bell_flash_end = Some(std::time::Instant::now() + std::time::Duration::from_millis(200));
         assert!(state.bell_flash_end.map(|t| t > std::time::Instant::now()).unwrap_or(false));
+    }
+
+    #[test]
+    fn test_in_copy_mode_initial_false() {
+        let state = make_state();
+        assert!(!state.in_copy_mode);
     }
 }
