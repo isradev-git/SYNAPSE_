@@ -2,6 +2,27 @@ use crate::effects::EffectsConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BellConfig {
+    #[serde(default = "default_true")]
+    pub visual: bool,
+    #[serde(default = "default_true")]
+    pub notify_unfocused: bool,
+}
+
+impl Default for BellConfig {
+    fn default() -> Self {
+        Self {
+            visual: true,
+            notify_unfocused: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum CursorStyle {
@@ -38,6 +59,8 @@ pub struct Config {
     pub theme: String,
     #[serde(default)]
     pub effects: EffectsConfig,
+    #[serde(default)]
+    pub bell: BellConfig,
 }
 
 fn default_font_size() -> f32 {
@@ -84,6 +107,7 @@ impl Default for Config {
             cursor_blink_ms: default_cursor_blink_ms(),
             theme: default_theme(),
             effects: EffectsConfig::default(),
+            bell: BellConfig::default(),
         }
     }
 }
@@ -172,6 +196,19 @@ fn config_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_bell_config_default() {
+        let cfg = BellConfig::default();
+        assert!(cfg.visual);
+        assert!(cfg.notify_unfocused);
+    }
+
+    #[test]
+    fn test_config_has_bell_field() {
+        let cfg = Config::default();
+        assert!(cfg.bell.visual);
+    }
 
     #[test]
     fn test_default_values() {

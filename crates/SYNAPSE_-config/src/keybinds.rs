@@ -45,6 +45,8 @@ pub enum Action {
     Paste,
     ReloadConfig,
     EffectsToggle,
+    JumpPrevMark,
+    JumpNextMark,
 }
 
 impl Action {
@@ -82,6 +84,8 @@ impl Action {
             "paste" => Some(Action::Paste),
             "reload_config" => Some(Action::ReloadConfig),
             "effects_toggle" => Some(Action::EffectsToggle),
+            "jump_prev_mark" => Some(Action::JumpPrevMark),
+            "jump_next_mark" => Some(Action::JumpNextMark),
             _ => None,
         }
     }
@@ -426,6 +430,20 @@ fn default_entries() -> Vec<KeyBindEntry> {
             alt: false,
             action: "reload_config".into(),
         },
+        KeyBindEntry {
+            key: "Up".into(),
+            ctrl: true,
+            shift: false,
+            alt: false,
+            action: "jump_prev_mark".into(),
+        },
+        KeyBindEntry {
+            key: "Down".into(),
+            ctrl: true,
+            shift: false,
+            alt: false,
+            action: "jump_next_mark".into(),
+        },
     ]
 }
 
@@ -482,6 +500,8 @@ mod tests {
             "paste",
             "reload_config",
             "effects_toggle",
+            "jump_prev_mark",
+            "jump_next_mark",
         ];
         for &action_str in &actions {
             assert!(
@@ -621,5 +641,15 @@ mod tests {
         let kb = Keybinds::default();
         let has_effects = kb.bindings().any(|(_, a)| a == Action::EffectsToggle);
         assert!(has_effects, "EffectsToggle must have a default binding");
+    }
+
+    #[test]
+    fn test_jump_prev_mark_action_from_str() {
+        assert_eq!(Action::from_str("jump_prev_mark"), Some(Action::JumpPrevMark));
+    }
+
+    #[test]
+    fn test_jump_next_mark_action_from_str() {
+        assert_eq!(Action::from_str("jump_next_mark"), Some(Action::JumpNextMark));
     }
 }

@@ -18,6 +18,7 @@ pub enum PostKeyAction {
     None,
     FontChange(f32),
     ThemeChange,
+    EffectsToggle,
 }
 
 fn ensure_tab_visible(
@@ -35,6 +36,10 @@ fn ensure_tab_visible(
     }
 }
 
+
+pub(crate) fn sanitize_paste(text: &str) -> String {
+    text.replace("\r\n", "\r").replace('\n', "\r")
+}
 
 fn bracketed_paste_active(pane: &Pane) -> bool {
     pane.term
@@ -362,13 +367,93 @@ pub fn handle_keyboard(
                         let bracketed = bracketed_paste_active(pane);
                         if bracketed {
                             pane.write_to_pty(b"\x1b[200~");
-                        }
-                        pane.write_to_pty(text.as_bytes());
-                        if bracketed {
+                            pane.write_to_pty(sanitize_paste(&text).as_bytes());
                             pane.write_to_pty(b"\x1b[201~");
+                        } else {
+                            pane.write_to_pty(text.as_bytes());
                         }
                     }
                 }
+            }
+            Some(Action::JumpPrevMark) => {
+                let active_id = tab_bar.active_tab().active_pane;
+                if let Some(pane) = panes.iter_mut().find(|p| p.id == active_id) {
+                    let (cur, cur_hist) = {
+                        match pane.term.lock() {
+                            Ok(term) => {
+                                use alacritty_terminal::grid::Dimensions;
+                                (term.grid().display_offset(), term.grid().history_size())
+                            }
+                            Err(_) => return PostKeyAction::None,
+                        }
+                    };
+                    let target = pane
+                        .semantic_marks
+                        .iter()
+                        .filter(|m| {
+                            matches!(
+                                m.kind,
+                                synapse_ui::pane::MarkKind::PromptStart
+                                    | synapse_ui::pane::MarkKind::CommandStart
+                            )
+                        })
+                        .filter_map(|m| {
+                            let eff = cur_hist.saturating_sub(m.history_snapshot);
+                            if eff > cur {
+                                Some(eff)
+                            } else {
+                                None
+                            }
+                        })
+                        .min();
+                    if let Some(t) = target {
+                        let delta = t as i32 - cur as i32;
+                        pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(delta));
+                    }
+                }
+                return PostKeyAction::None;
+            }
+            Some(Action::JumpNextMark) => {
+                let active_id = tab_bar.active_tab().active_pane;
+                if let Some(pane) = panes.iter_mut().find(|p| p.id == active_id) {
+                    let (cur, cur_hist) = {
+                        match pane.term.lock() {
+                            Ok(term) => {
+                                use alacritty_terminal::grid::Dimensions;
+                                (term.grid().display_offset(), term.grid().history_size())
+                            }
+                            Err(_) => return PostKeyAction::None,
+                        }
+                    };
+                    let target = pane
+                        .semantic_marks
+                        .iter()
+                        .filter(|m| {
+                            matches!(
+                                m.kind,
+                                synapse_ui::pane::MarkKind::PromptStart
+                                    | synapse_ui::pane::MarkKind::CommandStart
+                            )
+                        })
+                        .filter_map(|m| {
+                            let eff = cur_hist.saturating_sub(m.history_snapshot);
+                            if eff < cur {
+                                Some(eff)
+                            } else {
+                                None
+                            }
+                        })
+                        .max();
+                    if let Some(t) = target {
+                        let delta = t as i32 - cur as i32;
+                        pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(delta));
+                    }
+                }
+                return PostKeyAction::None;
+            }
+            Some(Action::EffectsToggle) => {
+                state.effects_enabled = !state.effects_enabled;
+                return PostKeyAction::EffectsToggle;
             }
             Some(Action::ReloadConfig) => {
                 state.config.reload();
@@ -523,10 +608,10 @@ pub fn handle_keyboard(
                         let bracketed = bracketed_paste_active(pane);
                         if bracketed {
                             pane.write_to_pty(b"\x1b[200~");
-                        }
-                        pane.write_to_pty(text.as_bytes());
-                        if bracketed {
+                            pane.write_to_pty(sanitize_paste(&text).as_bytes());
                             pane.write_to_pty(b"\x1b[201~");
+                        } else {
+                            pane.write_to_pty(text.as_bytes());
                         }
                     }
                 }
@@ -558,9 +643,25 @@ impl AppCore {
             PostKeyAction::FontChange(size) => self.change_font_size(size),
             PostKeyAction::ThemeChange => {
                 self.renderer.set_clear_color(self.state.theme.bg);
+                self.renderer.set_effects_config(self.state.config.effects.clone());
                 self.change_font_size(self.state.config.font_size);
+            }
+            PostKeyAction::EffectsToggle => {
+                self.renderer.set_effects_enabled(self.state.effects_enabled);
             }
             PostKeyAction::None => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bracketed_paste_newline_sanitize() {
+        let text = "line1\r\nline2\nline3";
+        let sanitized = sanitize_paste(text);
+        assert_eq!(sanitized, "line1\rline2\rline3");
     }
 }

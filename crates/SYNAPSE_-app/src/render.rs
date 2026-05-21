@@ -1330,9 +1330,14 @@ impl AppCore {
         for pane in self.panes.iter_mut() {
             if pane.pending_bell {
                 pane.pending_bell = false;
-                self.state.bell_flash_end = Some(
-                    std::time::Instant::now() + std::time::Duration::from_millis(200),
-                );
+                if self.state.config.bell.visual {
+                    self.state.bell_flash_end = Some(
+                        std::time::Instant::now() + std::time::Duration::from_millis(200),
+                    );
+                }
+                if !self.state.window_focused && self.state.config.bell.notify_unfocused {
+                    send_desktop_notification("SYNAPSE_", "Bell");
+                }
             }
         }
 
