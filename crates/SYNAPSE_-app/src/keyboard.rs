@@ -79,6 +79,63 @@ fn exit_copy_mode(pane: &mut Pane, state: &mut AppState) {
     pane.dirty.store(true, Ordering::Release);
 }
 
+fn compute_moved_cursor(
+    cursor: alacritty_terminal::index::Point,
+    delta_col: i32,
+    delta_row: i32,
+    cols: i32,
+    rows: i32,
+    history: i32,
+) -> alacritty_terminal::index::Point {
+    use alacritty_terminal::index::{Column, Line, Point};
+    let new_col = (cursor.column.0 as i32 + delta_col).clamp(0, cols - 1);
+    let new_row = (cursor.line.0 + delta_row).clamp(-history, rows - 1);
+    Point::new(Line(new_row), Column(new_col as usize))
+}
+
+fn compute_scroll_delta(viewport_row: i32, screen_lines: i32) -> i32 {
+    if viewport_row < 0 {
+        -viewport_row
+    } else if viewport_row >= screen_lines {
+        screen_lines - 1 - viewport_row
+    } else {
+        0
+    }
+}
+
+fn move_cursor(pane: &mut Pane, delta_col: i32, delta_row: i32) {
+    use alacritty_terminal::grid::Dimensions;
+    let (cols, rows, history) = {
+        match pane.term.lock() {
+            Ok(t) => (t.columns() as i32, t.screen_lines() as i32, t.grid().history_size() as i32),
+            Err(_) => return,
+        }
+    };
+    if let Some(ref mut cms) = pane.copy_mode {
+        cms.cursor = compute_moved_cursor(cms.cursor, delta_col, delta_row, cols, rows, history);
+    }
+    pane.dirty.store(true, Ordering::Release);
+}
+
+fn scroll_to_follow_cursor(pane: &mut Pane) {
+    use alacritty_terminal::grid::Dimensions;
+    let raw_row = match pane.copy_mode.as_ref() {
+        Some(cms) => cms.cursor.line.0,
+        None => return,
+    };
+    let (display_offset, screen_lines) = {
+        match pane.term.lock() {
+            Ok(t) => (t.grid().display_offset() as i32, t.screen_lines() as i32),
+            Err(_) => return,
+        }
+    };
+    let viewport_row = raw_row + display_offset;
+    let delta = compute_scroll_delta(viewport_row, screen_lines);
+    if delta != 0 {
+        pane.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(delta));
+    }
+}
+
 fn handle_copy_mode_key(
     key: &winit::keyboard::Key,
     _modifiers: ModifiersState,
@@ -98,8 +155,28 @@ fn handle_copy_mode_key(
         return;
     }
 
-    // Motion and selection handled in Tasks 3–5.
-    let _ = clipboard; // suppress unused warning until T5
+    match key_char {
+        Some("h") => {
+            move_cursor(pane, -1, 0);
+            scroll_to_follow_cursor(pane);
+        }
+        Some("j") => {
+            move_cursor(pane, 0, 1);
+            scroll_to_follow_cursor(pane);
+        }
+        Some("k") => {
+            move_cursor(pane, 0, -1);
+            scroll_to_follow_cursor(pane);
+        }
+        Some("l") => {
+            move_cursor(pane, 1, 0);
+            scroll_to_follow_cursor(pane);
+        }
+        _ => {}
+    }
+
+    // Motion and selection handled in Tasks 4–5.
+    let _ = clipboard;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -733,5 +810,52 @@ mod tests {
         let text = "line1\r\nline2\nline3";
         let sanitized = sanitize_paste(text);
         assert_eq!(sanitized, "line1\rline2\rline3");
+    }
+
+    #[test]
+    fn test_compute_moved_cursor_basic() {
+        use alacritty_terminal::index::{Column, Line, Point};
+        let start = Point::new(Line(5), Column(10));
+        let moved = compute_moved_cursor(start, 1, 0, 80, 24, 100);
+        assert_eq!(moved.column.0, 11);
+        assert_eq!(moved.line.0, 5);
+
+        let moved_down = compute_moved_cursor(start, 0, 1, 80, 24, 100);
+        assert_eq!(moved_down.line.0, 6);
+        assert_eq!(moved_down.column.0, 10);
+    }
+
+    #[test]
+    fn test_compute_moved_cursor_clamp() {
+        use alacritty_terminal::index::{Column, Line, Point};
+        // Right edge
+        let right = Point::new(Line(0), Column(79));
+        assert_eq!(compute_moved_cursor(right, 1, 0, 80, 24, 100).column.0, 79);
+        // Left edge
+        let left = Point::new(Line(0), Column(0));
+        assert_eq!(compute_moved_cursor(left, -1, 0, 80, 24, 100).column.0, 0);
+        // Bottom edge
+        let bottom = Point::new(Line(23), Column(0));
+        assert_eq!(compute_moved_cursor(bottom, 0, 1, 80, 24, 100).line.0, 23);
+        // History top
+        let hist_top = Point::new(Line(-100), Column(0));
+        assert_eq!(compute_moved_cursor(hist_top, 0, -1, 80, 24, 100).line.0, -100);
+    }
+
+    #[test]
+    fn test_compute_scroll_delta_above() {
+        // cursor at viewport_row = -3 → scroll up 3
+        assert_eq!(compute_scroll_delta(-3, 24), 3);
+    }
+
+    #[test]
+    fn test_compute_scroll_delta_below() {
+        // cursor at viewport_row = 25, screen_lines = 24 → scroll down 2
+        assert_eq!(compute_scroll_delta(25, 24), -2);
+    }
+
+    #[test]
+    fn test_compute_scroll_delta_visible() {
+        assert_eq!(compute_scroll_delta(12, 24), 0);
     }
 }
