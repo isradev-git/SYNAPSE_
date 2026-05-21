@@ -104,7 +104,6 @@ fn compute_scroll_delta(viewport_row: i32, screen_lines: i32) -> i32 {
 }
 
 fn move_cursor(pane: &mut Pane, delta_col: i32, delta_row: i32) {
-    use alacritty_terminal::grid::Dimensions;
     let (cols, rows, history) = {
         match pane.term.lock() {
             Ok(t) => (t.columns() as i32, t.screen_lines() as i32, t.grid().history_size() as i32),
@@ -113,13 +112,13 @@ fn move_cursor(pane: &mut Pane, delta_col: i32, delta_row: i32) {
     };
     if let Some(ref mut cms) = pane.copy_mode {
         cms.cursor = compute_moved_cursor(cms.cursor, delta_col, delta_row, cols, rows, history);
+        pane.dirty.store(true, Ordering::Release);
     }
-    pane.dirty.store(true, Ordering::Release);
 }
 
 fn scroll_to_follow_cursor(pane: &mut Pane) {
-    use alacritty_terminal::grid::Dimensions;
     let raw_row = match pane.copy_mode.as_ref() {
+
         Some(cms) => cms.cursor.line.0,
         None => return,
     };
