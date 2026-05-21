@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::vte::ansi::Color as TermColor;
+use alacritty_terminal::vte::ansi::CursorShape;
 use synapse_config::Theme;
 use synapse_renderer::{image::ImageInstance, renderer::Renderer, ui::UIRect, underline::UnderlineInstance};
 use synapse_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
@@ -449,16 +450,29 @@ fn push_cursor_rect(
     }
 
     let color = state.theme.cursor;
-    match state.config.cursor_style {
-        synapse_config::CursorStyle::Block => {
-            ui_rects.push(UIRect { pos: [cx, cy], size: [cell_w, cell_h], color });
-        }
-        synapse_config::CursorStyle::Beam => {
+    let term_shape = state.term_cursor_style.map(|(s, _)| s);
+    match term_shape {
+        Some(CursorShape::Beam) => {
             ui_rects.push(UIRect { pos: [cx, cy], size: [1.5, cell_h], color });
         }
-        synapse_config::CursorStyle::Underline => {
+        Some(CursorShape::Underline) => {
             ui_rects.push(UIRect { pos: [cx, cy + cell_h - 2.0], size: [cell_w, 2.0], color });
         }
+        Some(CursorShape::Hidden) => {
+            // Hidden cursor: render nothing
+        }
+        // Block, HollowBlock, or None → fallback to TOML config
+        _ => match state.config.cursor_style {
+            synapse_config::CursorStyle::Block => {
+                ui_rects.push(UIRect { pos: [cx, cy], size: [cell_w, cell_h], color });
+            }
+            synapse_config::CursorStyle::Beam => {
+                ui_rects.push(UIRect { pos: [cx, cy], size: [1.5, cell_h], color });
+            }
+            synapse_config::CursorStyle::Underline => {
+                ui_rects.push(UIRect { pos: [cx, cy + cell_h - 2.0], size: [cell_w, 2.0], color });
+            }
+        },
     }
 }
 
@@ -1002,6 +1016,17 @@ pub fn render_frame(
             build_tab_bar_text(layout, tab_bar, scale_factor as f64, state.tab_scroll_offset, &state.theme)
         {
             cached_cell_data.push(tab_cell);
+        }
+
+        // Capture the active pane's DECSCUSR cursor style before rendering.
+        {
+            let active_id = tab_bar.active_tab().active_pane;
+            if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
+                if let Ok(term) = pane.term.lock() {
+                    let cs = term.cursor_style();
+                    state.term_cursor_style = Some((cs.shape, cs.blinking));
+                }
+            }
         }
 
         // Cursor rects go last so blink-only updates can truncate+re-push without

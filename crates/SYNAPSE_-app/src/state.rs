@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
+use alacritty_terminal::vte::ansi::CursorShape;
 use synapse_config::{Config, Keybinds, Theme};
 use synapse_suggest::Suggester;
 use synapse_ui::pane::PaneId;
@@ -226,6 +227,8 @@ pub struct AppState {
     pub cursor_trail: VecDeque<(f32, f32)>,
     pub bell_flash_end: Option<std::time::Instant>,
     pub window_focused: bool,
+    /// Cursor shape/blink set by the app via DECSCUSR. Overrides TOML when Some.
+    pub term_cursor_style: Option<(CursorShape, bool)>,
 }
 
 impl AppState {
@@ -258,6 +261,7 @@ impl AppState {
             cursor_trail: VecDeque::new(),
             bell_flash_end: None,
             window_focused: true,
+            term_cursor_style: None,
         }
     }
 
@@ -394,6 +398,12 @@ mod tests {
         let mut state = make_state();
         state.push_cursor_trail(10.0, 10.0, 0);
         assert_eq!(state.cursor_trail.len(), 0);
+    }
+
+    #[test]
+    fn test_term_cursor_style_initial_none() {
+        let state = make_state();
+        assert!(state.term_cursor_style.is_none());
     }
 
     #[test]
