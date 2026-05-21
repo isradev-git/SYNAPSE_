@@ -511,6 +511,7 @@ mod tests {
             "effects_toggle",
             "jump_prev_mark",
             "jump_next_mark",
+            "toggle_copy_mode",
         ];
         for &action_str in &actions {
             assert!(

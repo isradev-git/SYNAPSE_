@@ -523,7 +523,7 @@ pub fn handle_keyboard(
                 return PostKeyAction::EffectsToggle;
             }
             Some(Action::ToggleCopyMode) => {
-                // Handled by the routing gate above; unreachable here.
+                unreachable!("ToggleCopyMode is handled by the routing gate before this match");
             }
             Some(Action::ReloadConfig) => {
                 state.config.reload();
