@@ -428,6 +428,9 @@ fn push_cursor_rect(
     cell_h: f32,
     state: &mut AppState,
 ) {
+    if state.in_copy_mode {
+        return;
+    }
     if !cursor_blink_on {
         return;
     }
@@ -743,6 +746,27 @@ pub fn render_frame(
                 let cx = content_x + cursor_col as f32 * cell_w;
                 let cy = content_y + cursor_viewport_row as f32 * cell_h;
                 cursor_pixel_for_frame = Some((cx, cy));
+            }
+
+            // Copy mode cursor: amber block, rendered before cached_cursor_rects_start
+            // so it survives blink-only redraws.
+            if is_active && state.in_copy_mode {
+                if let Some(ref cms) = pane.copy_mode {
+                    let copy_col = cms.cursor.column.0;
+                    let copy_viewport_row = cms.cursor.line.0 + display_offset as i32;
+                    if copy_viewport_row >= 0
+                        && (copy_viewport_row as usize) < pane_rows
+                        && copy_col < pane_cols
+                    {
+                        let cx = content_x + copy_col as f32 * cell_w;
+                        let cy = content_y + copy_viewport_row as f32 * cell_h;
+                        cached_ui_rects.push(UIRect {
+                            pos: [cx, cy],
+                            size: [cell_w, cell_h],
+                            color: [1.0, 0.75, 0.0, 0.8],
+                        });
+                    }
+                }
             }
 
             // Ghost text overlay — fish-shell style suggestion after cursor.
@@ -1535,5 +1559,27 @@ mod tests {
         let cells = [(0, 0, 0, color), (2, 0, 0, color)]; // col gap: 0 then 2
         let result = build_underline_spans(&cells, 0.0, 0.0, 8.0, 16.0);
         assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_push_cursor_rect_skips_in_copy_mode() {
+        use synapse_config::{Config, Keybinds};
+        use crate::state::AppState;
+        let mut state = AppState::new(Config::default(), Keybinds::default(), 14.0);
+        state.in_copy_mode = true;
+        let mut rects: Vec<UIRect> = Vec::new();
+        push_cursor_rect(&mut rects, Some((0.0, 0.0)), true, 8.0, 16.0, &mut state);
+        assert!(rects.is_empty(), "copy mode must suppress normal cursor rect");
+    }
+
+    #[test]
+    fn test_push_cursor_rect_emits_rect_normally() {
+        use synapse_config::{Config, Keybinds};
+        use crate::state::AppState;
+        let mut state = AppState::new(Config::default(), Keybinds::default(), 14.0);
+        state.in_copy_mode = false;
+        let mut rects: Vec<UIRect> = Vec::new();
+        push_cursor_rect(&mut rects, Some((10.0, 20.0)), true, 8.0, 16.0, &mut state);
+        assert!(!rects.is_empty(), "normal mode must emit cursor rect");
     }
 }
