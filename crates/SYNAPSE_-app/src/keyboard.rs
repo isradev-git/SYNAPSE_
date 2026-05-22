@@ -90,6 +90,9 @@ fn compute_moved_cursor(
     history: i32,
 ) -> alacritty_terminal::index::Point {
     use alacritty_terminal::index::{Column, Line, Point};
+    if cols <= 0 || rows <= 0 {
+        return cursor;
+    }
     let new_col = (cursor.column.0 as i32 + delta_col).clamp(0, cols - 1);
     let new_row = (cursor.line.0 + delta_row).clamp(-history, rows - 1);
     Point::new(Line(new_row), Column(new_col as usize))
@@ -120,7 +123,6 @@ fn move_cursor(pane: &mut Pane, delta_col: i32, delta_row: i32) {
 
 fn scroll_to_follow_cursor(pane: &mut Pane) {
     let raw_row = match pane.copy_mode.as_ref() {
-
         Some(cms) => cms.cursor.line.0,
         None => return,
     };
