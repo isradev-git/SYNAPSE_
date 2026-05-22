@@ -3,6 +3,8 @@ use std::sync::Arc;
 use winit::{event::KeyEvent, keyboard::ModifiersState, window::Window};
 
 use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::index::Side;
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::TermMode;
 use std::sync::atomic::Ordering;
 use synapse_config::Action;
@@ -160,7 +162,7 @@ fn word_motion_w(pane: &mut Pane) {
             None => return,
         };
         let cols = term.columns();
-        if cols == 0 { return start; }
+        if cols == 0 { return; }
         let max_row = term.screen_lines() as i32 - 1;
         let mut row = start.line.0;
         let mut col = start.column.0;
@@ -256,7 +258,7 @@ fn word_motion_e(pane: &mut Pane) {
             None => return,
         };
         let cols = term.columns();
-        if cols == 0 { return start; }
+        if cols == 0 { return; }
         let max_row = term.screen_lines() as i32 - 1;
         let mut row = start.line.0;
         let mut col = start.column.0;
@@ -296,6 +298,21 @@ fn word_motion_e(pane: &mut Pane) {
     }
 }
 
+fn update_selection_after_move(pane: &mut Pane) {
+    let (sel_mode, cursor) = match pane.copy_mode.as_ref() {
+        Some(cms) => (cms.sel_mode.clone(), cms.cursor),
+        None => return,
+    };
+    if sel_mode == CopySelMode::None {
+        return;
+    }
+    if let Ok(mut term) = pane.term.lock() {
+        if let Some(ref mut sel) = term.selection {
+            sel.update(cursor, Side::Right);
+        }
+    }
+}
+
 fn handle_copy_mode_key(
     key: &winit::keyboard::Key,
     _modifiers: ModifiersState,
@@ -319,36 +336,92 @@ fn handle_copy_mode_key(
         Some("h") => {
             move_cursor(pane, -1, 0);
             scroll_to_follow_cursor(pane);
+            update_selection_after_move(pane);
         }
         Some("j") => {
             move_cursor(pane, 0, 1);
             scroll_to_follow_cursor(pane);
+            update_selection_after_move(pane);
         }
         Some("k") => {
             move_cursor(pane, 0, -1);
             scroll_to_follow_cursor(pane);
+            update_selection_after_move(pane);
         }
         Some("l") => {
             move_cursor(pane, 1, 0);
             scroll_to_follow_cursor(pane);
+            update_selection_after_move(pane);
         }
         Some("w") => {
             word_motion_w(pane);
             scroll_to_follow_cursor(pane);
+            update_selection_after_move(pane);
         }
         Some("b") => {
             word_motion_b(pane);
             scroll_to_follow_cursor(pane);
+            update_selection_after_move(pane);
         }
         Some("e") => {
             word_motion_e(pane);
             scroll_to_follow_cursor(pane);
+            update_selection_after_move(pane);
+        }
+        Some("v") => {
+            let cursor = match pane.copy_mode.as_ref() {
+                Some(cms) => cms.cursor,
+                None => return,
+            };
+            if let Some(ref mut cms) = pane.copy_mode {
+                cms.anchor = Some(cursor);
+                cms.sel_mode = CopySelMode::Char;
+            }
+            if let Ok(mut term) = pane.term.lock() {
+                term.selection = Some(Selection::new(SelectionType::Simple, cursor, Side::Left));
+            }
+            pane.dirty.store(true, Ordering::Release);
+        }
+        Some("V") => {
+            let cursor = match pane.copy_mode.as_ref() {
+                Some(cms) => cms.cursor,
+                None => return,
+            };
+            if let Some(ref mut cms) = pane.copy_mode {
+                cms.anchor = Some(cursor);
+                cms.sel_mode = CopySelMode::Line;
+            }
+            if let Ok(mut term) = pane.term.lock() {
+                term.selection = Some(Selection::new(SelectionType::Lines, cursor, Side::Left));
+            }
+            pane.dirty.store(true, Ordering::Release);
+        }
+        Some("y") => {
+            let sel_mode = pane.copy_mode.as_ref()
+                .map(|cms| cms.sel_mode.clone())
+                .unwrap_or(CopySelMode::None);
+            if sel_mode == CopySelMode::None {
+                let cursor = match pane.copy_mode.as_ref() {
+                    Some(cms) => cms.cursor,
+                    None => {
+                        exit_copy_mode(pane, state);
+                        return;
+                    }
+                };
+                if let Ok(mut term) = pane.term.lock() {
+                    term.selection = Some(Selection::new(SelectionType::Lines, cursor, Side::Left));
+                }
+            }
+            let text = pane.term.lock().ok().and_then(|t| t.selection_to_string());
+            if let Some(text) = text {
+                if let Some(ref mut cb) = *clipboard {
+                    let _ = cb.set_text(text);
+                }
+            }
+            exit_copy_mode(pane, state);
         }
         _ => {}
     }
-
-    // Motion and selection handled in Tasks 4–5.
-    let _ = clipboard;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1029,6 +1102,16 @@ mod tests {
     #[test]
     fn test_compute_scroll_delta_visible() {
         assert_eq!(compute_scroll_delta(12, 24), 0);
+    }
+
+    #[test]
+    fn test_copy_sel_mode_char_not_none() {
+        assert_ne!(CopySelMode::Char, CopySelMode::None);
+    }
+
+    #[test]
+    fn test_copy_sel_mode_line_not_none() {
+        assert_ne!(CopySelMode::Line, CopySelMode::None);
     }
 
     #[test]
