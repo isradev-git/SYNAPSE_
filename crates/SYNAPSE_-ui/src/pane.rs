@@ -64,7 +64,7 @@ pub enum KkpCommand {
     Pop,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CopySelMode {
     None,
     Char,

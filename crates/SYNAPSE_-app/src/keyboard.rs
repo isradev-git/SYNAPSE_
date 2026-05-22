@@ -300,7 +300,7 @@ fn word_motion_e(pane: &mut Pane) {
 
 fn update_selection_after_move(pane: &mut Pane) {
     let (sel_mode, cursor) = match pane.copy_mode.as_ref() {
-        Some(cms) => (cms.sel_mode.clone(), cms.cursor),
+        Some(cms) => (cms.sel_mode, cms.cursor),
         None => return,
     };
     if sel_mode == CopySelMode::None {
@@ -398,21 +398,18 @@ fn handle_copy_mode_key(
         }
         Some("y") => {
             let sel_mode = pane.copy_mode.as_ref()
-                .map(|cms| cms.sel_mode.clone())
+                .map(|cms| cms.sel_mode)
                 .unwrap_or(CopySelMode::None);
-            if sel_mode == CopySelMode::None {
-                let cursor = match pane.copy_mode.as_ref() {
-                    Some(cms) => cms.cursor,
-                    None => {
-                        exit_copy_mode(pane, state);
-                        return;
-                    }
-                };
-                if let Ok(mut term) = pane.term.lock() {
-                    term.selection = Some(Selection::new(SelectionType::Lines, cursor, Side::Left));
+            let cursor = match pane.copy_mode.as_ref() {
+                Some(cms) => cms.cursor,
+                None => { exit_copy_mode(pane, state); return; }
+            };
+            let text = pane.term.lock().ok().and_then(|mut t| {
+                if sel_mode == CopySelMode::None {
+                    t.selection = Some(Selection::new(SelectionType::Lines, cursor, Side::Left));
                 }
-            }
-            let text = pane.term.lock().ok().and_then(|t| t.selection_to_string());
+                t.selection_to_string()
+            });
             if let Some(text) = text {
                 if let Some(ref mut cb) = *clipboard {
                     let _ = cb.set_text(text);
