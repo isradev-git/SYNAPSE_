@@ -9,8 +9,11 @@ use alacritty_terminal::vte::ansi::{Processor, StdSyncHandler};
 use synapse_ui::pane::{EventProxy, KkpCommand, Pane, PaneId};
 
 use crate::image_protocol;
-use synapse_ui::{layout::Layout, splitter::PaneRect, tab_bar::TabBar, SCROLL_BTN_W, TAB_BAR_HEIGHT as TAB_BAR_HEIGHT_PX};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use synapse_ui::{
+    layout::Layout, splitter::PaneRect, tab_bar::TabBar, SIDEBAR_TAB_HEIGHT,
+    TAB_BAR_HEIGHT as TAB_BAR_HEIGHT_PX,
+};
 
 const CLOSE_BTN_W: f32 = 16.0;
 
@@ -21,7 +24,8 @@ fn extract_osc7_paths(bytes: &[u8]) -> Vec<String> {
     let mut results = Vec::new();
     let mut i = 0;
     while i + 3 < bytes.len() {
-        if bytes[i] == 0x1b && bytes[i + 1] == b']' && bytes[i + 2] == b'7' && bytes[i + 3] == b';' {
+        if bytes[i] == 0x1b && bytes[i + 1] == b']' && bytes[i + 2] == b'7' && bytes[i + 3] == b';'
+        {
             let start = i + 4;
             let mut j = start;
             let mut end = None;
@@ -212,7 +216,12 @@ impl Dimensions for TermSize {
     }
 }
 
-pub fn create_pane(id: PaneId, cols: usize, rows: usize, scrollback_lines: usize) -> Result<Pane, String> {
+pub fn create_pane(
+    id: PaneId,
+    cols: usize,
+    rows: usize,
+    scrollback_lines: usize,
+) -> Result<Pane, String> {
     create_pane_with_cwd(id, cols, rows, None, scrollback_lines)
 }
 
@@ -286,7 +295,11 @@ pub fn create_pane_full(
     let proxy = EventProxy::new(event_tx);
 
     // 6. Construct the terminal.
-    let size = TermSize { cols, rows, scrollback_lines };
+    let size = TermSize {
+        cols,
+        rows,
+        scrollback_lines,
+    };
     let term = Term::new(TermConfig::default(), &size, proxy);
     let term = Arc::new(Mutex::new(term));
 
@@ -331,10 +344,7 @@ pub fn create_pane_full(
                             match scan_cmd {
                                 image_protocol::KkpScan::Query => {
                                     if let Ok(mut w) = pty_writer_kkp.lock() {
-                                        let _ = std::io::Write::write_all(
-                                            &mut *w,
-                                            b"\x1b[?1u",
-                                        );
+                                        let _ = std::io::Write::write_all(&mut *w, b"\x1b[?1u");
                                     }
                                     let _ = kkp_tx.try_send(KkpCommand::Query);
                                 }
@@ -469,6 +479,7 @@ pub fn handle_tab_click(
     tab_bar: &mut TabBar,
     panes: &mut Vec<Pane>,
     x: f64,
+    y: f64,
     layout: &Layout,
     scroll_offset: &mut usize,
     cell_w: f32,
@@ -477,27 +488,32 @@ pub fn handle_tab_click(
     shell: &str,
     shell_args: &[String],
 ) {
+    let sw = layout.sidebar_width as f64;
+    let header_h = synapse_ui::SIDEBAR_HEADER_HEIGHT as f64;
+    let tab_h = SIDEBAR_TAB_HEIGHT as f64;
+    let bottom_btn_h = tab_h;
+    let scroll_btn_h = synapse_ui::SIDEBAR_SCROLL_BTN_H as f64;
+
     let tab_count = tab_bar.tabs.len();
-    let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, *scroll_offset);
-    let vis_count = end - start;
-    let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right) as f64;
-    let x_start = if show_left { SCROLL_BTN_W as f64 } else { 0.0 };
+    let (start, end, show_up, show_down) = layout.tab_visible_range(tab_count, *scroll_offset);
+    let vis_count = end.saturating_sub(start);
 
-    // < scroll button
-    if show_left && x < SCROLL_BTN_W as f64 {
-        *scroll_offset = scroll_offset.saturating_sub(1);
-        return;
-    }
-
-    // + button area
-    let plus_x = x_start + vis_count as f64 * tab_w;
-    if x >= plus_x && x < plus_x + 32.0 {
+    // "+" button at bottom
+    if y >= (layout.window_height as f64 - bottom_btn_h) {
         let pane_area = layout.pane_area();
         let margin = layout.pane_margin() as f64;
         let new_cols = ((pane_area.2 as f64 - margin * 2.0) / cell_w as f64).max(1.0) as usize;
         let new_rows = ((pane_area.3 as f64 - margin * 2.0) / cell_h as f64).max(1.0) as usize;
         let (_, pane_id) = tab_bar.new_tab();
-        match create_pane_full(pane_id, new_cols, new_rows, None, Some(shell), shell_args, scrollback_lines) {
+        match create_pane_full(
+            pane_id,
+            new_cols,
+            new_rows,
+            None,
+            Some(shell),
+            shell_args,
+            scrollback_lines,
+        ) {
             Ok(pane) => panes.push(pane),
             Err(e) => {
                 tracing::warn!("Failed to spawn PTY for new tab: {}", e);
@@ -505,7 +521,6 @@ pub fn handle_tab_click(
                 return;
             }
         }
-        // Scroll so the new active tab is visible
         let new_count = tab_bar.tabs.len();
         let (new_start, new_end, _, _) = layout.tab_visible_range(new_count, *scroll_offset);
         if tab_bar.active >= new_end {
@@ -515,30 +530,42 @@ pub fn handle_tab_click(
         return;
     }
 
-    // > scroll button
-    if show_right && x >= plus_x + 32.0 {
-        *scroll_offset = (*scroll_offset + 1).min(tab_count.saturating_sub(1));
+    // Scroll up button
+    if show_up && y >= header_h && y < header_h + scroll_btn_h {
+        *scroll_offset = scroll_offset.saturating_sub(1);
         return;
     }
 
-    // Tab area
-    let rel_x = x - x_start;
-    if rel_x < 0.0 {
+    // Scroll down button
+    if show_down {
+        let down_y = layout.tab_y(vis_count, show_up) as f64;
+        if y >= down_y && y < down_y + scroll_btn_h {
+            *scroll_offset = (*scroll_offset + 1).min(tab_count.saturating_sub(1));
+            return;
+        }
+    }
+
+    // Header area — ignore clicks on the logo
+    if y < header_h {
         return;
     }
-    let vis_idx = (rel_x / tab_w).floor() as usize;
+
+    // Tab area: determine which visible tab was clicked
+    let scroll_top = if show_up { scroll_btn_h } else { 0.0 };
+    let rel_y = y - header_h - scroll_top;
+    if rel_y < 0.0 {
+        return;
+    }
+    let vis_idx = (rel_y / tab_h).floor() as usize;
     let actual_idx = start + vis_idx;
     if actual_idx >= end {
         return;
     }
 
-    // × close button zone (rightmost CLOSE_BTN_W px of each tab)
-    let tab_start_x = x_start + vis_idx as f64 * tab_w;
-    let close_start = tab_start_x + tab_w - CLOSE_BTN_W as f64;
+    // × close button zone (rightmost CLOSE_BTN_W px of sidebar)
+    let close_start = sw - CLOSE_BTN_W as f64;
     if x >= close_start && tab_count > 1 {
         if let Some(closed) = tab_bar.close_tab(actual_idx) {
-            // Dropping the Pane drops pty_writer + pty_master, which closes the
-            // PTY and lets the child process terminate on its next read/write.
             let closed_panes = closed.pane_tree.all_panes();
             panes.retain(|p| !closed_panes.contains(&p.id));
         }
@@ -619,6 +646,13 @@ impl AppCore {
 
     pub(crate) fn handle_scale_factor_change(&mut self) {
         self.layout.tab_bar_height = TAB_BAR_HEIGHT_PX * self.scale_factor;
+        let sidebar_logical = if self.state.config.sidebar_width > 0.0 {
+            self.state.config.sidebar_width
+        } else {
+            synapse_ui::SIDEBAR_DEFAULT_WIDTH
+        };
+        self.layout.sidebar_width = sidebar_logical * self.scale_factor;
+        self.layout.status_bar_visible = self.state.status_bar_visible;
         let current_size = self.state.font_size;
         self.change_font_size(current_size);
         self.cached_cell_data.clear();
@@ -727,6 +761,9 @@ mod tests {
     fn test_extract_osc9_empty_ignored() {
         let bytes = b"\x1b]9;\x07";
         let notifs = extract_osc9_notifications(bytes);
-        assert!(notifs.is_empty(), "empty message should not produce notification");
+        assert!(
+            notifs.is_empty(),
+            "empty message should not produce notification"
+        );
     }
 }

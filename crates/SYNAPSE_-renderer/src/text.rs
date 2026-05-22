@@ -1,7 +1,6 @@
 const JETBRAINS_MONO_REGULAR: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf");
-const JETBRAINS_MONO_BOLD: &[u8] =
-    include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf");
+const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf");
 const JETBRAINS_MONO_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf");
 
@@ -72,7 +71,18 @@ enum FontVariant {
 
 fn classify_variant(stem_norm: &str, family_key: &str) -> Option<FontVariant> {
     let remainder = stem_norm.replacen(family_key, "", 1);
-    for skip in &["extralight", "extrabold", "semibold", "medium", "black", "heavy", "thin", "light", "condensed", "expanded"] {
+    for skip in &[
+        "extralight",
+        "extrabold",
+        "semibold",
+        "medium",
+        "black",
+        "heavy",
+        "thin",
+        "light",
+        "condensed",
+        "expanded",
+    ] {
         if remainder.contains(skip) {
             return None;
         }
@@ -95,7 +105,9 @@ fn collect_font_paths(
     italic: &mut Option<std::path::PathBuf>,
     depth: u8,
 ) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() && depth > 0 {
@@ -149,7 +161,14 @@ fn find_font_bytes(family_key: &str) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     let mut italic_path: Option<std::path::PathBuf> = None;
 
     for dir in system_font_dirs() {
-        collect_font_paths(&dir, family_key, &mut regular_path, &mut bold_path, &mut italic_path, 4);
+        collect_font_paths(
+            &dir,
+            family_key,
+            &mut regular_path,
+            &mut bold_path,
+            &mut italic_path,
+            4,
+        );
         if regular_path.is_some() {
             break;
         }
@@ -177,7 +196,11 @@ pub struct TextShaping {
 
 impl TextShaping {
     pub fn new() -> Self {
-        Self::from_static(JETBRAINS_MONO_REGULAR, JETBRAINS_MONO_BOLD, JETBRAINS_MONO_ITALIC)
+        Self::from_static(
+            JETBRAINS_MONO_REGULAR,
+            JETBRAINS_MONO_BOLD,
+            JETBRAINS_MONO_ITALIC,
+        )
     }
 
     /// Load the requested font family from system fonts, falling back to embedded
@@ -201,19 +224,24 @@ impl TextShaping {
 
     fn from_static(reg: &'static [u8], bold: &'static [u8], italic: &'static [u8]) -> Self {
         let settings = fontdue::FontSettings::default();
-        let font_regular = fontdue::Font::from_bytes(reg, settings)
-            .expect("font Regular bytes invalid");
-        let font_bold = fontdue::Font::from_bytes(bold, settings)
-            .expect("font Bold bytes invalid");
-        let font_italic = fontdue::Font::from_bytes(italic, settings)
-            .expect("font Italic bytes invalid");
-        let rb_regular = rustybuzz::Face::from_slice(reg, 0)
-            .expect("rustybuzz: font Regular invalid");
-        let rb_bold = rustybuzz::Face::from_slice(bold, 0)
-            .expect("rustybuzz: font Bold invalid");
-        let rb_italic = rustybuzz::Face::from_slice(italic, 0)
-            .expect("rustybuzz: font Italic invalid");
-        Self { font_regular, font_bold, font_italic, rb_regular, rb_bold, rb_italic }
+        let font_regular =
+            fontdue::Font::from_bytes(reg, settings).expect("font Regular bytes invalid");
+        let font_bold = fontdue::Font::from_bytes(bold, settings).expect("font Bold bytes invalid");
+        let font_italic =
+            fontdue::Font::from_bytes(italic, settings).expect("font Italic bytes invalid");
+        let rb_regular =
+            rustybuzz::Face::from_slice(reg, 0).expect("rustybuzz: font Regular invalid");
+        let rb_bold = rustybuzz::Face::from_slice(bold, 0).expect("rustybuzz: font Bold invalid");
+        let rb_italic =
+            rustybuzz::Face::from_slice(italic, 0).expect("rustybuzz: font Italic invalid");
+        Self {
+            font_regular,
+            font_bold,
+            font_italic,
+            rb_regular,
+            rb_bold,
+            rb_italic,
+        }
     }
 
     fn from_owned(reg: Vec<u8>, bold: Vec<u8>, italic: Vec<u8>) -> Self {
@@ -392,10 +420,21 @@ mod tests {
         // JetBrains Mono uses calt (same count, alternate IDs) or liga (count drops).
         let liga_fired = combined.len() == 1;
         let calt_fired = combined.len() == 2
-            && dash.first().zip(combined.first()).map(|(d, c)| d.glyph_id != c.glyph_id).unwrap_or(false)
+            && dash
+                .first()
+                .zip(combined.first())
+                .map(|(d, c)| d.glyph_id != c.glyph_id)
+                .unwrap_or(false)
             || combined.len() == 2
-            && gt.first().zip(combined.get(1)).map(|(g, c)| g.glyph_id != c.glyph_id).unwrap_or(false);
-        assert!(liga_fired || calt_fired, "'->' ligature should fire via liga or calt");
+                && gt
+                    .first()
+                    .zip(combined.get(1))
+                    .map(|(g, c)| g.glyph_id != c.glyph_id)
+                    .unwrap_or(false);
+        assert!(
+            liga_fired || calt_fired,
+            "'->' ligature should fire via liga or calt"
+        );
         let total_adv: f32 = combined.iter().map(|g| g.x_advance).sum();
         let (cell_w, _) = shaping.cell_metrics(14.0);
         assert!(
@@ -421,7 +460,13 @@ mod tests {
         let glyph_id = shaped[0].glyph_id;
         let by_id = shaping.rasterize_glyph_id(glyph_id, 14.0, false, false);
         let by_char = shaping.rasterize(GlyphKey::new('A', 14.0, false, false));
-        assert_eq!(by_id.width, by_char.width, "glyph_id and char rasterize to same width");
-        assert_eq!(by_id.height, by_char.height, "glyph_id and char rasterize to same height");
+        assert_eq!(
+            by_id.width, by_char.width,
+            "glyph_id and char rasterize to same width"
+        );
+        assert_eq!(
+            by_id.height, by_char.height,
+            "glyph_id and char rasterize to same height"
+        );
     }
 }

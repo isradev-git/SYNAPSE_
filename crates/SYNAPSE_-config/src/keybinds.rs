@@ -48,6 +48,13 @@ pub enum Action {
     JumpPrevMark,
     JumpNextMark,
     ToggleCopyMode,
+    AutoSplit,
+    ResizePaneLeft,
+    ResizePaneRight,
+    ResizePaneUp,
+    ResizePaneDown,
+    ToggleStatusBar,
+    PaletteOpen,
 }
 
 impl Action {
@@ -88,6 +95,13 @@ impl Action {
             "jump_prev_mark" => Some(Action::JumpPrevMark),
             "jump_next_mark" => Some(Action::JumpNextMark),
             "toggle_copy_mode" => Some(Action::ToggleCopyMode),
+            "auto_split" => Some(Action::AutoSplit),
+            "resize_pane_left" => Some(Action::ResizePaneLeft),
+            "resize_pane_right" => Some(Action::ResizePaneRight),
+            "resize_pane_up" => Some(Action::ResizePaneUp),
+            "resize_pane_down" => Some(Action::ResizePaneDown),
+            "toggle_status_bar" => Some(Action::ToggleStatusBar),
+            "palette_open" => Some(Action::PaletteOpen),
             _ => None,
         }
     }
@@ -453,6 +467,55 @@ fn default_entries() -> Vec<KeyBindEntry> {
             alt: false,
             action: "toggle_copy_mode".into(),
         },
+        KeyBindEntry {
+            key: "Enter".into(),
+            ctrl: true,
+            shift: false,
+            alt: false,
+            action: "auto_split".into(),
+        },
+        KeyBindEntry {
+            key: "Left".into(),
+            ctrl: true,
+            shift: true,
+            alt: true,
+            action: "resize_pane_left".into(),
+        },
+        KeyBindEntry {
+            key: "Right".into(),
+            ctrl: true,
+            shift: true,
+            alt: true,
+            action: "resize_pane_right".into(),
+        },
+        KeyBindEntry {
+            key: "Up".into(),
+            ctrl: true,
+            shift: true,
+            alt: true,
+            action: "resize_pane_up".into(),
+        },
+        KeyBindEntry {
+            key: "Down".into(),
+            ctrl: true,
+            shift: true,
+            alt: true,
+            action: "resize_pane_down".into(),
+        },
+        KeyBindEntry {
+            key: "s".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "toggle_status_bar".into(),
+        },
+        KeyBindEntry {
+            key: "p".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "palette_open".into(),
+        },
     ]
 }
 
@@ -512,6 +575,13 @@ mod tests {
             "jump_prev_mark",
             "jump_next_mark",
             "toggle_copy_mode",
+            "auto_split",
+            "resize_pane_left",
+            "resize_pane_right",
+            "resize_pane_up",
+            "resize_pane_down",
+            "toggle_status_bar",
+            "palette_open",
         ];
         for &action_str in &actions {
             assert!(
@@ -533,8 +603,8 @@ mod tests {
     fn test_default_entries_count() {
         let kb = Keybinds::new();
         assert!(
-            kb.entries().len() >= 27,
-            "Expected at least 27 default bindings"
+            kb.entries().len() >= 28,
+            "Expected at least 28 default bindings"
         );
     }
 
@@ -642,7 +712,10 @@ mod tests {
 
     #[test]
     fn test_toggle_copy_mode_action_from_str() {
-        assert_eq!(Action::from_str("toggle_copy_mode"), Some(Action::ToggleCopyMode));
+        assert_eq!(
+            Action::from_str("toggle_copy_mode"),
+            Some(Action::ToggleCopyMode)
+        );
     }
 
     #[test]
@@ -654,7 +727,10 @@ mod tests {
 
     #[test]
     fn test_effects_toggle_action() {
-        assert_eq!(Action::from_str("effects_toggle"), Some(Action::EffectsToggle));
+        assert_eq!(
+            Action::from_str("effects_toggle"),
+            Some(Action::EffectsToggle)
+        );
         assert_eq!(Action::from_str("unknown_xyz"), None);
     }
 
@@ -666,12 +742,86 @@ mod tests {
     }
 
     #[test]
+    fn test_auto_split_action_from_str() {
+        assert_eq!(Action::from_str("auto_split"), Some(Action::AutoSplit));
+    }
+
+    #[test]
+    fn test_auto_split_default_binding() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Named(NamedKey::Enter), mods(true, false, false));
+        assert_eq!(action, Some(Action::AutoSplit));
+    }
+
+    #[test]
+    fn test_resize_pane_actions_from_str() {
+        assert_eq!(
+            Action::from_str("resize_pane_left"),
+            Some(Action::ResizePaneLeft)
+        );
+        assert_eq!(
+            Action::from_str("resize_pane_right"),
+            Some(Action::ResizePaneRight)
+        );
+        assert_eq!(
+            Action::from_str("resize_pane_up"),
+            Some(Action::ResizePaneUp)
+        );
+        assert_eq!(
+            Action::from_str("resize_pane_down"),
+            Some(Action::ResizePaneDown)
+        );
+    }
+
+    #[test]
+    fn test_resize_pane_default_bindings() {
+        let kb = Keybinds::new();
+        assert_eq!(
+            kb.lookup(&Key::Named(NamedKey::ArrowLeft), mods(true, true, true)),
+            Some(Action::ResizePaneLeft)
+        );
+        assert_eq!(
+            kb.lookup(&Key::Named(NamedKey::ArrowRight), mods(true, true, true)),
+            Some(Action::ResizePaneRight)
+        );
+        assert_eq!(
+            kb.lookup(&Key::Named(NamedKey::ArrowUp), mods(true, true, true)),
+            Some(Action::ResizePaneUp)
+        );
+        assert_eq!(
+            kb.lookup(&Key::Named(NamedKey::ArrowDown), mods(true, true, true)),
+            Some(Action::ResizePaneDown)
+        );
+    }
+
+    #[test]
     fn test_jump_prev_mark_action_from_str() {
-        assert_eq!(Action::from_str("jump_prev_mark"), Some(Action::JumpPrevMark));
+        assert_eq!(
+            Action::from_str("jump_prev_mark"),
+            Some(Action::JumpPrevMark)
+        );
     }
 
     #[test]
     fn test_jump_next_mark_action_from_str() {
-        assert_eq!(Action::from_str("jump_next_mark"), Some(Action::JumpNextMark));
+        assert_eq!(
+            Action::from_str("jump_next_mark"),
+            Some(Action::JumpNextMark)
+        );
+    }
+
+    #[test]
+    fn test_toggle_status_bar_action_from_str() {
+        assert_eq!(
+            Action::from_str("toggle_status_bar"),
+            Some(Action::ToggleStatusBar)
+        );
+    }
+
+    #[test]
+    fn test_toggle_status_bar_default_binding() {
+        let kb = Keybinds::new();
+        let action = kb.lookup(&Key::Character("s".into()), mods(true, true, false));
+        assert_eq!(action, Some(Action::ToggleStatusBar));
     }
 }

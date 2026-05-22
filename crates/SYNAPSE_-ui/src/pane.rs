@@ -195,10 +195,12 @@ impl Pane {
                     self.pending_bell = true;
                 }
                 Event::ClipboardStore(kind, data) => {
-                    self.clipboard_pending.push_back(ClipboardOp::Write(kind, data));
+                    self.clipboard_pending
+                        .push_back(ClipboardOp::Write(kind, data));
                 }
                 Event::ClipboardLoad(kind, fmt) => {
-                    self.clipboard_pending.push_back(ClipboardOp::Read(kind, fmt));
+                    self.clipboard_pending
+                        .push_back(ClipboardOp::Read(kind, fmt));
                 }
                 Event::PtyWrite(s) => {
                     if let Ok(mut w) = self.pty_writer.lock() {
@@ -291,7 +293,10 @@ mod tests {
 
     #[test]
     fn test_semantic_mark_has_fields() {
-        let m = SemanticMark { kind: MarkKind::PromptStart, history_snapshot: 42 };
+        let m = SemanticMark {
+            kind: MarkKind::PromptStart,
+            history_snapshot: 42,
+        };
         assert_eq!(m.history_snapshot, 42);
     }
 

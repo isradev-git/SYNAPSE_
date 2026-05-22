@@ -66,8 +66,7 @@ impl InputAction {
         let alt = modifiers.alt_key();
 
         // Modifier value: (shift | alt<<1 | ctrl<<2 | super<<3) + 1
-        let mod_bits: u32 =
-            (shift as u32) | ((alt as u32) << 1) | ((ctrl as u32) << 2);
+        let mod_bits: u32 = (shift as u32) | ((alt as u32) << 1) | ((ctrl as u32) << 2);
         let mods = mod_bits + 1;
         let event_type: u32 = if is_release { 3 } else { 1 };
 

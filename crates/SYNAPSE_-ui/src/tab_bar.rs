@@ -10,6 +10,7 @@ pub struct Tab {
     pub cwd: String,
     pub pane_tree: PaneTree,
     pub active_pane: PaneId,
+    pub alive: bool,
 }
 
 impl Tab {
@@ -20,6 +21,7 @@ impl Tab {
             cwd: String::new(),
             pane_tree: PaneTree::leaf(pane_id),
             active_pane: pane_id,
+            alive: true,
         }
     }
 }
@@ -125,6 +127,12 @@ mod tests {
         assert_eq!(tab.id, TabId(0));
         assert_eq!(tab.title, "");
         assert_eq!(tab.cwd, "");
+    }
+
+    #[test]
+    fn test_tab_alive_default_true() {
+        let tab = make_tab(0, 0);
+        assert!(tab.alive);
     }
 
     #[test]

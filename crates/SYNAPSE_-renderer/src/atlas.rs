@@ -165,7 +165,13 @@ impl TextureAtlas {
         }
 
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
+        self.cache.insert(
+            key,
+            AtlasEntry {
+                uv: rect,
+                last_frame: self.frame,
+            },
+        );
         Some((rect, true))
     }
 
@@ -181,7 +187,13 @@ impl TextureAtlas {
             return Some((entry.uv, false));
         }
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.shaped_cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
+        self.shaped_cache.insert(
+            key,
+            AtlasEntry {
+                uv: rect,
+                last_frame: self.frame,
+            },
+        );
         Some((rect, true))
     }
 
@@ -225,9 +237,8 @@ impl TextureAtlas {
         let y = (rect.v0 * ATLAS_SIZE as f32) as u32;
 
         let raw_bytes_per_row = 4 * bitmap_width;
-        let aligned_bytes_per_row =
-            raw_bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
-                * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let aligned_bytes_per_row = raw_bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 
         let padded_size = (aligned_bytes_per_row * bitmap_height) as usize;
         let mut padded = vec![0u8; padded_size];

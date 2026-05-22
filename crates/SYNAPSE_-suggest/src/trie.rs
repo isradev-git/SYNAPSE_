@@ -158,9 +158,11 @@ fn best_command(node: &TrieNode) -> Option<&str> {
     // Fallback: return own terminal if present, otherwise scan children sorted by key.
     let mut fallback_children: Vec<(&char, &TrieNode)> = node.children.iter().collect();
     fallback_children.sort_by_key(|(k, _)| *k);
-    node.full_cmd
-        .as_deref()
-        .or_else(|| fallback_children.into_iter().find_map(|(_, c)| best_command(c)))
+    node.full_cmd.as_deref().or_else(|| {
+        fallback_children
+            .into_iter()
+            .find_map(|(_, c)| best_command(c))
+    })
 }
 
 #[cfg(test)]
@@ -272,7 +274,10 @@ mod tests {
             }
             node.own_count
         };
-        assert_eq!(count_before, count_after, "seed must not increment existing count");
+        assert_eq!(
+            count_before, count_after,
+            "seed must not increment existing count"
+        );
     }
 
     #[test]

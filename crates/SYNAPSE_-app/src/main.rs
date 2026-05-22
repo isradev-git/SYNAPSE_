@@ -3,6 +3,7 @@ mod image_protocol;
 mod input;
 mod keyboard;
 mod mouse;
+mod palette;
 mod pane_ops;
 mod render;
 mod search;

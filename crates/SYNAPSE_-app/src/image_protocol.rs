@@ -19,9 +19,9 @@ pub enum KittyAction {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum KittyFormat {
     #[default]
-    Rgba,   // f=32
-    Rgb,    // f=24
-    Png,    // f=100
+    Rgba, // f=32
+    Rgb, // f=24
+    Png, // f=100
 }
 
 /// A fully decoded Kitty image stored in the image store.
@@ -120,12 +120,10 @@ impl ImageStore {
         };
 
         let (w, h, rgba) = match cmd.format {
-            KittyFormat::Png => {
-                match decode_png(&raw_bytes) {
-                    Some(v) => v,
-                    None => return,
-                }
-            }
+            KittyFormat::Png => match decode_png(&raw_bytes) {
+                Some(v) => v,
+                None => return,
+            },
             KittyFormat::Rgba => {
                 let w = cmd.width;
                 let h = cmd.height;
@@ -149,7 +147,15 @@ impl ImageStore {
             }
         };
 
-        self.images.insert(id, StoredImage { id, width: w, height: h, rgba });
+        self.images.insert(
+            id,
+            StoredImage {
+                id,
+                width: w,
+                height: h,
+                rgba,
+            },
+        );
 
         if matches!(cmd.action, KittyAction::TransmitAndPut | KittyAction::Put) {
             self.placements.push(ImagePlacement {
@@ -419,8 +425,8 @@ mod tests {
 
     #[test]
     fn parse_apc_transmit() {
-        let cmd = parse_apc("Ga=T,f=32,i=1,s=2,v=2;AAAAAAAAAAAAAAAAAAAAAAAAAA==")
-            .expect("parse failed");
+        let cmd =
+            parse_apc("Ga=T,f=32,i=1,s=2,v=2;AAAAAAAAAAAAAAAAAAAAAAAAAA==").expect("parse failed");
         assert_eq!(cmd.action, KittyAction::Transmit);
         assert_eq!(cmd.format, KittyFormat::Rgba);
         assert_eq!(cmd.image_id, 1);
@@ -450,8 +456,8 @@ mod tests {
 
     #[test]
     fn parse_apc_with_placement_coords() {
-        let cmd = parse_apc("Ga=T,f=32,i=1,s=2,v=2,c=4,r=3,C=10,R=5;AAAAAAAA")
-            .expect("parse failed");
+        let cmd =
+            parse_apc("Ga=T,f=32,i=1,s=2,v=2,c=4,r=3,C=10,R=5;AAAAAAAA").expect("parse failed");
         assert_eq!(cmd.action, KittyAction::Transmit);
         assert_eq!(cmd.columns, 4);
         assert_eq!(cmd.rows, 3);
@@ -483,32 +489,78 @@ mod tests {
     #[test]
     fn image_store_delete_all() {
         let mut store = ImageStore::new();
-        store.images.insert(1, StoredImage { id: 1, width: 1, height: 1, rgba: vec![0; 4] });
-        store.placements.push(ImagePlacement { image_id: 1, col: 0, row: 0, columns: 1, rows: 1, pane_id: None });
-        store.process(ApcCommand {
-            action: KittyAction::Delete,
-            format: KittyFormat::Rgba,
-            image_id: 0,
-            width: 0, height: 0, columns: 0, rows: 0, col: 0, row: 0,
-            data: String::new(),
-            more: false,
-        }, None);
+        store.images.insert(
+            1,
+            StoredImage {
+                id: 1,
+                width: 1,
+                height: 1,
+                rgba: vec![0; 4],
+            },
+        );
+        store.placements.push(ImagePlacement {
+            image_id: 1,
+            col: 0,
+            row: 0,
+            columns: 1,
+            rows: 1,
+            pane_id: None,
+        });
+        store.process(
+            ApcCommand {
+                action: KittyAction::Delete,
+                format: KittyFormat::Rgba,
+                image_id: 0,
+                width: 0,
+                height: 0,
+                columns: 0,
+                rows: 0,
+                col: 0,
+                row: 0,
+                data: String::new(),
+                more: false,
+            },
+            None,
+        );
         assert!(store.placements.is_empty());
     }
 
     #[test]
     fn image_store_delete_by_id() {
         let mut store = ImageStore::new();
-        store.images.insert(2, StoredImage { id: 2, width: 1, height: 1, rgba: vec![0; 4] });
-        store.placements.push(ImagePlacement { image_id: 2, col: 0, row: 0, columns: 1, rows: 1, pane_id: None });
-        store.process(ApcCommand {
-            action: KittyAction::Delete,
-            format: KittyFormat::Rgba,
+        store.images.insert(
+            2,
+            StoredImage {
+                id: 2,
+                width: 1,
+                height: 1,
+                rgba: vec![0; 4],
+            },
+        );
+        store.placements.push(ImagePlacement {
             image_id: 2,
-            width: 0, height: 0, columns: 0, rows: 0, col: 0, row: 0,
-            data: String::new(),
-            more: false,
-        }, None);
+            col: 0,
+            row: 0,
+            columns: 1,
+            rows: 1,
+            pane_id: None,
+        });
+        store.process(
+            ApcCommand {
+                action: KittyAction::Delete,
+                format: KittyFormat::Rgba,
+                image_id: 2,
+                width: 0,
+                height: 0,
+                columns: 0,
+                rows: 0,
+                col: 0,
+                row: 0,
+                data: String::new(),
+                more: false,
+            },
+            None,
+        );
         assert!(!store.images.contains_key(&2));
         assert!(store.placements.is_empty());
     }

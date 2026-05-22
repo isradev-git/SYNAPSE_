@@ -9,6 +9,7 @@ use winit::{
 };
 
 use alacritty_terminal::term::TermMode;
+use portable_pty::PtySize;
 use synapse_renderer::renderer::Renderer;
 use synapse_renderer::ui::UIRect;
 use synapse_renderer::underline::UnderlineInstance;
@@ -17,7 +18,6 @@ use synapse_ui::{
     pane::{Pane, PaneId},
     tab_bar::{Tab, TabBar, TabId},
 };
-use portable_pty::PtySize;
 
 use crate::{
     image_protocol::ImageStore,
@@ -169,7 +169,8 @@ impl AppCore {
                 )
                 .expect("Failed to create window"),
         );
-        let mut renderer = Renderer::new(window.clone(), &config.font_family).expect("Renderer init failed");
+        let mut renderer =
+            Renderer::new(window.clone(), &config.font_family).expect("Renderer init failed");
 
         let mut layout = Layout::new();
         let size = renderer.size();
@@ -177,6 +178,14 @@ impl AppCore {
 
         let scale = window.scale_factor() as f32;
         layout.tab_bar_height = synapse_ui::TAB_BAR_HEIGHT * scale;
+        // Sidebar width: use config value or default, scaled by DPI
+        let sidebar_logical = if config.sidebar_width > 0.0 {
+            config.sidebar_width
+        } else {
+            synapse_ui::SIDEBAR_DEFAULT_WIDTH
+        };
+        layout.sidebar_width = sidebar_logical * scale;
+        layout.status_bar_visible = config.status_bar;
         let effective_initial_font_size = logical_font_size * scale;
         let (cell_w, cell_h) = renderer.cell_metrics(effective_initial_font_size);
         let margin = layout.pane_margin();
@@ -232,7 +241,7 @@ impl AppCore {
         }
     }
 
-    fn handle_resize(&mut self, size: PhysicalSize<u32>) {
+    pub(crate) fn handle_resize(&mut self, size: PhysicalSize<u32>) {
         self.scale_factor = self.window.scale_factor() as f32;
         self.renderer.resize(size);
         self.layout.update(size.width as f32, size.height as f32);

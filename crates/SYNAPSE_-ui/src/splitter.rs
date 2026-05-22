@@ -6,6 +6,15 @@ pub enum SplitDirection {
     Vertical,
 }
 
+/// Returns the optimal split direction for a pane: Vertical if wide, Horizontal if tall.
+pub fn auto_split_direction(rect: &PaneRect) -> SplitDirection {
+    if rect.w >= rect.h {
+        SplitDirection::Vertical
+    } else {
+        SplitDirection::Horizontal
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct PaneRect {
     pub x: f32,
@@ -341,6 +350,48 @@ impl PaneTree {
         }
     }
 
+    /// Adjust the ratio of the innermost split of `split_dir` containing `pane_id` by `delta`.
+    /// Positive delta grows the pane; negative shrinks it. Clamped to [0.1, 0.9].
+    pub fn adjust_ratio(&mut self, pane_id: PaneId, split_dir: SplitDirection, delta: f32) {
+        self.adjust_ratio_inner(pane_id, split_dir, delta);
+    }
+
+    fn adjust_ratio_inner(
+        &mut self,
+        pane_id: PaneId,
+        split_dir: SplitDirection,
+        delta: f32,
+    ) -> bool {
+        match self {
+            PaneTree::Leaf(_) => false,
+            PaneTree::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                if first.adjust_ratio_inner(pane_id, split_dir, delta) {
+                    return true;
+                }
+                if second.adjust_ratio_inner(pane_id, split_dir, delta) {
+                    return true;
+                }
+                if *direction == split_dir {
+                    let in_first = first.all_panes().contains(&pane_id);
+                    if in_first {
+                        *ratio = (*ratio + delta).clamp(0.1, 0.9);
+                        return true;
+                    }
+                    if second.all_panes().contains(&pane_id) {
+                        *ratio = (*ratio - delta).clamp(0.1, 0.9);
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
     /// Update the ratio of the split that contains the given pane_id.
     pub fn set_ratio(&mut self, pane_id: PaneId, ratio: f32) {
         match self {
@@ -499,14 +550,22 @@ mod tests {
         assert_eq!(tree.all_panes().len(), 2);
         assert!(matches!(
             tree,
-            PaneTree::Split { direction: SplitDirection::Horizontal, .. }
+            PaneTree::Split {
+                direction: SplitDirection::Horizontal,
+                ..
+            }
         ));
     }
 
     #[test]
     fn test_layout_single_pane_full_rect() {
         let tree = PaneTree::Leaf(PaneId(1));
-        let rect = PaneRect { x: 10.0, y: 20.0, w: 800.0, h: 600.0 };
+        let rect = PaneRect {
+            x: 10.0,
+            y: 20.0,
+            w: 800.0,
+            h: 600.0,
+        };
         let layouts = tree.get_layout(rect);
         assert_eq!(layouts.len(), 1);
         assert_eq!(layouts[0].0, PaneId(1));
@@ -520,8 +579,14 @@ mod tests {
     #[test]
     fn test_layout_two_pane_area_preserved() {
         let mut tree = PaneTree::Leaf(PaneId(1));
-        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical).unwrap();
-        let rect = PaneRect { x: 0.0, y: 0.0, w: 1000.0, h: 600.0 };
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
+        let rect = PaneRect {
+            x: 0.0,
+            y: 0.0,
+            w: 1000.0,
+            h: 600.0,
+        };
         let layouts = tree.get_layout(rect);
         let total: f32 = layouts.iter().map(|(_, r)| r.w * r.h).sum();
         assert!((total - 1000.0 * 600.0).abs() < 0.1);
@@ -530,7 +595,8 @@ mod tests {
     #[test]
     fn test_close_first_pane_in_split() {
         let mut tree = PaneTree::Leaf(PaneId(1));
-        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical).unwrap();
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
         let removed = tree.close(PaneId(1));
         assert_eq!(removed, Some(PaneId(1)));
         assert_eq!(tree.all_panes(), vec![PaneId(2)]);
@@ -540,8 +606,14 @@ mod tests {
     #[test]
     fn test_get_dividers_two_panes() {
         let mut tree = PaneTree::Leaf(PaneId(1));
-        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical).unwrap();
-        let rect = PaneRect { x: 0.0, y: 0.0, w: 800.0, h: 600.0 };
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
+        let rect = PaneRect {
+            x: 0.0,
+            y: 0.0,
+            w: 800.0,
+            h: 600.0,
+        };
         let dividers = tree.get_dividers(rect);
         assert_eq!(dividers.len(), 1);
     }
@@ -551,5 +623,124 @@ mod tests {
         let tree = PaneTree::Leaf(PaneId(42));
         let panes = tree.all_panes();
         assert_eq!(panes, vec![PaneId(42)]);
+    }
+
+    #[test]
+    fn test_auto_split_direction_wide_pane() {
+        let rect = PaneRect {
+            x: 0.0,
+            y: 0.0,
+            w: 800.0,
+            h: 400.0,
+        };
+        assert_eq!(auto_split_direction(&rect), SplitDirection::Vertical);
+    }
+
+    #[test]
+    fn test_auto_split_direction_tall_pane() {
+        let rect = PaneRect {
+            x: 0.0,
+            y: 0.0,
+            w: 400.0,
+            h: 800.0,
+        };
+        assert_eq!(auto_split_direction(&rect), SplitDirection::Horizontal);
+    }
+
+    #[test]
+    fn test_auto_split_direction_square_pane() {
+        let rect = PaneRect {
+            x: 0.0,
+            y: 0.0,
+            w: 500.0,
+            h: 500.0,
+        };
+        assert_eq!(auto_split_direction(&rect), SplitDirection::Vertical);
+    }
+
+    #[test]
+    fn test_adjust_ratio_clamp_max() {
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
+        for _ in 0..30 {
+            tree.adjust_ratio(PaneId(1), SplitDirection::Vertical, 0.05);
+        }
+        if let PaneTree::Split { ratio, .. } = &tree {
+            assert!(
+                (*ratio - 0.9).abs() < 0.001,
+                "ratio must clamp at 0.9, got {}",
+                ratio
+            );
+        }
+    }
+
+    #[test]
+    fn test_adjust_ratio_clamp_min() {
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
+        for _ in 0..30 {
+            tree.adjust_ratio(PaneId(1), SplitDirection::Vertical, -0.05);
+        }
+        if let PaneTree::Split { ratio, .. } = &tree {
+            assert!(
+                (*ratio - 0.1).abs() < 0.001,
+                "ratio must clamp at 0.1, got {}",
+                ratio
+            );
+        }
+    }
+
+    #[test]
+    fn test_adjust_ratio_second_branch_grows() {
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
+        // PaneId(2) is second; growing it should decrease ratio
+        tree.adjust_ratio(PaneId(2), SplitDirection::Vertical, 0.05);
+        if let PaneTree::Split { ratio, .. } = &tree {
+            assert!(
+                (*ratio - 0.45).abs() < 0.001,
+                "ratio should be 0.45, got {}",
+                ratio
+            );
+        }
+    }
+
+    #[test]
+    fn test_adjust_ratio_wrong_direction_no_op() {
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
+        // Trying to adjust horizontal on a vertical split → no effect
+        tree.adjust_ratio(PaneId(1), SplitDirection::Horizontal, 0.05);
+        if let PaneTree::Split { ratio, .. } = &tree {
+            assert!(
+                (*ratio - 0.5).abs() < 0.001,
+                "ratio unchanged at 0.5, got {}",
+                ratio
+            );
+        }
+    }
+
+    #[test]
+    fn test_adjust_ratio_nested_innermost_wins() {
+        // Split(V) -> Split(V) -> Leaf(1) / Leaf(2) / Leaf(3)
+        let mut tree = PaneTree::Leaf(PaneId(1));
+        tree.split(PaneId(1), PaneId(2), SplitDirection::Vertical)
+            .unwrap();
+        tree.split(PaneId(1), PaneId(3), SplitDirection::Vertical)
+            .unwrap();
+        // PaneId(1) is now in an inner V split; adjusting should touch the inner one
+        tree.adjust_ratio(PaneId(1), SplitDirection::Vertical, 0.1);
+        // Outer ratio must still be 0.5
+        if let PaneTree::Split { ratio, .. } = &tree {
+            assert!(
+                (*ratio - 0.5).abs() < 0.001,
+                "outer ratio unchanged, got {}",
+                ratio
+            );
+        }
     }
 }

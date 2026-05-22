@@ -8,9 +8,8 @@ use crate::atlas::TextureAtlas;
 use crate::cell::{CellInstance, CellRenderer};
 use crate::image::{ImageInstance, ImageRenderer};
 use crate::postproc::{
-    PostProcRenderer, PostProcUniform,
-    EFFECT_BLOOM, EFFECT_CHROMA, EFFECT_GLITCH,
-    EFFECT_HEX_GRID, EFFECT_MATRIX_BG, EFFECT_SCANLINES,
+    PostProcRenderer, PostProcUniform, EFFECT_BLOOM, EFFECT_CHROMA, EFFECT_GLITCH, EFFECT_HEX_GRID,
+    EFFECT_MATRIX_BG, EFFECT_SCANLINES,
 };
 use crate::text::TextShaping;
 use crate::ui::{UIRect, UIRenderer};
@@ -33,11 +32,11 @@ pub struct Renderer {
     cell_w: f32,
     cell_h: f32,
     cached_instances: Vec<CellInstance>,
-    postproc:        PostProcRenderer,
+    postproc: PostProcRenderer,
     effects_enabled: bool,
-    effects_config:  EffectsConfig,
-    start_time:      Instant,
-    glitch_timer:    f32,
+    effects_config: EffectsConfig,
+    start_time: Instant,
+    glitch_timer: f32,
 }
 
 impl Renderer {
@@ -140,12 +139,7 @@ impl Renderer {
         let underline_renderer = UnderlineRenderer::new(Arc::clone(&device), config.format);
         let text = TextShaping::with_family(font_family);
 
-        let postproc = PostProcRenderer::new(
-            Arc::clone(&device),
-            format,
-            size.width,
-            size.height,
-        );
+        let postproc = PostProcRenderer::new(Arc::clone(&device), format, size.width, size.height);
 
         Ok(Self {
             surface,
@@ -232,7 +226,8 @@ impl Renderer {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-            self.postproc.resize(new_size.width, new_size.height, &self.queue);
+            self.postproc
+                .resize(new_size.width, new_size.height, &self.queue);
         }
     }
 
@@ -313,7 +308,8 @@ impl Renderer {
         if let Some((uv, is_new)) = self.atlas.get_or_insert(key, bitmap.width, bitmap.height) {
             if is_new {
                 let rgba = Self::gray_to_rgba(&bitmap.data);
-                self.atlas.upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
+                self.atlas
+                    .upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
             }
             // Baseline must be derived from the *per-glyph* font size, not
             // the cached cell_h (which reflects the main buffer's font size).
@@ -457,11 +453,13 @@ impl Renderer {
             return;
         }
         if let Some((uv, is_new)) =
-            self.atlas.get_or_insert_shaped(key, bitmap.width, bitmap.height)
+            self.atlas
+                .get_or_insert_shaped(key, bitmap.width, bitmap.height)
         {
             if is_new {
                 let rgba = Self::gray_to_rgba(&bitmap.data);
-                self.atlas.upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
+                self.atlas
+                    .upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
             }
             let line_h = font_size * 1.2;
             let baseline = cell_y + line_h * 0.8;
@@ -490,7 +488,18 @@ impl Renderer {
         image_ids: &[u32],
         image_clips: &[[u32; 4]],
     ) {
-        self.draw_frame_with_options(cells, ui_rects, bg_rects, underlines, images, image_ids, image_clips, false, true, true);
+        self.draw_frame_with_options(
+            cells,
+            ui_rects,
+            bg_rects,
+            underlines,
+            images,
+            image_ids,
+            image_clips,
+            false,
+            true,
+            true,
+        );
     }
 
     /// Draw a frame, conditionally skipping GPU uploads when data hasn't changed.
@@ -532,7 +541,12 @@ impl Renderer {
         self.render_instances(images, image_ids, image_clips);
     }
 
-    fn render_instances(&mut self, images: &[ImageInstance], image_ids: &[u32], clip_rects: &[[u32; 4]]) {
+    fn render_instances(
+        &mut self,
+        images: &[ImageInstance],
+        image_ids: &[u32],
+        clip_rects: &[[u32; 4]],
+    ) {
         if self.glitch_timer > 0.0 {
             self.glitch_timer = (self.glitch_timer - 0.016).max(0.0);
         }
@@ -599,7 +613,8 @@ impl Renderer {
             );
 
             // glyph layer (transparent bg so bitmaps that overflow cell bounds blend correctly)
-            self.cell_renderer.draw(&mut render_pass, &self.atlas.bind_group);
+            self.cell_renderer
+                .draw(&mut render_pass, &self.atlas.bind_group);
 
             // underline layer: between glyphs and cursor/border overlays
             self.underline_renderer.draw(&mut render_pass);
@@ -609,7 +624,8 @@ impl Renderer {
         }
 
         let uniform = self.build_postproc_uniform();
-        self.postproc.render(&mut encoder, &surface_view, &self.queue, &uniform);
+        self.postproc
+            .render(&mut encoder, &surface_view, &self.queue, &uniform);
 
         self.queue.submit(Some(encoder.finish()));
         output.present();
@@ -623,30 +639,40 @@ impl Renderer {
 
         let mut mask = 0u32;
         if self.effects_enabled && cfg.enabled {
-            if cfg.scanlines.intensity > 0.0 { mask |= EFFECT_SCANLINES; }
-            if cfg.bloom.threshold < 1.0     { mask |= EFFECT_BLOOM; }
-            if cfg.chroma.strength > 0.0     { mask |= EFFECT_CHROMA; }
-            if cfg.matrix_bg.enabled         { mask |= EFFECT_MATRIX_BG; }
-            if cfg.hex_grid                  { mask |= EFFECT_HEX_GRID; }
+            if cfg.scanlines.intensity > 0.0 {
+                mask |= EFFECT_SCANLINES;
+            }
+            if cfg.bloom.threshold < 1.0 {
+                mask |= EFFECT_BLOOM;
+            }
+            if cfg.chroma.strength > 0.0 {
+                mask |= EFFECT_CHROMA;
+            }
+            if cfg.matrix_bg.enabled {
+                mask |= EFFECT_MATRIX_BG;
+            }
+            if cfg.hex_grid {
+                mask |= EFFECT_HEX_GRID;
+            }
         }
         if self.glitch_timer > 0.0 {
             mask |= EFFECT_GLITCH;
         }
 
         PostProcUniform {
-            screen_size:        [self.size.width as f32, self.size.height as f32],
+            screen_size: [self.size.width as f32, self.size.height as f32],
             time,
-            effects_mask:       mask,
+            effects_mask: mask,
             scanline_intensity: cfg.scanlines.intensity,
-            scanline_freq:      cfg.scanlines.freq,
-            bloom_threshold:    cfg.bloom.threshold,
-            bloom_sigma:        cfg.bloom.sigma,
-            bloom_tint:         parse_hex_color(&cfg.bloom.tint),
-            chroma_strength:    cfg.chroma.strength,
-            glitch_intensity:   self.glitch_timer,
-            matrix_density:     cfg.matrix_bg.density,
-            _pad:               0.0,
-            matrix_color:       parse_hex_color(&cfg.matrix_bg.color),
+            scanline_freq: cfg.scanlines.freq,
+            bloom_threshold: cfg.bloom.threshold,
+            bloom_sigma: cfg.bloom.sigma,
+            bloom_tint: parse_hex_color(&cfg.bloom.tint),
+            chroma_strength: cfg.chroma.strength,
+            glitch_intensity: self.glitch_timer,
+            matrix_density: cfg.matrix_bg.density,
+            _pad: 0.0,
+            matrix_color: parse_hex_color(&cfg.matrix_bg.color),
         }
     }
 }

@@ -9,9 +9,7 @@ use winit::{
 use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection as TermSelection, SelectionType};
 use alacritty_terminal::term::TermMode;
-use synapse_ui::{
-    layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection, SCROLL_BTN_W,
-};
+use synapse_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, PaneRect, SplitDirection};
 
 use crate::{
     pane_ops::{find_hovered_divider, handle_tab_click},
@@ -82,7 +80,7 @@ pub fn handle_scroll(
     delta: MouseScrollDelta,
     panes: &mut [Pane],
     tab_bar: &TabBar,
-    state: &AppState,
+    state: &mut AppState,
     layout: &Layout,
     cell_w: f32,
     cell_h: f32,
@@ -97,10 +95,30 @@ pub fn handle_scroll(
         MouseScrollDelta::PixelDelta(pos) => pos.y > 0.0,
     };
 
+    // If cursor is over sidebar, scroll the tab list instead of the pane
+    if state.cursor_x < layout.sidebar_width as f64 {
+        let lines = match delta {
+            MouseScrollDelta::LineDelta(_, y) => (y.abs() as usize).max(1),
+            MouseScrollDelta::PixelDelta(pos) => (pos.y.abs() / cell_h as f64).max(1.0) as usize,
+        };
+        let is_up = match delta {
+            MouseScrollDelta::LineDelta(_, y) => y > 0.0,
+            MouseScrollDelta::PixelDelta(pos) => pos.y > 0.0,
+        };
+        let offset = &mut state.tab_scroll_offset;
+        let tab_count = tab_bar.tabs.len();
+        if is_up {
+            *offset = offset.saturating_sub(lines);
+        } else {
+            *offset = (*offset + lines).min(tab_count.saturating_sub(1));
+        }
+        return;
+    }
+
     let active_id = tab_bar.active_tab().active_pane;
     let (mouse_active, sgr) = active_pane_mouse_modes(panes, active_id);
 
-    if mouse_active && state.cursor_y >= layout.tab_bar_height as f64 {
+    if mouse_active && state.cursor_x >= layout.sidebar_width as f64 {
         if let Some((col, row)) = cursor_to_pane_cell(
             state.cursor_x,
             state.cursor_y,
@@ -151,7 +169,7 @@ pub fn handle_mouse_button(
     {
         let (mouse_active, sgr) = active_pane_mouse_modes(panes, active_id);
 
-        if mouse_active && !shift_held && state.cursor_y >= layout.tab_bar_height as f64 {
+        if mouse_active && !shift_held && state.cursor_x >= layout.sidebar_width as f64 {
             if let Some((col, row)) = cursor_to_pane_cell(
                 state.cursor_x,
                 state.cursor_y,
@@ -194,8 +212,20 @@ pub fn handle_mouse_button(
                 state.last_click_time = now;
                 let click = state.click_count;
 
-                if y < layout.tab_bar_height as f64 {
-                    handle_tab_click(tab_bar, panes, x, layout, &mut state.tab_scroll_offset, cell_w, cell_h, scrollback_lines, state.config.shell_program.as_str(), &state.config.shell_args);
+                if x < layout.sidebar_width as f64 {
+                    handle_tab_click(
+                        tab_bar,
+                        panes,
+                        x,
+                        y,
+                        layout,
+                        &mut state.tab_scroll_offset,
+                        cell_w,
+                        cell_h,
+                        scrollback_lines,
+                        state.config.shell_program.as_str(),
+                        &state.config.shell_args,
+                    );
                 } else if state.hover_divider && click == 1 {
                     let pane_area = layout.pane_area();
                     let pane_rect = PaneRect {
@@ -219,9 +249,9 @@ pub fn handle_mouse_button(
                         2 => SelectionType::Semantic,
                         _ => SelectionType::Simple,
                     };
-                    if let Some((col, row)) = cursor_to_pane_cell(
-                        x, y, tab_bar, layout, cell_w, cell_h, margin,
-                    ) {
+                    if let Some((col, row)) =
+                        cursor_to_pane_cell(x, y, tab_bar, layout, cell_w, cell_h, margin)
+                    {
                         if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
                             if let Ok(mut term) = pane.term.lock() {
                                 term.selection = Some(TermSelection::new(
@@ -264,23 +294,25 @@ pub fn handle_cursor_moved(
     state.cursor_x = position.x;
     state.cursor_y = position.y;
 
-    // Tab hover detection: comparar contra layout.tab_bar_height (físico)
-    if state.cursor_y < layout.tab_bar_height as f64 {
+    // Tab hover detection in vertical sidebar
+    if state.cursor_x < layout.sidebar_width as f64 {
         let tab_count = tab_bar.tabs.len();
-        let (start, end, show_left, show_right) =
-            layout.tab_visible_range(tab_count, state.tab_scroll_offset);
-        let vis_count = end - start;
-        let x_start = if show_left { SCROLL_BTN_W as f64 } else { 0.0 };
-        if vis_count > 0 {
-            let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right) as f64;
-            let rel = state.cursor_x - x_start;
-            if rel >= 0.0 {
-                let vis_idx = (rel / tab_w).floor() as usize;
-                let actual = start + vis_idx;
-                state.hover_tab = if actual < end { Some(actual) } else { None };
+        let (start, end, show_up, _) = layout.tab_visible_range(tab_count, state.tab_scroll_offset);
+        let header_h = synapse_ui::SIDEBAR_HEADER_HEIGHT as f64;
+        let tab_h = synapse_ui::SIDEBAR_TAB_HEIGHT as f64;
+
+        // Check if in tab area (below header, above bottom button)
+        let scroll_top = header_h
+            + if show_up {
+                synapse_ui::SIDEBAR_SCROLL_BTN_H as f64
             } else {
-                state.hover_tab = None;
-            }
+                0.0
+            };
+        let rel_y = state.cursor_y - scroll_top;
+        if rel_y >= 0.0 {
+            let vis_idx = (rel_y / tab_h).floor() as usize;
+            let actual = start + vis_idx;
+            state.hover_tab = if actual < end { Some(actual) } else { None };
         } else {
             state.hover_tab = None;
         }
@@ -332,8 +364,7 @@ pub fn handle_cursor_moved(
     if state.selecting {
         let x = state.cursor_x;
         let y = state.cursor_y;
-        if let Some((col, row)) =
-            cursor_to_pane_cell(x, y, tab_bar, layout, cell_w, cell_h, margin)
+        if let Some((col, row)) = cursor_to_pane_cell(x, y, tab_bar, layout, cell_w, cell_h, margin)
         {
             let active_id = tab_bar.active_tab().active_pane;
             if let Some(pane) = panes.iter().find(|p| p.id == active_id) {
@@ -363,7 +394,7 @@ impl AppCore {
             delta,
             &mut self.panes,
             &self.tab_bar,
-            &self.state,
+            &mut self.state,
             &self.layout,
             self.cell_w,
             self.cell_h,

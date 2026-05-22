@@ -1,9 +1,13 @@
+use crate::theme;
+
 pub const SCROLL_BTN_W: f32 = 20.0;
 
 pub struct Layout {
     pub window_width: f32,
     pub window_height: f32,
     pub tab_bar_height: f32,
+    pub sidebar_width: f32,
+    pub status_bar_visible: bool,
 }
 
 impl Layout {
@@ -11,7 +15,9 @@ impl Layout {
         Self {
             window_width: 1280.0,
             window_height: 800.0,
-            tab_bar_height: crate::theme::TAB_BAR_HEIGHT,
+            tab_bar_height: theme::TAB_BAR_HEIGHT,
+            sidebar_width: theme::SIDEBAR_DEFAULT_WIDTH,
+            status_bar_visible: true,
         }
     }
 
@@ -21,55 +27,60 @@ impl Layout {
     }
 
     pub fn pane_area(&self) -> (f32, f32, f32, f32) {
-        let x = 0.0;
-        let y = self.tab_bar_height;
-        let w = self.window_width;
-        let h = self.window_height - self.tab_bar_height;
-        (x, y, w, h.max(0.0))
+        let x = self.sidebar_width;
+        let y = 0.0;
+        let w = (self.window_width - self.sidebar_width).max(0.0);
+        let bar_h = if self.status_bar_visible {
+            theme::STATUS_BAR_HEIGHT
+        } else {
+            0.0
+        };
+        let h = (self.window_height - bar_h).max(0.0);
+        (x, y, w, h)
     }
 
     pub fn pane_margin(&self) -> f32 {
         4.0
     }
 
-    pub fn tab_width(&self, tab_count: usize) -> f32 {
-        if tab_count == 0 {
-            return 32.0;
-        }
-        let available = self.window_width - 56.0; // + and separator space
-        let per_tab = available / tab_count as f32;
-        per_tab.clamp(80.0, 200.0)
+    pub fn sidebar_visible_height(&self) -> f32 {
+        let header = theme::SIDEBAR_HEADER_HEIGHT;
+        let bottom = theme::SIDEBAR_TAB_HEIGHT; // "+" button row
+        (self.window_height - header - bottom).max(0.0)
     }
 
-    pub fn tab_x(&self, index: usize, tab_count: usize) -> f32 {
-        index as f32 * self.tab_width(tab_count)
-    }
-
-    /// Returns (first_visible_idx, end_exclusive, show_left_btn, show_right_btn).
+    /// Returns (first_visible_idx, end_exclusive, show_up_btn, show_down_btn).
     pub fn tab_visible_range(&self, tab_count: usize, offset: usize) -> (usize, usize, bool, bool) {
         if tab_count == 0 {
             return (0, 0, false, false);
         }
-        let available = self.window_width - 56.0;
-        let max_vis = (available / 80.0).floor().max(1.0) as usize;
+        let available = self.sidebar_visible_height();
+        let tab_h = theme::SIDEBAR_TAB_HEIGHT;
+        let max_vis = (available / tab_h).floor().max(1.0) as usize;
         if tab_count <= max_vis {
             return (0, tab_count, false, false);
         }
-        let show_left = offset > 0;
-        let left_w = if show_left { SCROLL_BTN_W } else { 0.0 };
-        let avail = available - left_w - SCROLL_BTN_W;
-        let vis = (avail / 80.0).floor().max(1.0) as usize;
+        let show_up = offset > 0;
+        let up_h = if show_up {
+            theme::SIDEBAR_SCROLL_BTN_H
+        } else {
+            0.0
+        };
+        let avail = available - up_h - theme::SIDEBAR_SCROLL_BTN_H;
+        let vis = (avail / tab_h).floor().max(1.0) as usize;
         let start = offset.min(tab_count.saturating_sub(1));
         let end = (start + vis).min(tab_count);
-        (start, end, show_left, end < tab_count)
+        (start, end, show_up, end < tab_count)
     }
 
-    /// Width of each tab when rendering only `vis_count` tabs with optional scroll buttons.
-    pub fn scrolled_tab_width(&self, vis_count: usize, show_left: bool, show_right: bool) -> f32 {
-        let left = if show_left { SCROLL_BTN_W } else { 0.0 };
-        let right = if show_right { SCROLL_BTN_W } else { 0.0 };
-        let available = self.window_width - 56.0 - left - right;
-        (available / vis_count.max(1) as f32).clamp(80.0, 200.0)
+    pub fn tab_y(&self, vis_index: usize, show_up_btn: bool) -> f32 {
+        let header = theme::SIDEBAR_HEADER_HEIGHT;
+        let up_btn_h = if show_up_btn {
+            theme::SIDEBAR_SCROLL_BTN_H
+        } else {
+            0.0
+        };
+        header + up_btn_h + vis_index as f32 * theme::SIDEBAR_TAB_HEIGHT
     }
 }
 
@@ -88,25 +99,37 @@ mod tests {
             window_width: 1280.0,
             window_height: 800.0,
             tab_bar_height: 32.0,
+            sidebar_width: 180.0,
+            status_bar_visible: false,
         }
     }
 
     #[test]
-    fn test_pane_area() {
+    fn test_pane_area_with_sidebar() {
         let layout = layout_1280x800();
         let (x, y, w, h) = layout.pane_area();
-        assert_eq!(x, 0.0);
-        assert_eq!(y, 32.0);
-        assert_eq!(w, 1280.0);
-        assert_eq!(h, 768.0);
+        assert_eq!(x, 180.0);
+        assert_eq!(y, 0.0);
+        assert_eq!(w, 1100.0);
+        assert_eq!(h, 800.0);
     }
 
     #[test]
-    fn test_pane_area_zero_height() {
+    fn test_pane_area_zero_sidebar_width() {
         let mut layout = layout_1280x800();
-        layout.window_height = 10.0;
-        let (_x, _y, _w, h) = layout.pane_area();
-        assert_eq!(h, 0.0); // clamped to 0
+        layout.sidebar_width = 0.0;
+        let (x, _y, w, _h) = layout.pane_area();
+        assert_eq!(x, 0.0);
+        assert_eq!(w, 1280.0);
+    }
+
+    #[test]
+    fn test_pane_area_window_smaller_than_sidebar() {
+        let mut layout = layout_1280x800();
+        layout.window_width = 100.0;
+        layout.sidebar_width = 200.0;
+        let (_x, _y, w, _h) = layout.pane_area();
+        assert_eq!(w, 0.0);
     }
 
     #[test]
@@ -116,98 +139,80 @@ mod tests {
     }
 
     #[test]
-    fn test_tab_width_single_tab() {
+    fn test_sidebar_visible_height() {
         let layout = layout_1280x800();
-        let width = layout.tab_width(1);
-        assert!(width <= 200.0);
-        assert!(width >= 80.0);
-    }
-
-    #[test]
-    fn test_tab_width_many_tabs() {
-        let layout = layout_1280x800();
-        let width = layout.tab_width(20);
-        // With 20 tabs and 1280px - 56px = 1224px, each gets 61px,
-        // clamped to minimum 80px
-        assert_eq!(width, 80.0); // clamped to min
-    }
-
-    #[test]
-    fn test_tab_width_few_tabs() {
-        let layout = layout_1280x800();
-        let width = layout.tab_width(3);
-        assert!(width <= 200.0);
-        assert!(width >= 80.0);
-    }
-
-    #[test]
-    fn test_tab_width_clamped_max() {
-        let layout = Layout {
-            window_width: 3000.0,
-            window_height: 800.0,
-            tab_bar_height: 32.0,
-        };
-        let width = layout.tab_width(1);
-        assert_eq!(width, 200.0); // clamped to max
-    }
-
-    #[test]
-    fn test_tab_x() {
-        let layout = layout_1280x800();
-        let tab_count = 5;
-        let w = layout.tab_width(tab_count);
-        assert_eq!(layout.tab_x(0, tab_count), 0.0);
-        assert_eq!(layout.tab_x(1, tab_count), w);
-        assert_eq!(layout.tab_x(2, tab_count), w * 2.0);
+        let vh = layout.sidebar_visible_height();
+        // 800 - 48 (header) - 36 (bottom btn) = 716
+        assert!((vh - 716.0).abs() < 0.01);
     }
 
     #[test]
     fn test_tab_visible_range_all_fit() {
         let layout = layout_1280x800();
-        // 3 tabs fit easily
-        let (start, end, show_left, show_right) = layout.tab_visible_range(3, 0);
+        // 716 / 36 = 19 tabs fit without scroll
+        let (start, end, up, down) = layout.tab_visible_range(10, 0);
         assert_eq!(start, 0);
-        assert_eq!(end, 3);
-        assert!(!show_left);
-        assert!(!show_right);
+        assert_eq!(end, 10);
+        assert!(!up);
+        assert!(!down);
     }
 
     #[test]
-    fn test_tab_visible_range_many_tabs() {
+    fn test_tab_visible_range_overflow() {
         let layout = layout_1280x800();
-        // Many tabs require scrolling
-        let (start, end, show_left, show_right) = layout.tab_visible_range(50, 0);
+        // 40 tabs > visible space
+        let (start, end, up, down) = layout.tab_visible_range(40, 0);
         assert_eq!(start, 0);
-        // end should be less than 50 since they don't fit in 1280px
-        assert!(end < 50);
-        assert!(!show_left);
-        assert!(show_right); // more tabs to the right
+        assert!(end < 40);
+        assert!(!up);
+        assert!(down);
     }
 
     #[test]
     fn test_tab_visible_range_scrolled() {
         let layout = layout_1280x800();
-        let (start, end, show_left, show_right) = layout.tab_visible_range(50, 10);
-        assert_eq!(start, 10);
+        let (start, end, up, down) = layout.tab_visible_range(40, 15);
+        assert_eq!(start, 15);
         assert!(end > start);
-        assert!(show_left);
-        assert!(show_right);
+        assert!(up);
+        assert!(down);
     }
 
     #[test]
     fn test_tab_visible_range_near_end() {
         let layout = layout_1280x800();
-        let (_start, _end, show_left, show_right) = layout.tab_visible_range(50, 48);
-        assert!(show_left);
-        assert!(!show_right); // no more tabs to the right
+        let (_start, _end, up, down) = layout.tab_visible_range(40, 39);
+        assert!(up);
+        assert!(!down);
     }
 
     #[test]
-    fn test_scrolled_tab_width() {
+    fn test_tab_visible_range_zero_tabs() {
         let layout = layout_1280x800();
-        let w = layout.scrolled_tab_width(5, true, true);
-        assert!(w >= 80.0);
-        assert!(w <= 200.0);
+        let (start, end, up, down) = layout.tab_visible_range(0, 0);
+        assert_eq!(start, 0);
+        assert_eq!(end, 0);
+        assert!(!up);
+        assert!(!down);
+    }
+
+    #[test]
+    fn test_tab_y_no_scroll_btn() {
+        let layout = layout_1280x800();
+        // header = 48, no up btn, tab 0
+        let y = layout.tab_y(0, false);
+        assert_eq!(y, 48.0);
+        let y1 = layout.tab_y(1, false);
+        assert_eq!(y1, 84.0); // 48 + 36
+    }
+
+    #[test]
+    fn test_tab_y_with_scroll_btn() {
+        let layout = layout_1280x800();
+        let y0 = layout.tab_y(0, true);
+        assert_eq!(y0, 68.0); // 48 + 20 (scroll btn)
+        let y1 = layout.tab_y(1, true);
+        assert_eq!(y1, 104.0);
     }
 
     #[test]
@@ -219,27 +224,41 @@ mod tests {
     }
 
     #[test]
-    fn test_pane_area_height_minus_tabbar() {
+    fn test_tab_visible_range_one_tab() {
         let layout = layout_1280x800();
-        let (_x, _y, _w, h) = layout.pane_area();
-        assert_eq!(h, layout.window_height - layout.tab_bar_height);
-    }
-
-    #[test]
-    fn test_tab_visible_range_zero_tabs() {
-        let layout = layout_1280x800();
-        let (start, end, show_left, show_right) = layout.tab_visible_range(0, 0);
+        let (start, end, up, down) = layout.tab_visible_range(1, 0);
         assert_eq!(start, 0);
-        assert_eq!(end, 0);
-        assert!(!show_left);
-        assert!(!show_right);
+        assert_eq!(end, 1);
+        assert!(!up);
+        assert!(!down);
     }
 
     #[test]
-    fn test_scrolled_tab_width_no_scroll_buttons() {
-        let layout = layout_1280x800();
-        // available = 1280 - 56 = 1224, per 3 tabs = 408, clamped to max 200
-        let w = layout.scrolled_tab_width(3, false, false);
-        assert_eq!(w, 200.0);
+    fn test_pane_area_with_status_bar() {
+        let layout = Layout {
+            window_width: 1280.0,
+            window_height: 800.0,
+            tab_bar_height: 32.0,
+            sidebar_width: 180.0,
+            status_bar_visible: true,
+        };
+        let (x, y, w, h) = layout.pane_area();
+        assert_eq!(x, 180.0);
+        assert_eq!(y, 0.0);
+        assert_eq!(w, 1100.0);
+        assert!((h - (800.0 - theme::STATUS_BAR_HEIGHT)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_pane_area_status_bar_hidden() {
+        let layout = Layout {
+            window_width: 1280.0,
+            window_height: 800.0,
+            tab_bar_height: 32.0,
+            sidebar_width: 180.0,
+            status_bar_visible: false,
+        };
+        let (_, _, _, h) = layout.pane_area();
+        assert_eq!(h, 800.0);
     }
 }

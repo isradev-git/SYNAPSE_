@@ -7,15 +7,15 @@
 
 ## Resumen de fases
 
-| Fase | Nombre | Impacto | Tiempo est. |
-|------|--------|---------|-------------|
-| A | Sidebar vertical de tabs | 🔴 Crítico — cambia toda la geometría | 3-4 días |
-| B | Tiling de panes mejorado (Hyprland-style) | 🔴 Crítico — UX de splits | 3-4 días |
-| C | Tab bar redesign + indicadores | 🟡 Alto — primera impresión | 2-3 días |
-| D | Status bar | 🟡 Alto — información contextual | 2 días |
-| E | Postproc shaders (CRT + bloom) | 🔴 Crítico — identidad visual | 5-7 días |
-| F | Splash boot + cursor extras | 🟢 Medio — polish | 2 días |
-| G | Command palette | 🟡 Alto — productividad | 4-5 días |
+| Fase | Nombre | Impacto | Tiempo est. | Estado |
+|------|--------|---------|-------------|--------|
+| A | Sidebar vertical de tabs | 🔴 Crítico — cambia toda la geometría | 3-4 días | ✅ |
+| B | Tiling de panes mejorado (Hyprland-style) | 🔴 Crítico — UX de splits | 3-4 días | ✅ |
+| C | Tab bar redesign + indicadores | 🟡 Alto — primera impresión | 2-3 días | ✅ |
+| D | Status bar | 🟡 Alto — información contextual | 2 días | ✅ |
+| E | Postproc shaders (CRT + bloom) | 🔴 Crítico — identidad visual | 5-7 días | ✅ |
+| F | Splash boot + cursor extras | 🟢 Medio — polish | 2 días | ✅ |
+| G | Command palette | 🟡 Alto — productividad | 4-5 días | ✅ |
 
 ---
 
@@ -591,17 +591,15 @@ Antes de dar una fase por terminada:
 ## Orden de dependencias
 
 ```
-Fase A (sidebar)
-    └→ Fase B (tiling) — depende de la nueva geometría de pane_area
-        └→ Fase C (polish sidebar) — depende de A y B estables
-            └→ Fase D (status bar) — depende de la geometría final
-                └→ Fase E (shaders) — independiente de A-D, puede ir en paralelo
-                    └→ Fase F (splash/cursor) — depende de E (efectos)
-                        └→ Fase G (palette) — depende de todo lo anterior
+Fase A (sidebar) ✅
+    └→ Fase B (tiling) ✅
+        └→ Fase C (polish sidebar) ✅
+            └→ Fase D (status bar) ✅
+                └→ Fase E (shaders) ✅
+                    └→ Fase F (splash/cursor) ✅
+                        └→ Fase G (palette) ✅ ← COMPLETADO
 ```
-
-Fase E puede arrancarse en paralelo a B/C/D si hay capacidad, ya que solo toca el renderer y no el layout.
 
 ---
 
-*Última actualización: 2026-05-22*
+*Última actualización: 2026-05-22 — Fases A-G completadas. Plan UI/UX finalizado.*

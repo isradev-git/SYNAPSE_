@@ -48,11 +48,18 @@ pub fn find_matches(
         let chars: Vec<char> = (0..columns)
             .map(|c| {
                 let ch = row[alacritty_terminal::index::Column(c)].c;
-                if ch == '\0' { ' ' } else { ch }
+                if ch == '\0' {
+                    ' '
+                } else {
+                    ch
+                }
             })
             .collect();
 
-        let chars_lower: Vec<char> = chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+        let chars_lower: Vec<char> = chars
+            .iter()
+            .map(|c| c.to_lowercase().next().unwrap_or(*c))
+            .collect();
 
         // Slide the query window across this row.
         let search_len = chars_lower.len();
@@ -99,7 +106,10 @@ pub fn scroll_to_current_match(state: &AppState, tab_bar: &TabBar, panes: &[Pane
     let Some(m) = state.search.matches.get(state.search.current_match) else {
         return;
     };
-    let Some(pane) = panes.iter().find(|p| p.id == tab_bar.active_tab().active_pane) else {
+    let Some(pane) = panes
+        .iter()
+        .find(|p| p.id == tab_bar.active_tab().active_pane)
+    else {
         return;
     };
     let Ok(mut term) = pane.term.lock() else {

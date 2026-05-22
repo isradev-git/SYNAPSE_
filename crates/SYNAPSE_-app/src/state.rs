@@ -1,6 +1,74 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
+fn read_git_branch_sync(cwd: &str) -> Option<String> {
+    let mut dir = std::path::Path::new(cwd).to_path_buf();
+    loop {
+        let head = dir.join(".git/HEAD");
+        if head.exists() {
+            if let Ok(content) = std::fs::read_to_string(&head) {
+                let content = content.trim();
+                if let Some(branch) = content.strip_prefix("ref: refs/heads/") {
+                    return Some(branch.to_string());
+                }
+                if content.len() >= 7 {
+                    return Some(content[..7].to_string());
+                }
+            }
+            return None;
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    None
+}
+
+pub fn spawn_git_branch_reader(cwd: &str) -> std::sync::mpsc::Receiver<Option<String>> {
+    let cwd = cwd.to_string();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(read_git_branch_sync(&cwd));
+    });
+    rx
+}
+
+fn read_k8s_context() -> Option<String> {
+    let kube_config = std::env::var("KUBECONFIG").ok().unwrap_or_else(|| {
+        std::env::var("HOME")
+            .map(|h| format!("{}/.kube/config", h))
+            .unwrap_or_default()
+    });
+    if kube_config.is_empty() {
+        return None;
+    }
+    let content = std::fs::read_to_string(&kube_config).ok()?;
+    for line in content.lines() {
+        if let Some(ctx) = line.strip_prefix("current-context:") {
+            let ctx = ctx.trim().trim_matches('"');
+            if !ctx.is_empty() {
+                return Some(ctx.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn read_user_host() -> String {
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .unwrap_or_default();
+    let host = std::fs::read_to_string("/etc/hostname")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "localhost".to_string());
+    if user.is_empty() {
+        host
+    } else {
+        format!("{}@{}", user, host)
+    }
+}
+
+use crate::palette::PaletteState;
 use alacritty_terminal::vte::ansi::CursorShape;
 use synapse_config::{Config, Keybinds, Theme};
 use synapse_suggest::Suggester;
@@ -122,7 +190,10 @@ pub struct SuggestState {
 
 impl SuggestState {
     pub fn new() -> Self {
-        Self { prefix: String::new(), ghost: None }
+        Self {
+            prefix: String::new(),
+            ghost: None,
+        }
     }
 
     pub fn clear(&mut self) {
@@ -218,6 +289,7 @@ pub struct AppState {
     pub search: SearchState,
     pub history_search: HistorySearchState,
     pub suggest: SuggestState,
+    pub palette: PaletteState,
     pub suggester: Suggester,
     pub font_size: f32,
     pub fullscreen: bool,
@@ -230,6 +302,14 @@ pub struct AppState {
     /// Cursor shape/blink set by the app via DECSCUSR. Overrides TOML when Some.
     pub term_cursor_style: Option<(CursorShape, bool)>,
     pub in_copy_mode: bool,
+    pub pane_label_until: Option<std::time::Instant>,
+    pub pane_label_id: u32,
+    pub status_bar_visible: bool,
+    pub git_branch: Option<String>,
+    pub git_branch_rx: Option<std::sync::mpsc::Receiver<Option<String>>>,
+    pub k8s_context: Option<String>,
+    pub user_host: String,
+    pub cached_time_sec: u64,
 }
 
 impl AppState {
@@ -237,6 +317,12 @@ impl AppState {
         let theme = Theme::load(&config.theme, synapse_config::Config::config_dir());
         let suggester = synapse_suggest::load_suggester();
         let effects_enabled = config.effects.enabled;
+        let status_bar_visible = config.status_bar;
+        let k8s_context = if config.status_bar_show_k8s {
+            read_k8s_context()
+        } else {
+            None
+        };
         Self {
             config,
             keybinds,
@@ -253,6 +339,7 @@ impl AppState {
             search: SearchState::new(),
             history_search: HistorySearchState::new(),
             suggest: SuggestState::new(),
+            palette: PaletteState::new(),
             suggester,
             font_size,
             fullscreen: false,
@@ -264,11 +351,21 @@ impl AppState {
             window_focused: true,
             term_cursor_style: None,
             in_copy_mode: false,
+            pane_label_until: None,
+            pane_label_id: 0,
+            status_bar_visible,
+            git_branch: None,
+            git_branch_rx: None,
+            k8s_context,
+            user_host: read_user_host(),
+            cached_time_sec: 0,
         }
     }
 
     pub fn push_cursor_trail(&mut self, x: f32, y: f32, max_len: usize) {
-        if max_len == 0 { return; }
+        if max_len == 0 {
+            return;
+        }
         if self.cursor_trail.front() != Some(&(x, y)) {
             self.cursor_trail.push_front((x, y));
             while self.cursor_trail.len() > max_len {
@@ -417,13 +514,35 @@ mod tests {
     #[test]
     fn test_bell_flash_active() {
         let mut state = make_state();
-        state.bell_flash_end = Some(std::time::Instant::now() + std::time::Duration::from_millis(200));
-        assert!(state.bell_flash_end.map(|t| t > std::time::Instant::now()).unwrap_or(false));
+        state.bell_flash_end =
+            Some(std::time::Instant::now() + std::time::Duration::from_millis(200));
+        assert!(state
+            .bell_flash_end
+            .map(|t| t > std::time::Instant::now())
+            .unwrap_or(false));
     }
 
     #[test]
     fn test_in_copy_mode_initial_false() {
         let state = make_state();
         assert!(!state.in_copy_mode);
+    }
+
+    #[test]
+    fn test_pane_label_initial_none() {
+        let state = make_state();
+        assert!(state.pane_label_until.is_none());
+        assert_eq!(state.pane_label_id, 0);
+    }
+
+    #[test]
+    fn test_status_bar_initial_state() {
+        let state = make_state();
+        // Config::default() has status_bar = true
+        assert!(state.status_bar_visible);
+        assert!(state.git_branch.is_none());
+        assert!(state.git_branch_rx.is_none());
+        assert_eq!(state.cached_time_sec, 0);
+        assert!(!state.user_host.is_empty());
     }
 }

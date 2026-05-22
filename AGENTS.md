@@ -1,14 +1,12 @@
 # AGENTS.md — SYNAPSE_
 
-> Terminal emulator GPU-accelerated en Rust. Platforms: **Linux + macOS** (no Windows native). Windows via WSL2 only. 13 fases completadas.
+> Terminal emulator GPU-accelerated en Rust. Platforms: **Linux + macOS** (no Windows native). Windows via WSL2 only. 13 fases completadas + Fase A (UI Phases).
 
 ## Fuentes de verdad
 
-- `proyecto.md` — arquitectura, stack, paleta de colores, estructuras de datos
-- `tasks.md` — 54 tareas atómicas en 11 fases (0-11), orden estricto
-- `ROADMAP.md` — 25 items R-001 a R-025, estado actual de cada uno
+- `docs/desarrollo/SYNAPSE_UI_PHASES.md` — plan UI/UX por fases (A-G), redefinición completa de la interfaz
+- `docs/superpowers/specs/2026-05-20-synapse_-master-roadmap.md` — roadmap maestro fases 11-20
 - `docs/desarrollo/` — docs de fases completadas
-- `docs/desarrollo/desarrollo_principal.md` — tracking de fases actual
 
 ## Datos clave que un agente erraría sin ayuda
 
@@ -18,8 +16,9 @@
 - **Entry point**: `crates/SYNAPSE_-app/src/main.rs` — winit event loop
 - **Renderer**: `crates/SYNAPSE_-renderer/src/renderer.rs` — wgpu instance + surface + device + queue
 - **Tab/Pane system**: `TabBar { tabs: Vec<Tab>, active: usize }`, cada `Tab` tiene `PaneTree` + `active_pane: PaneId`. Los `Pane` viven en `Vec<Pane>` separado, referenciados por ID.
+- **Sidebar vertical (Fase A)**: La tab bar se movió de horizontal-superior a vertical-izquierda. Ancho por defecto 180px, configurable via `sidebar_width` en `config.toml`. Cada tab ocupa 36px de alto, con scroll vertical.
 - **Single render pass**: `draw_frame(cells, ui_rects)` rasteriza glyphs y dibuja cells + UI rects en un solo `get_current_texture`/`present`.
-- **Mouse position**: `AppState.cursor_x/y` se actualiza en cada `CursorMoved` (÷ scale_factor). `MouseInput` lee estas coordenadas para detectar clicks en tab bar.
+- **Mouse position**: `AppState.cursor_x/y` se actualiza en cada `CursorMoved` (÷ scale_factor). `MouseInput` lee estas coordenadas para detectar clicks en sidebar (x < sidebar_width).
 - **Código existente**: Fase 0–4 implementadas. Hay source real (`main.rs`, `renderer.rs`, `text.rs`, `atlas.rs`, `cell.rs`, `cell.wgsl`, `ui.rs`, `ui.wgsl`, `pane.rs`, `splitter.rs`, `tab_bar.rs`, `layout.rs`, `theme.rs`)
 - **Nombres de crate con mayúscula** (ej. `SYNAPSE_-app`) como consta en `proyecto.md`. El `[lib] name` usa snake_case (ej. `synapse_renderer` para el crate `SYNAPSE_-renderer`).
 

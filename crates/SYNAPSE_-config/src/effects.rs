@@ -1,13 +1,29 @@
 use serde::{Deserialize, Serialize};
 
-fn default_scanline_intensity() -> f32 { 0.3 }
-fn default_scanline_freq() -> f32 { 2.0 }
-fn default_bloom_threshold() -> f32 { 0.7 }
-fn default_bloom_sigma() -> f32 { 4.0 }
-fn default_bloom_tint() -> String { "#FF003C".to_string() }
-fn default_chroma_strength() -> f32 { 0.002 }
-fn default_matrix_color() -> String { "#00FF55".to_string() }
-fn default_matrix_density() -> f32 { 0.3 }
+fn default_scanline_intensity() -> f32 {
+    0.3
+}
+fn default_scanline_freq() -> f32 {
+    2.0
+}
+fn default_bloom_threshold() -> f32 {
+    0.7
+}
+fn default_bloom_sigma() -> f32 {
+    4.0
+}
+fn default_bloom_tint() -> String {
+    "#FF003C".to_string()
+}
+fn default_chroma_strength() -> f32 {
+    0.002
+}
+fn default_matrix_color() -> String {
+    "#00FF55".to_string()
+}
+fn default_matrix_density() -> f32 {
+    0.3
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ScanlinesConfig {
@@ -19,7 +35,10 @@ pub struct ScanlinesConfig {
 
 impl Default for ScanlinesConfig {
     fn default() -> Self {
-        Self { intensity: default_scanline_intensity(), freq: default_scanline_freq() }
+        Self {
+            intensity: default_scanline_intensity(),
+            freq: default_scanline_freq(),
+        }
     }
 }
 
@@ -50,7 +69,11 @@ pub struct ChromaConfig {
 }
 
 impl Default for ChromaConfig {
-    fn default() -> Self { Self { strength: default_chroma_strength() } }
+    fn default() -> Self {
+        Self {
+            strength: default_chroma_strength(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -134,7 +157,10 @@ mod tests {
     fn test_effects_config_toml_round_trip() {
         let cfg = EffectsConfig {
             enabled: true,
-            scanlines: ScanlinesConfig { intensity: 0.5, freq: 3.0 },
+            scanlines: ScanlinesConfig {
+                intensity: 0.5,
+                freq: 3.0,
+            },
             cursor_trail: 4,
             pane_pulse: true,
             ..EffectsConfig::default()

@@ -29,6 +29,7 @@ pub enum CursorStyle {
     Block,
     Beam,
     Underline,
+    NeonUnderbar,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +62,22 @@ pub struct Config {
     pub effects: EffectsConfig,
     #[serde(default)]
     pub bell: BellConfig,
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: f32,
+    #[serde(default = "default_true")]
+    pub show_pane_labels: bool,
+    #[serde(default = "default_true")]
+    pub show_resize_indicator: bool,
+    #[serde(default = "default_true")]
+    pub sidebar_show_process_dot: bool,
+    #[serde(default = "default_true")]
+    pub status_bar: bool,
+    #[serde(default = "default_true")]
+    pub status_bar_show_git: bool,
+    #[serde(default = "default_true")]
+    pub status_bar_show_k8s: bool,
+    #[serde(default = "default_true")]
+    pub status_bar_show_time: bool,
 }
 
 fn default_font_size() -> f32 {
@@ -90,6 +107,9 @@ fn default_cursor_blink_ms() -> u64 {
 fn default_theme() -> String {
     "synapse_".to_string()
 }
+fn default_sidebar_width() -> f32 {
+    180.0
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -108,6 +128,14 @@ impl Default for Config {
             theme: default_theme(),
             effects: EffectsConfig::default(),
             bell: BellConfig::default(),
+            sidebar_width: default_sidebar_width(),
+            show_pane_labels: true,
+            show_resize_indicator: true,
+            sidebar_show_process_dot: true,
+            status_bar: true,
+            status_bar_show_git: true,
+            status_bar_show_k8s: true,
+            status_bar_show_time: true,
         }
     }
 }
@@ -205,30 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn test_config_has_bell_field() {
-        let cfg = Config::default();
-        assert!(cfg.bell.visual);
-    }
-
-    #[test]
-    fn test_default_values() {
-        let cfg = Config::default();
-        assert_eq!(cfg.font_size, 14.0);
-        assert_eq!(cfg.font_family, "monospace");
-        assert!(!cfg.font_ligatures);
-        assert_eq!(cfg.window_width, 1280);
-        assert_eq!(cfg.window_height, 800);
-        assert_eq!(cfg.scrollback_lines, 100_000);
-        assert_eq!(cfg.shell_program, "");
-        assert!(cfg.shell_args.is_empty());
-        assert_eq!(cfg.cursor_style, CursorStyle::Block);
-        assert!(cfg.cursor_blink);
-        assert_eq!(cfg.cursor_blink_ms, 500);
-    }
-
-    #[test]
     fn test_cursor_style_serde() {
-        // TOML doesn't serialize bare enums; test through Config round-trip
         let config = Config {
             cursor_style: CursorStyle::Block,
             ..Config::default()
@@ -252,6 +257,37 @@ mod tests {
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let parsed: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.cursor_style, CursorStyle::Underline);
+
+        let config = Config {
+            cursor_style: CursorStyle::NeonUnderbar,
+            ..Config::default()
+        };
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.cursor_style, CursorStyle::NeonUnderbar);
+    }
+
+    #[test]
+    fn test_neon_underbar_toml_parse() {
+        let toml_str = r#"cursor_style = "neon_underbar""#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.cursor_style, CursorStyle::NeonUnderbar);
+    }
+
+    #[test]
+    fn test_default_values() {
+        let cfg = Config::default();
+        assert_eq!(cfg.font_size, 14.0);
+        assert_eq!(cfg.font_family, "monospace");
+        assert!(!cfg.font_ligatures);
+        assert_eq!(cfg.window_width, 1280);
+        assert_eq!(cfg.window_height, 800);
+        assert_eq!(cfg.scrollback_lines, 100_000);
+        assert_eq!(cfg.shell_program, "");
+        assert!(cfg.shell_args.is_empty());
+        assert_eq!(cfg.cursor_style, CursorStyle::Block);
+        assert!(cfg.cursor_blink);
+        assert_eq!(cfg.cursor_blink_ms, 500);
     }
 
     #[test]
@@ -326,17 +362,37 @@ shell_args = ["-l"]
     }
 
     #[test]
+    fn test_config_ui_flags_default() {
+        let cfg = Config::default();
+        assert!(cfg.show_pane_labels);
+        assert!(cfg.show_resize_indicator);
+        assert!(cfg.sidebar_show_process_dot);
+    }
+
+    #[test]
+    fn test_config_status_bar_defaults() {
+        let cfg = Config::default();
+        assert!(cfg.status_bar);
+        assert!(cfg.status_bar_show_git);
+        assert!(cfg.status_bar_show_k8s);
+        assert!(cfg.status_bar_show_time);
+    }
+
+    #[test]
     fn test_window_config_coverage() {
         let config = Config::default();
         assert_eq!(config.window_width, 1280);
         assert_eq!(config.window_height, 800);
+        assert_eq!(config.sidebar_width, 180.0);
 
         let toml_str = r#"
 window_width = 1920
 window_height = 1080
+sidebar_width = 200
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.window_width, 1920);
         assert_eq!(config.window_height, 1080);
+        assert_eq!(config.sidebar_width, 200.0);
     }
 }

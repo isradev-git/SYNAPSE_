@@ -196,14 +196,7 @@ impl ImageRenderer {
         self.textures.contains_key(&id)
     }
 
-    pub fn upload_image(
-        &mut self,
-        id: u32,
-        rgba: &[u8],
-        width: u32,
-        height: u32,
-        queue: &Queue,
-    ) {
+    pub fn upload_image(&mut self, id: u32, rgba: &[u8], width: u32, height: u32, queue: &Queue) {
         use wgpu::util::DeviceExt;
 
         let texture = self.device.create_texture_with_data(

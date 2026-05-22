@@ -380,10 +380,8 @@ mod tests {
     #[test]
     fn merge_overrides_ansi_colors() {
         let base = Theme::synapse_();
-        let toml: ThemeToml = toml::from_str(
-            "[colors]\nansi_colors = [\"#000000\", \"#ff0000\"]\n",
-        )
-        .unwrap();
+        let toml: ThemeToml =
+            toml::from_str("[colors]\nansi_colors = [\"#000000\", \"#ff0000\"]\n").unwrap();
         let merged = Theme::merge(base, &toml.colors);
         // Index 0: override to black
         assert!((merged.ansi_colors[0][0] - 0.0).abs() < 0.01);
@@ -398,10 +396,7 @@ mod tests {
     #[test]
     fn merge_preserves_ansi_when_not_in_toml() {
         let base = Theme::synapse_();
-        let toml: ThemeToml = toml::from_str(
-            "[colors]\nbg = \"#ffffff\"\n",
-        )
-        .unwrap();
+        let toml: ThemeToml = toml::from_str("[colors]\nbg = \"#ffffff\"\n").unwrap();
         let merged = Theme::merge(base, &toml.colors);
         // bg got overridden
         assert!((merged.bg[0] - 1.0).abs() < 0.01);

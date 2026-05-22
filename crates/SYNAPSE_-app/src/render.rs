@@ -5,8 +5,10 @@ use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::vte::ansi::Color as TermColor;
 use alacritty_terminal::vte::ansi::CursorShape;
 use synapse_config::Theme;
-use synapse_renderer::{image::ImageInstance, renderer::Renderer, ui::UIRect, underline::UnderlineInstance};
-use synapse_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId, SCROLL_BTN_W};
+use synapse_renderer::{
+    image::ImageInstance, renderer::Renderer, ui::UIRect, underline::UnderlineInstance,
+};
+use synapse_ui::{layout::Layout, pane::Pane, tab_bar::TabBar, theme, PaneId};
 
 use crate::app::CellData;
 use crate::image_protocol::ImageStore;
@@ -70,35 +72,35 @@ fn named_color_to_rgba(
     use alacritty_terminal::vte::ansi::NamedColor::*;
     match nc {
         // Colores normales 0-7 → paleta ANSI del tema
-        Black   => ansi[0],
-        Red     => ansi[1],
-        Green   => ansi[2],
-        Yellow  => ansi[3],
-        Blue    => ansi[4],
+        Black => ansi[0],
+        Red => ansi[1],
+        Green => ansi[2],
+        Yellow => ansi[3],
+        Blue => ansi[4],
         Magenta => ansi[5],
-        Cyan    => ansi[6],
-        White   => ansi[7],
+        Cyan => ansi[6],
+        White => ansi[7],
         // Colores brillantes 8-15
-        BrightBlack   => ansi[8],
-        BrightRed     => ansi[9],
-        BrightGreen   => ansi[10],
-        BrightYellow  => ansi[11],
-        BrightBlue    => ansi[12],
+        BrightBlack => ansi[8],
+        BrightRed => ansi[9],
+        BrightGreen => ansi[10],
+        BrightYellow => ansi[11],
+        BrightBlue => ansi[12],
         BrightMagenta => ansi[13],
-        BrightCyan    => ansi[14],
-        BrightWhite   => ansi[15],
+        BrightCyan => ansi[14],
+        BrightWhite => ansi[15],
         // Semánticos → usan el fallback (fg o bg según contexto)
         Foreground | BrightForeground | DimForeground => fallback,
         Background => fallback,
         // Dim: versión oscurecida de los colores normales del tema
-        DimBlack   => dim_color(ansi[0]),
-        DimRed     => dim_color(ansi[1]),
-        DimGreen   => dim_color(ansi[2]),
-        DimYellow  => dim_color(ansi[3]),
-        DimBlue    => dim_color(ansi[4]),
+        DimBlack => dim_color(ansi[0]),
+        DimRed => dim_color(ansi[1]),
+        DimGreen => dim_color(ansi[2]),
+        DimYellow => dim_color(ansi[3]),
+        DimBlue => dim_color(ansi[4]),
         DimMagenta => dim_color(ansi[5]),
-        DimCyan    => dim_color(ansi[6]),
-        DimWhite   => dim_color(ansi[7]),
+        DimCyan => dim_color(ansi[6]),
+        DimWhite => dim_color(ansi[7]),
         // Cursor → fallback
         Cursor => fallback,
     }
@@ -144,11 +146,14 @@ pub(crate) fn build_underline_spans(
             _ => (cell_h - 2.0, 1.5_f32),
         };
         UnderlineInstance {
-            pos:   [content_x + col as f32 * cell_w, content_y + row as f32 * cell_h + y_off],
-            size:  [w as f32 * cell_w, h],
+            pos: [
+                content_x + col as f32 * cell_w,
+                content_y + row as f32 * cell_h + y_off,
+            ],
+            size: [w as f32 * cell_w, h],
             color,
             style,
-            _pad:  [0; 3],
+            _pad: [0; 3],
         }
     };
 
@@ -157,10 +162,7 @@ pub(crate) fn build_underline_spans(
     let mut span_w = 1usize;
 
     for &(col, row, style, color) in &ul_cells[1..] {
-        let extends = row == s_row
-            && col == s_col + span_w
-            && style == s_style
-            && color == s_color;
+        let extends = row == s_row && col == s_col + span_w && style == s_style && color == s_color;
         if extends {
             span_w += 1;
         } else {
@@ -176,7 +178,10 @@ pub(crate) fn build_underline_spans(
 fn has_prefix_at(chars: &[char], pos: usize, prefix: &str) -> bool {
     let pchars: Vec<char> = prefix.chars().collect();
     pos + pchars.len() <= chars.len()
-        && chars[pos..pos + pchars.len()].iter().zip(&pchars).all(|(a, b)| a == b)
+        && chars[pos..pos + pchars.len()]
+            .iter()
+            .zip(&pchars)
+            .all(|(a, b)| a == b)
 }
 
 /// Scan visible terminal rows for bare `http://` / `https://` URLs.
@@ -234,81 +239,115 @@ pub fn build_tab_bar_ui_rects(
     hover_tab: Option<usize>,
     scroll_offset: usize,
     theme: &Theme,
+    effects_enabled: bool,
 ) -> Vec<UIRect> {
     let mut rects = Vec::new();
+    let sw = layout.sidebar_width;
+    let header_h = theme::SIDEBAR_HEADER_HEIGHT;
+    let tab_h = theme::SIDEBAR_TAB_HEIGHT;
+    let bottom_btn_h = tab_h;
 
+    // Sidebar background (full height)
     rects.push(UIRect {
         pos: [0.0, 0.0],
-        size: [layout.window_width, layout.tab_bar_height],
+        size: [sw, layout.window_height],
         color: theme.tab_bar_bg,
     });
 
-    let tab_count = tab_bar.tabs.len();
-    let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, scroll_offset);
-    let vis_count = end - start;
-    let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right);
-    let x_start = if show_left { SCROLL_BTN_W } else { 0.0 };
+    // Header area (logo)
+    rects.push(UIRect {
+        pos: [0.0, 0.0],
+        size: [sw, header_h],
+        color: theme.tab_bar_bg,
+    });
 
-    // < scroll button
-    if show_left {
+    // Header separator line
+    rects.push(UIRect {
+        pos: [0.0, header_h],
+        size: [sw, 1.0],
+        color: theme.tab_separator,
+    });
+
+    let tab_count = tab_bar.tabs.len();
+    let (start, end, show_up, show_down) = layout.tab_visible_range(tab_count, scroll_offset);
+
+    // Scroll up button
+    if show_up {
         rects.push(UIRect {
-            pos: [0.0, 0.0],
-            size: [SCROLL_BTN_W, layout.tab_bar_height],
+            pos: [0.0, header_h],
+            size: [sw, theme::SIDEBAR_SCROLL_BTN_H],
             color: theme.tab_bar_bg,
         });
     }
 
+    // Tab rows
     for (vis_i, i) in (start..end).enumerate() {
-        let x = x_start + vis_i as f32 * tab_w;
+        let y = layout.tab_y(vis_i, show_up);
+
         let color = if i == tab_bar.active {
             theme.tab_active_bg
         } else {
             theme.tab_inactive_bg
         };
         rects.push(UIRect {
-            pos: [x, 0.0],
-            size: [tab_w, layout.tab_bar_height],
+            pos: [0.0, y],
+            size: [sw, tab_h],
             color,
         });
 
+        // Active tab left border accent (3px neon) with optional glow layers behind it
+        if i == tab_bar.active {
+            if effects_enabled {
+                rects.push(UIRect {
+                    pos: [0.0, y],
+                    size: [10.0, tab_h],
+                    color: [1.0, 0.0, 0.24, 0.1],
+                });
+                rects.push(UIRect {
+                    pos: [0.0, y],
+                    size: [6.0, tab_h],
+                    color: [1.0, 0.0, 0.24, 0.3],
+                });
+            }
+            rects.push(UIRect {
+                pos: [0.0, y],
+                size: [3.0, tab_h],
+                color: theme.panel_active_border,
+            });
+        }
+
+        // Hover overlay (not for active tab)
         if hover_tab == Some(i) && i != tab_bar.active {
             rects.push(UIRect {
-                pos: [x, 0.0],
-                size: [tab_w, layout.tab_bar_height],
+                pos: [0.0, y],
+                size: [sw, tab_h],
                 color: theme.tab_hover_bg,
             });
         }
-
-        // Separator between tabs: skip the one adjacent to the active tab,
-        // because the active tab's darker background creates a visual
-        // "notch" / triangular cut that looks like a bowtie. The contrast
-        // between tab_active_bg and tab_inactive_bg already separates them
-        // visually without needing a line.
-        if vis_i > 0 && i != tab_bar.active && (i - 1) != tab_bar.active {
-            rects.push(UIRect {
-                pos: [x, 4.0],
-                size: [1.0, layout.tab_bar_height - 8.0],
-                color: theme.tab_separator,
-            });
-        }
     }
 
-    // + button
-    let plus_x = x_start + vis_count as f32 * tab_w;
-    rects.push(UIRect {
-        pos: [plus_x, 0.0],
-        size: [32.0, layout.tab_bar_height],
-        color: theme.tab_bar_bg,
-    });
-
-    // > scroll button
-    if show_right {
+    // Scroll down button
+    if show_down {
+        let top_y = layout.tab_y(end.saturating_sub(start), show_up);
         rects.push(UIRect {
-            pos: [plus_x + 32.0, 0.0],
-            size: [SCROLL_BTN_W, layout.tab_bar_height],
+            pos: [0.0, top_y],
+            size: [sw, theme::SIDEBAR_SCROLL_BTN_H],
             color: theme.tab_bar_bg,
         });
     }
+
+    // Bottom separator + New tab button
+    let bottom_y = layout.window_height - bottom_btn_h;
+    rects.push(UIRect {
+        pos: [0.0, bottom_y - 1.0],
+        size: [sw, 1.0],
+        color: theme.tab_separator,
+    });
+    rects.push(UIRect {
+        pos: [0.0, bottom_y],
+        size: [sw, bottom_btn_h],
+        color: theme.tab_bar_bg,
+    });
 
     rects
 }
@@ -320,32 +359,54 @@ pub fn build_tab_bar_text(
     scale_factor: f64,
     scroll_offset: usize,
     theme: &Theme,
+    sidebar_show_process_dot: bool,
 ) -> Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> {
     let mut result = Vec::new();
-    let tab_count = tab_bar.tabs.len();
-    let (start, end, show_left, show_right) = layout.tab_visible_range(tab_count, scroll_offset);
-    let vis_count = end - start;
-    let tab_w = layout.scrolled_tab_width(vis_count, show_left, show_right);
-    let x_start = if show_left { SCROLL_BTN_W } else { 0.0 };
+    let sw = layout.sidebar_width;
+    let header_h = theme::SIDEBAR_HEADER_HEIGHT;
+    let tab_h = theme::SIDEBAR_TAB_HEIGHT;
     let tab_font_size = TAB_FONT_SIZE * scale_factor as f32;
     let char_w = tab_font_size * 0.6;
-    let text_y = 8.0 * scale_factor as f32;
+    let text_y_offset = (tab_h - tab_font_size) * 0.5;
+    let tab_count = tab_bar.tabs.len();
+    let (start, end, show_up, show_down) = layout.tab_visible_range(tab_count, scroll_offset);
 
-    // < button text
-    if show_left {
+    // Logo/title text in header
+    let logo_text = "SYNAPSE_";
+    let logo_fs = 14.0 * scale_factor as f32;
+    let logo_cw = logo_fs * 0.6;
+    let logo_x = 8.0;
+    let logo_y = 14.0 * scale_factor as f32;
+    let transparent = [0.0f32, 0.0, 0.0, 0.0];
+    for (j, c) in logo_text.chars().enumerate() {
         result.push((
-            '<',
-            4.0,
-            text_y,
-            tab_font_size,
-            theme.tab_button_text,
-            theme.tab_bar_bg,
+            c,
+            logo_x + j as f32 * logo_cw,
+            logo_y,
+            logo_fs,
+            theme.tab_text,
+            transparent,
         ));
     }
 
+    // Scroll up arrow
+    if show_up {
+        let btn_y = header_h + 4.0;
+        result.push((
+            '▲',
+            8.0,
+            btn_y,
+            tab_font_size,
+            theme.tab_button_text,
+            transparent,
+        ));
+    }
+
+    // Tab rows
     for (vis_i, i) in (start..end).enumerate() {
         let tab = &tab_bar.tabs[i];
-        let x = x_start + vis_i as f32 * tab_w;
+        let y = layout.tab_y(vis_i, show_up) + text_y_offset;
+
         let fg = if i == tab_bar.active {
             theme.tab_text
         } else {
@@ -368,7 +429,17 @@ pub fn build_tab_bar_text(
         } else {
             format!("Tab {}", i + 1)
         };
-        let max_chars = ((tab_w - 24.0) / char_w).max(1.0) as usize;
+
+        let text_x = 10.0;
+        let dot_indent = if sidebar_show_process_dot {
+            char_w * 1.5
+        } else {
+            0.0
+        };
+        let title_text_x = text_x + dot_indent;
+
+        // Truncate to fit sidebar accounting for dot indent
+        let max_chars = ((sw - 32.0 - dot_indent) / char_w).max(1.0) as usize;
         let title: String = if raw_title.chars().count() > max_chars {
             raw_title
                 .chars()
@@ -379,44 +450,170 @@ pub fn build_tab_bar_text(
             raw_title
         };
 
-        let text_x = x + 8.0;
-        for (j, c) in title.chars().enumerate() {
-            result.push((c, text_x + j as f32 * char_w, text_y, tab_font_size, fg, bg));
+        // Process dot: green = alive, red = dead
+        if sidebar_show_process_dot {
+            let dot_color = if tab.alive {
+                [0.0_f32, 0.8, 0.267, 1.0]
+            } else {
+                [1.0_f32, 0.0, 0.235, 1.0]
+            };
+            result.push(('●', text_x, y, tab_font_size, dot_color, bg));
         }
 
-        let close_x = x + tab_w - 14.0;
+        for (j, c) in title.chars().enumerate() {
+            result.push((
+                c,
+                title_text_x + j as f32 * char_w,
+                y,
+                tab_font_size,
+                fg,
+                bg,
+            ));
+        }
+
+        // Close button (×)
+        let close_x = sw - 16.0;
         let close_fg = if i == tab_bar.active {
             [1.0, 1.0, 1.0, 0.7_f32]
         } else {
             [0.8, 0.8, 0.8, 0.5_f32]
         };
-        result.push(('×', close_x, text_y, tab_font_size, close_fg, bg));
+        result.push(('×', close_x, y, tab_font_size, close_fg, transparent));
     }
 
-    // + button
-    let plus_x = x_start + vis_count as f32 * tab_w;
-    result.push((
-        '+',
-        plus_x + 8.0,
-        text_y,
-        tab_font_size,
-        theme.tab_button_text,
-        theme.tab_bar_bg,
-    ));
-
-    // > button text
-    if show_right {
+    // Scroll down arrow
+    if show_down {
+        let btn_y = layout.tab_y(end.saturating_sub(start), show_up) + 4.0;
         result.push((
-            '>',
-            plus_x + 32.0 + 4.0,
-            text_y,
+            '▼',
+            8.0,
+            btn_y,
             tab_font_size,
             theme.tab_button_text,
-            theme.tab_bar_bg,
+            transparent,
         ));
     }
 
+    // Bottom "+" button
+    let plus_y = layout.window_height - tab_h + text_y_offset;
+    result.push((
+        '+',
+        8.0,
+        plus_y,
+        tab_font_size,
+        theme.tab_button_text,
+        transparent,
+    ));
+
     result
+}
+
+#[allow(clippy::type_complexity)]
+pub fn build_status_bar(
+    layout: &Layout,
+    state: &AppState,
+    active_cwd: &str,
+) -> (Vec<UIRect>, Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>) {
+    let mut rects = Vec::new();
+    let mut cells = Vec::new();
+
+    if !state.status_bar_visible {
+        return (rects, cells);
+    }
+
+    let bar_h = theme::STATUS_BAR_HEIGHT;
+    let bar_y = layout.window_height - bar_h;
+    let bar_w = layout.window_width - layout.sidebar_width;
+    let bar_x = layout.sidebar_width;
+
+    rects.push(UIRect {
+        pos: [bar_x, bar_y],
+        size: [bar_w, bar_h],
+        color: state.theme.tab_bar_bg,
+    });
+    rects.push(UIRect {
+        pos: [bar_x, bar_y],
+        size: [bar_w, 1.0],
+        color: state.theme.tab_separator,
+    });
+
+    let fs = 11.0;
+    let char_w = fs * 0.6;
+    let text_y = bar_y + (bar_h - fs) * 0.5;
+    let transparent = [0.0f32, 0.0, 0.0, 0.0];
+    let fg = state.theme.tab_text_inactive;
+
+    // Left: CWD + git branch + k8s context
+    let mut left = String::new();
+    let home = std::env::var("HOME").unwrap_or_default();
+    if !active_cwd.is_empty() {
+        let cwd = if !home.is_empty() && active_cwd.starts_with(&home) {
+            format!("~{}", &active_cwd[home.len()..])
+        } else {
+            active_cwd.to_string()
+        };
+        let max_cwd = 30usize;
+        if cwd.chars().count() > max_cwd {
+            let chars: Vec<char> = cwd.chars().collect();
+            let start = chars.len().saturating_sub(max_cwd.saturating_sub(1));
+            left.push_str(&format!(
+                "\u{2026}{}",
+                chars[start..].iter().collect::<String>()
+            ));
+        } else {
+            left.push_str(&cwd);
+        }
+    }
+    if state.config.status_bar_show_git {
+        if let Some(ref branch) = state.git_branch {
+            if !left.is_empty() {
+                left.push_str("  ");
+            }
+            left.push(' ');
+            left.push_str(branch);
+        }
+    }
+    if state.config.status_bar_show_k8s {
+        if let Some(ref ctx) = state.k8s_context {
+            if !left.is_empty() {
+                left.push_str("  ");
+            }
+            left.push_str(ctx);
+        }
+    }
+    let left_max_x = bar_x + bar_w * 0.55;
+    let mut lx = bar_x + 8.0;
+    for c in left.chars() {
+        if lx + char_w > left_max_x {
+            break;
+        }
+        cells.push((c, lx, text_y, fs, fg, transparent));
+        lx += char_w;
+    }
+
+    // Center: user@host
+    if !state.user_host.is_empty() {
+        let cw = state.user_host.chars().count() as f32 * char_w;
+        let cx = bar_x + (bar_w - cw) * 0.5;
+        for (j, c) in state.user_host.chars().enumerate() {
+            cells.push((c, cx + j as f32 * char_w, text_y, fs, fg, transparent));
+        }
+    }
+
+    // Right: HH:MM:SS (UTC)
+    if state.config.status_bar_show_time && state.cached_time_sec > 0 {
+        let s = state.cached_time_sec % 60;
+        let m = (state.cached_time_sec / 60) % 60;
+        let h = (state.cached_time_sec / 3600) % 24;
+        let time_str = format!("{:02}:{:02}:{:02}", h, m, s);
+        let tw = time_str.chars().count() as f32 * char_w;
+        let tx = bar_x + bar_w - tw - 8.0;
+        for (j, c) in time_str.chars().enumerate() {
+            cells.push((c, tx + j as f32 * char_w, text_y, fs, fg, transparent));
+        }
+    }
+
+    (rects, cells)
 }
 
 #[allow(clippy::too_many_arguments, clippy::ptr_arg, clippy::type_complexity)]
@@ -448,7 +645,11 @@ fn push_cursor_rect(
             let alpha = 1.0 - (i as f32 / trail_len as f32);
             let c = state.theme.cursor;
             let faded = [c[0], c[1], c[2], c[3] * alpha * 0.6];
-            ui_rects.push(UIRect { pos: [tx, ty], size: [cell_w, cell_h], color: faded });
+            ui_rects.push(UIRect {
+                pos: [tx, ty],
+                size: [cell_w, cell_h],
+                color: faded,
+            });
         }
     }
 
@@ -456,10 +657,18 @@ fn push_cursor_rect(
     let term_shape = state.term_cursor_style.map(|(s, _)| s);
     match term_shape {
         Some(CursorShape::Beam) => {
-            ui_rects.push(UIRect { pos: [cx, cy], size: [1.5, cell_h], color });
+            ui_rects.push(UIRect {
+                pos: [cx, cy],
+                size: [1.5, cell_h],
+                color,
+            });
         }
         Some(CursorShape::Underline) => {
-            ui_rects.push(UIRect { pos: [cx, cy + cell_h - 2.0], size: [cell_w, 2.0], color });
+            ui_rects.push(UIRect {
+                pos: [cx, cy + cell_h - 2.0],
+                size: [cell_w, 2.0],
+                color,
+            });
         }
         Some(CursorShape::Hidden) => {
             // Hidden cursor: render nothing
@@ -467,13 +676,43 @@ fn push_cursor_rect(
         // Block, HollowBlock, or None → fallback to TOML config
         _ => match state.config.cursor_style {
             synapse_config::CursorStyle::Block => {
-                ui_rects.push(UIRect { pos: [cx, cy], size: [cell_w, cell_h], color });
+                ui_rects.push(UIRect {
+                    pos: [cx, cy],
+                    size: [cell_w, cell_h],
+                    color,
+                });
             }
             synapse_config::CursorStyle::Beam => {
-                ui_rects.push(UIRect { pos: [cx, cy], size: [1.5, cell_h], color });
+                ui_rects.push(UIRect {
+                    pos: [cx, cy],
+                    size: [1.5, cell_h],
+                    color,
+                });
             }
             synapse_config::CursorStyle::Underline => {
-                ui_rects.push(UIRect { pos: [cx, cy + cell_h - 2.0], size: [cell_w, 2.0], color });
+                ui_rects.push(UIRect {
+                    pos: [cx, cy + cell_h - 2.0],
+                    size: [cell_w, 2.0],
+                    color,
+                });
+            }
+            synapse_config::CursorStyle::NeonUnderbar => {
+                let bar_y = cy + cell_h - 2.0;
+                ui_rects.push(UIRect {
+                    pos: [cx, bar_y],
+                    size: [cell_w, 2.0],
+                    color,
+                });
+                ui_rects.push(UIRect {
+                    pos: [cx, bar_y],
+                    size: [cell_w, 5.0],
+                    color: [color[0], color[1], color[2], color[3] * 0.3],
+                });
+                ui_rects.push(UIRect {
+                    pos: [cx, bar_y],
+                    size: [cell_w, 8.0],
+                    color: [color[0], color[1], color[2], color[3] * 0.08],
+                });
             }
         },
     }
@@ -514,7 +753,12 @@ pub fn render_frame(
         .collect();
 
     // 4.3: drain dirty for all panes but only trigger rebuild for active-tab panes.
-    let active_ids: HashSet<PaneId> = tab_bar.active_tab().pane_tree.all_panes().into_iter().collect();
+    let active_ids: HashSet<PaneId> = tab_bar
+        .active_tab()
+        .pane_tree
+        .all_panes()
+        .into_iter()
+        .collect();
     let pty_received = panes.iter_mut().fold(false, |acc, pane| {
         let dirty = pane.is_dirty();
         acc || (dirty && active_ids.contains(&pane.id))
@@ -536,11 +780,65 @@ pub fn render_frame(
     let font_changed = (*cached_font_size - font_size).abs() > 0.01;
     let blink_changed = *cached_blink != cursor_blink_on;
     let tab_changed = tab_bar.active != *cached_active_tab;
-    let ui_active = state.selecting || state.search.active || state.history_search.active || state.suggest.ghost.is_some();
+    let ui_active = state.selecting
+        || state.search.active
+        || state.history_search.active
+        || state.suggest.ghost.is_some()
+        || state.palette.active;
     let first_frame = cached_cell_data.is_empty();
+    let label_active = state.config.show_pane_labels
+        && state
+            .pane_label_until
+            .map(|t| t > std::time::Instant::now())
+            .unwrap_or(false);
+    let resize_active = state.config.show_resize_indicator && state.dragging_divider.is_some();
+
+    // Poll completed git branch async read
+    let git_branch_updated = {
+        let result = if let Some(ref rx) = state.git_branch_rx {
+            rx.try_recv().ok()
+        } else {
+            None
+        };
+        if let Some(b) = result {
+            state.git_branch = b;
+            state.git_branch_rx = None;
+            true
+        } else {
+            false
+        }
+    };
+
+    // Spawn git branch reader on tab switch or first frame
+    if (first_frame || tab_changed) && state.git_branch_rx.is_none() {
+        let cwd = tab_bar.active_tab().cwd.clone();
+        if !cwd.is_empty() {
+            state.git_branch_rx = Some(crate::state::spawn_git_branch_reader(&cwd));
+        }
+    }
+
+    // Status bar clock: dirty when UTC second ticks
+    let now_sec = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let status_time_dirty = state.status_bar_visible
+        && state.config.status_bar_show_time
+        && now_sec != state.cached_time_sec;
+    if status_time_dirty {
+        state.cached_time_sec = now_sec;
+    }
 
     // Cell data only changes on real terminal events — not on cursor blink.
-    let needs_cell_rebuild = pty_received || font_changed || tab_changed || first_frame || ui_active;
+    let needs_cell_rebuild = pty_received
+        || font_changed
+        || tab_changed
+        || first_frame
+        || ui_active
+        || label_active
+        || resize_active
+        || git_branch_updated
+        || status_time_dirty;
     // UI rects (cursor shape) also change on blink.
     let needs_ui_rebuild = needs_cell_rebuild || blink_changed;
 
@@ -596,7 +894,15 @@ pub fn render_frame(
             let is_active = pane_id == active_pane_id;
 
             // Snapshot grid contents, cursor, selection range, and OSC 8 hyperlinks under the lock.
-            let (cells, osc8_cells, cursor_col, cursor_row, sel_range, display_offset, history_size): (
+            let (
+                cells,
+                osc8_cells,
+                cursor_col,
+                cursor_row,
+                sel_range,
+                display_offset,
+                history_size,
+            ): (
                 Vec<(usize, i32, char, TermColor, TermColor)>,
                 Vec<(usize, i32, String)>,
                 usize,
@@ -637,17 +943,31 @@ pub fn render_frame(
                     buf.push((col, raw_row, indexed.c, indexed.fg, indexed.bg));
                     let flags = indexed.flags;
                     if flags.intersects(Flags::ALL_UNDERLINES) {
-                        let style = if flags.contains(Flags::UNDERCURL)        { 2u32 }
-                               else if flags.contains(Flags::DOUBLE_UNDERLINE) { 1 }
-                               else if flags.contains(Flags::DOTTED_UNDERLINE) { 3 }
-                               else if flags.contains(Flags::DASHED_UNDERLINE) { 4 }
-                               else                                            { 0 };
+                        let style = if flags.contains(Flags::UNDERCURL) {
+                            2u32
+                        } else if flags.contains(Flags::DOUBLE_UNDERLINE) {
+                            1
+                        } else if flags.contains(Flags::DOTTED_UNDERLINE) {
+                            3
+                        } else if flags.contains(Flags::DASHED_UNDERLINE) {
+                            4
+                        } else {
+                            0
+                        };
                         // buf uses raw_row; ul_buf uses viewport_row already shifted by display_offset.
                         // build_underline_spans expects viewport-relative rows (0 = top of pane).
                         ul_buf.push((col, viewport_row, style, indexed.underline_color()));
                     }
                 }
-                (buf, hyperlinks, cursor_col, cursor_row, sel_range, display_offset, history_size)
+                (
+                    buf,
+                    hyperlinks,
+                    cursor_col,
+                    cursor_row,
+                    sel_range,
+                    display_offset,
+                    history_size,
+                )
             };
 
             if !ul_buf.is_empty() {
@@ -655,7 +975,9 @@ pub fn render_frame(
                     .drain(..)
                     .map(|(col, viewport_row, style, ul_color)| {
                         let rgba = ul_color
-                            .map(|c| term_color_to_rgba(c, state.theme.fg, &state.theme.ansi_colors))
+                            .map(|c| {
+                                term_color_to_rgba(c, state.theme.fg, &state.theme.ansi_colors)
+                            })
                             .unwrap_or(state.theme.fg);
                         (col, viewport_row, style, rgba)
                     })
@@ -701,12 +1023,15 @@ pub fn render_frame(
                 let bg = term_color_to_rgba(bg_c, state.theme.bg, &state.theme.ansi_colors);
 
                 let in_selection = is_active
-                    && sel_range.as_ref().map(|r| {
-                        r.contains(alacritty_terminal::index::Point::new(
-                            alacritty_terminal::index::Line(raw_row),
-                            alacritty_terminal::index::Column(col),
-                        ))
-                    }).unwrap_or(false);
+                    && sel_range
+                        .as_ref()
+                        .map(|r| {
+                            r.contains(alacritty_terminal::index::Point::new(
+                                alacritty_terminal::index::Line(raw_row),
+                                alacritty_terminal::index::Column(col),
+                            ))
+                        })
+                        .unwrap_or(false);
 
                 let in_match = is_active && match_set.contains(&(col, raw_row));
 
@@ -738,14 +1063,39 @@ pub fn render_frame(
             // Track cursor pixel position for unified rendering after all panes.
             // All cursor styles (block/beam/underline) are now UIRect overlays.
             let cursor_viewport_row = cursor_row + display_offset as i32;
-            if is_active
-                && cursor_viewport_row >= 0
+            if cursor_viewport_row >= 0
                 && (cursor_viewport_row as usize) < pane_rows
                 && cursor_col < pane_cols
             {
                 let cx = content_x + cursor_col as f32 * cell_w;
                 let cy = content_y + cursor_viewport_row as f32 * cell_h;
-                cursor_pixel_for_frame = Some((cx, cy));
+                if is_active {
+                    cursor_pixel_for_frame = Some((cx, cy));
+                } else if layouts.len() > 1 {
+                    // Hollow block cursor on inactive panes: render border outline.
+                    let c = state.theme.cursor;
+                    let hollow = [c[0], c[1], c[2], c[3] * 0.35];
+                    cached_ui_rects.push(UIRect {
+                        pos: [cx, cy],
+                        size: [cell_w, 1.0],
+                        color: hollow,
+                    });
+                    cached_ui_rects.push(UIRect {
+                        pos: [cx, cy + cell_h - 1.0],
+                        size: [cell_w, 1.0],
+                        color: hollow,
+                    });
+                    cached_ui_rects.push(UIRect {
+                        pos: [cx, cy],
+                        size: [1.0, cell_h],
+                        color: hollow,
+                    });
+                    cached_ui_rects.push(UIRect {
+                        pos: [cx + cell_w - 1.0, cy],
+                        size: [1.0, cell_h],
+                        color: hollow,
+                    });
+                }
             }
 
             // Copy mode cursor: amber block, rendered before cached_cursor_rects_start
@@ -824,6 +1174,15 @@ pub fn render_frame(
                 });
             }
 
+            // Subtle dim overlay on inactive panes (Hyprland-style focus visual).
+            if !is_active && layouts.len() > 1 {
+                cached_ui_rects.push(UIRect {
+                    pos: [rect.x, rect.y],
+                    size: [rect.w, rect.h],
+                    color: [0.0, 0.0, 0.0, 0.12],
+                });
+            }
+
             // Only draw pane borders when there's more than one pane in the
             // active tab. With a single pane the borders just duplicate the
             // window edge and the top border draws a cyan line right below
@@ -882,6 +1241,64 @@ pub fn render_frame(
                 size: [dw, dh],
                 color: state.theme.panel_divider,
             });
+        }
+
+        // Pane label overlay (Hyprland-style, 600ms after focus change)
+        if label_active {
+            let labeled_pane = PaneId(state.pane_label_id as u64);
+            if let Some(pos) = layouts.iter().position(|(pid, _)| *pid == labeled_pane) {
+                let rect = layouts[pos].1;
+                let lx = rect.x + margin + 4.0;
+                let ly = rect.y + margin + 4.0;
+                let label_fs = 14.0;
+                let label_char_w = label_fs * 0.6;
+                let label = format!("P{}", pos + 1);
+                let transparent = [0.0_f32, 0.0, 0.0, 0.0];
+                for (j, c) in label.chars().enumerate() {
+                    cached_cell_data.push((
+                        c,
+                        lx + j as f32 * label_char_w,
+                        ly,
+                        label_fs,
+                        state.theme.fg,
+                        transparent,
+                    ));
+                }
+            }
+        }
+
+        // Resize indicator: cols×rows centered in active pane while dragging divider
+        if resize_active {
+            let active_id = tab_bar.active_tab().active_pane;
+            if let Some(pos) = layouts.iter().position(|(pid, _)| *pid == active_id) {
+                let rect = layouts[pos].1;
+                let content_w = (rect.w - margin * 2.0).max(0.0);
+                let content_h = (rect.h - margin * 2.0).max(0.0);
+                let cols = (content_w / cell_w).max(1.0) as usize;
+                let rows = (content_h / cell_h).max(1.0) as usize;
+                let indicator = format!("{}\u{00D7}{}", cols, rows);
+                let ind_fs = 12.0;
+                let ind_char_w = ind_fs * 0.6;
+                let ind_w = indicator.chars().count() as f32 * ind_char_w;
+                let ind_x = rect.x + rect.w * 0.5 - ind_w * 0.5;
+                let ind_y = rect.y + rect.h * 0.5 - ind_fs * 0.5;
+                cached_ui_rects.push(UIRect {
+                    pos: [ind_x - 6.0, ind_y - 4.0],
+                    size: [ind_w + 12.0, ind_fs + 8.0],
+                    color: [0.0, 0.0, 0.0, 0.7],
+                });
+                let transparent = [0.0_f32, 0.0, 0.0, 0.0];
+                for (j, c) in indicator.chars().enumerate() {
+                    cached_cell_data.push((
+                        c,
+                        ind_x + j as f32 * ind_char_w,
+                        ind_y,
+                        ind_fs,
+                        state.theme.fg,
+                        transparent,
+                    ));
+                }
+            }
         }
 
         // Search bar overlay
@@ -1027,19 +1444,204 @@ pub fn render_frame(
             }
         }
 
+        // Command palette overlay
+        if state.palette.active {
+            let p_fs = 13.0;
+            let p_char_w = p_fs * 0.6;
+            let p_line_h = p_fs * 1.5;
+            let pane_area = layout.pane_area();
+            let overlay_w = 600.0_f32.min(pane_area.2 - 40.0);
+            let max_results = 8;
+            let overlay_h = 40.0 + max_results as f32 * p_line_h + 16.0;
+            let ox = pane_area.0 + (pane_area.2 - overlay_w) / 2.0;
+            let oy = pane_area.1 + (pane_area.3 * 0.2 - 40.0).max(16.0);
+            let transparent = [0.0, 0.0, 0.0, 0.0];
+
+            // Overlay background with border
+            cached_ui_rects.push(UIRect {
+                pos: [ox, oy],
+                size: [overlay_w, overlay_h],
+                color: state.theme.search_bar_bg,
+            });
+            // Border
+            let border_color = state.theme.panel_active_border;
+            cached_ui_rects.push(UIRect {
+                pos: [ox, oy],
+                size: [overlay_w, 1.0],
+                color: border_color,
+            });
+            cached_ui_rects.push(UIRect {
+                pos: [ox, oy + overlay_h - 1.0],
+                size: [overlay_w, 1.0],
+                color: border_color,
+            });
+            cached_ui_rects.push(UIRect {
+                pos: [ox, oy],
+                size: [1.0, overlay_h],
+                color: border_color,
+            });
+            cached_ui_rects.push(UIRect {
+                pos: [ox + overlay_w - 1.0, oy],
+                size: [1.0, overlay_h],
+                color: border_color,
+            });
+
+            // Search icon + query input
+            let input_x = ox + 12.0;
+            let input_y = oy + 12.0;
+            cached_cell_data.push((
+                '\u{1F50D}', // 🔍
+                input_x,
+                input_y,
+                p_fs,
+                state.theme.search_text,
+                transparent,
+            ));
+            let text_x = input_x + p_char_w * 2.0;
+            let term_chars: Vec<char> = state.palette.query.chars().collect();
+            for (j, &c) in term_chars.iter().enumerate() {
+                cached_cell_data.push((
+                    c,
+                    text_x + j as f32 * p_char_w,
+                    input_y,
+                    p_fs,
+                    state.theme.search_text,
+                    transparent,
+                ));
+            }
+            // Cursor in query input
+            cached_cell_data.push((
+                '|',
+                text_x + term_chars.len() as f32 * p_char_w,
+                input_y,
+                p_fs,
+                state.theme.search_text,
+                transparent,
+            ));
+
+            // Divider line between input and results
+            let div_y = oy + 32.0;
+            cached_ui_rects.push(UIRect {
+                pos: [ox + 8.0, div_y],
+                size: [overlay_w - 16.0, 1.0],
+                color: state.theme.tab_separator,
+            });
+
+            // Results list
+            let result_start_y = div_y + 8.0;
+            let visible = state.palette.results.iter().take(max_results).enumerate();
+
+            for (i, item) in visible {
+                let row_y = result_start_y + i as f32 * p_line_h;
+                let is_selected = i == state.palette.selected;
+                let (label, keybind, _is_action) = match item {
+                    crate::palette::PaletteItem::Action { label, keybind, .. } => {
+                        (label.clone(), keybind.clone(), true)
+                    }
+                    crate::palette::PaletteItem::Tab { label, .. } => (label.clone(), None, false),
+                    crate::palette::PaletteItem::Theme { name } => {
+                        (format!("Theme: {}", name), None, false)
+                    }
+                };
+
+                // Highlight selected row
+                if is_selected {
+                    cached_ui_rects.push(UIRect {
+                        pos: [ox + 4.0, row_y - 2.0],
+                        size: [overlay_w - 8.0, p_line_h],
+                        color: state.theme.search_highlight,
+                    });
+                }
+
+                let text_fg = if is_selected {
+                    state.theme.search_text
+                } else {
+                    state.theme.search_text_dim
+                };
+
+                let row_x = ox + 12.0;
+                let prefix = "  ";
+                for (j, c) in prefix.chars().enumerate() {
+                    cached_cell_data.push((
+                        c,
+                        row_x + j as f32 * p_char_w,
+                        row_y,
+                        p_fs,
+                        text_fg,
+                        transparent,
+                    ));
+                }
+                for (j, c) in label.chars().enumerate() {
+                    cached_cell_data.push((
+                        c,
+                        row_x + prefix.len() as f32 * p_char_w + j as f32 * p_char_w,
+                        row_y,
+                        p_fs,
+                        text_fg,
+                        transparent,
+                    ));
+                }
+
+                // Keybind hint, right-aligned
+                if let Some(kb) = keybind {
+                    let kb_x = ox + overlay_w - kb.len() as f32 * p_char_w - 12.0;
+                    for (j, c) in kb.chars().enumerate() {
+                        cached_cell_data.push((
+                            c,
+                            kb_x + j as f32 * p_char_w,
+                            row_y,
+                            p_fs,
+                            state.theme.search_text_dim,
+                            transparent,
+                        ));
+                    }
+                }
+            }
+
+            // "no results" message
+            if state.palette.results.is_empty() && !state.palette.query.is_empty() {
+                let msg = "No matching results";
+                let msg_x = ox + 12.0;
+                for (j, c) in msg.chars().enumerate() {
+                    cached_cell_data.push((
+                        c,
+                        msg_x + j as f32 * p_char_w,
+                        result_start_y,
+                        p_fs,
+                        state.theme.search_text_dim,
+                        transparent,
+                    ));
+                }
+            }
+        }
+
         let tab_ui = build_tab_bar_ui_rects(
             layout,
             tab_bar,
             state.hover_tab,
             state.tab_scroll_offset,
             &state.theme,
+            state.effects_enabled,
         );
         cached_bg_rects.extend(tab_ui);
 
-        for tab_cell in
-            build_tab_bar_text(layout, tab_bar, scale_factor as f64, state.tab_scroll_offset, &state.theme)
-        {
+        for tab_cell in build_tab_bar_text(
+            layout,
+            tab_bar,
+            scale_factor as f64,
+            state.tab_scroll_offset,
+            &state.theme,
+            state.config.sidebar_show_process_dot,
+        ) {
             cached_cell_data.push(tab_cell);
+        }
+
+        // Status bar
+        let (sb_rects, sb_cells) =
+            build_status_bar(layout, state, &tab_bar.active_tab().cwd.clone());
+        cached_bg_rects.extend(sb_rects);
+        for cell in sb_cells {
+            cached_cell_data.push(cell);
         }
 
         // Capture the active pane's DECSCUSR cursor style before rendering.
@@ -1057,7 +1659,14 @@ pub fn render_frame(
         // touching the stable rects (borders, dividers, search bars, tab bar).
         *cached_cursor_pixel = cursor_pixel_for_frame;
         *cached_cursor_rects_start = cached_ui_rects.len();
-        push_cursor_rect(cached_ui_rects, cursor_pixel_for_frame, cursor_blink_on, cell_w, cell_h, state);
+        push_cursor_rect(
+            cached_ui_rects,
+            cursor_pixel_for_frame,
+            cursor_blink_on,
+            cell_w,
+            cell_h,
+            state,
+        );
 
         *cached_font_size = font_size;
         *cached_blink = cursor_blink_on;
@@ -1066,7 +1675,14 @@ pub fn render_frame(
         // Blink-only: truncate cursor rects and re-push with new blink state.
         // Cell instances and bg rects are untouched — skips atlas lookups + GPU upload.
         cached_ui_rects.truncate(*cached_cursor_rects_start);
-        push_cursor_rect(cached_ui_rects, *cached_cursor_pixel, cursor_blink_on, cell_w, cell_h, state);
+        push_cursor_rect(
+            cached_ui_rects,
+            *cached_cursor_pixel,
+            cursor_blink_on,
+            cell_w,
+            cell_h,
+            state,
+        );
         *cached_blink = cursor_blink_on;
     }
 
@@ -1205,7 +1821,11 @@ pub fn render_splash_screen(
     let dim_fg = [theme.fg[0], theme.fg[1], theme.fg[2], 0.45];
 
     // ── Fondo completo ──────────────────────────────────────────────────────
-    bg_rects.push(UIRect { pos: [0.0, 0.0], size: [w, h], color: theme.bg });
+    bg_rects.push(UIRect {
+        pos: [0.0, 0.0],
+        size: [w, h],
+        color: theme.bg,
+    });
 
     // ── Título: "S Y N A P S E  _" con letra espaciada ──────────────────────
     let title_fs: f32 = 30.0;
@@ -1291,7 +1911,11 @@ pub fn render_splash_screen(
     let status_x = (w - status_w) * 0.5;
     let status_y = bar_y + 14.0;
     // Al llegar al final, usar el color del cursor (más brillante) como confirmación
-    let status_color = if progress >= 0.95 { theme.cursor } else { dim_fg };
+    let status_color = if progress >= 0.95 {
+        theme.cursor
+    } else {
+        dim_fg
+    };
     for (j, c) in status.chars().enumerate() {
         cells.push((
             c,
@@ -1303,7 +1927,18 @@ pub fn render_splash_screen(
         ));
     }
 
-    renderer.draw_frame_with_options(&cells, &ui_rects, &bg_rects, &[], &[], &[], &[], false, true, true);
+    renderer.draw_frame_with_options(
+        &cells,
+        &ui_rects,
+        &bg_rects,
+        &[],
+        &[],
+        &[],
+        &[],
+        false,
+        true,
+        true,
+    );
 }
 
 fn send_desktop_notification(title: &str, body: &str) {
@@ -1355,9 +1990,8 @@ impl AppCore {
             if pane.pending_bell {
                 pane.pending_bell = false;
                 if self.state.config.bell.visual {
-                    self.state.bell_flash_end = Some(
-                        std::time::Instant::now() + std::time::Duration::from_millis(200),
-                    );
+                    self.state.bell_flash_end =
+                        Some(std::time::Instant::now() + std::time::Duration::from_millis(200));
                 }
                 if !self.state.window_focused && self.state.config.bell.notify_unfocused {
                     send_desktop_notification("SYNAPSE_", "Bell");
@@ -1478,7 +2112,12 @@ impl AppCore {
                     let new_pane_id = self.tab_bar.next_pane_id();
                     self.tab_bar.tabs[0].pane_tree = synapse_ui::PaneTree::leaf(new_pane_id);
                     self.tab_bar.tabs[0].active_pane = new_pane_id;
-                    match create_pane(new_pane_id, new_cols, new_rows, self.state.config.scrollback_lines) {
+                    match create_pane(
+                        new_pane_id,
+                        new_cols,
+                        new_rows,
+                        self.state.config.scrollback_lines,
+                    ) {
                         Ok(pane) => self.panes.push(pane),
                         Err(e) => tracing::warn!("Failed to spawn replacement PTY: {}", e),
                     }
@@ -1563,19 +2202,22 @@ mod tests {
 
     #[test]
     fn test_push_cursor_rect_skips_in_copy_mode() {
-        use synapse_config::{Config, Keybinds};
         use crate::state::AppState;
+        use synapse_config::{Config, Keybinds};
         let mut state = AppState::new(Config::default(), Keybinds::default(), 14.0);
         state.in_copy_mode = true;
         let mut rects: Vec<UIRect> = Vec::new();
         push_cursor_rect(&mut rects, Some((0.0, 0.0)), true, 8.0, 16.0, &mut state);
-        assert!(rects.is_empty(), "copy mode must suppress normal cursor rect");
+        assert!(
+            rects.is_empty(),
+            "copy mode must suppress normal cursor rect"
+        );
     }
 
     #[test]
     fn test_push_cursor_rect_emits_rect_normally() {
-        use synapse_config::{Config, Keybinds};
         use crate::state::AppState;
+        use synapse_config::{Config, Keybinds};
         let mut state = AppState::new(Config::default(), Keybinds::default(), 14.0);
         state.in_copy_mode = false;
         let mut rects: Vec<UIRect> = Vec::new();
@@ -1584,5 +2226,30 @@ mod tests {
         let last = rects.last().unwrap();
         assert_eq!(last.pos, [10.0, 20.0]);
         assert_eq!(last.size, [8.0, 16.0]);
+    }
+
+    #[test]
+    fn test_push_cursor_rect_neon_underbar() {
+        use crate::state::AppState;
+        use synapse_config::{Config, CursorStyle, Keybinds};
+        let config = Config {
+            cursor_style: CursorStyle::NeonUnderbar,
+            ..Config::default()
+        };
+        let mut state = AppState::new(config, Keybinds::default(), 14.0);
+        state.in_copy_mode = false;
+        state.term_cursor_style = None;
+        let mut rects: Vec<UIRect> = Vec::new();
+        push_cursor_rect(&mut rects, Some((10.0, 20.0)), true, 8.0, 16.0, &mut state);
+        assert_eq!(
+            rects.len(),
+            3,
+            "NeonUnderbar emits 3 rects (bar + 2 glow layers)"
+        );
+        assert_eq!(rects[0].size, [8.0, 2.0]);
+        assert_eq!(rects[1].size, [8.0, 5.0]);
+        assert_eq!(rects[2].size, [8.0, 8.0]);
+        assert!(rects[0].color[3] > rects[1].color[3]);
+        assert!(rects[1].color[3] > rects[2].color[3]);
     }
 }
