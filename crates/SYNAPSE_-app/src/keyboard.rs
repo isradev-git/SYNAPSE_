@@ -1113,6 +1113,7 @@ pub fn handle_keyboard(
                         let cmd = state.suggest.prefix.trim().to_string();
                         if !cmd.is_empty() {
                             state.suggester.insert(&cmd);
+                            let _ = synapse_suggest::save_suggester(&state.suggester);
                         }
                     }
 

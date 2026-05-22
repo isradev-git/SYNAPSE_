@@ -1,6 +1,11 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+/// Load all commands with recency weighting.
+/// Each occurrence of a command adds to its frequency, with more recent
+/// occurrences contributing slightly more weight. The vector contains
+/// duplicates: a command appearing 10 times in history appears 10 times
+/// in the output. Recent entries appear later in the vector.
 pub fn load_all() -> Vec<String> {
     let mut all_lines: Vec<String> = Vec::new();
 
@@ -19,18 +24,65 @@ pub fn load_all() -> Vec<String> {
         }
     }
 
-    // Deduplicate preserving most recent occurrence (reverse, dedup, re-reverse).
-    all_lines.reverse();
-    let mut seen = HashSet::new();
-    let mut result: Vec<String> = all_lines
+    // Filter short/empty, trim. Keep duplicates (frequency == count).
+    all_lines
         .into_iter()
-        .filter(|line| {
-            let trimmed = line.trim().to_string();
-            !trimmed.is_empty() && trimmed.len() >= 2 && seen.insert(trimmed)
-        })
-        .collect();
-    result.reverse();
-    result
+        .map(|l| l.trim().to_string())
+        .filter(|l| l.len() >= 2)
+        .collect()
+}
+
+pub fn load_path_exes() -> HashSet<String> {
+    let mut exes = HashSet::new();
+    let path = std::env::var("PATH").unwrap_or_default();
+    let mut seen = HashSet::new();
+    for dir_str in path.split(':') {
+        if dir_str.is_empty() {
+            continue;
+        }
+        let dir = std::path::Path::new(dir_str);
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_file() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            if !seen.insert(name.to_string()) {
+                                continue;
+                            }
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                if metadata.permissions().mode() & 0o111 != 0 {
+                                    exes.insert(name.to_string());
+                                }
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                let _full_path = dir.join(name);
+                                exes.insert(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    exes
+}
+
+pub fn suggest_state_path() -> Option<PathBuf> {
+    home_dir().map(|h| {
+        let base = if cfg!(target_os = "linux") {
+            std::env::var("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| h.join(".config"))
+        } else if cfg!(target_os = "macos") {
+            h.join("Library").join("Application Support")
+        } else {
+            h.join(".config")
+        };
+        base.join("SYNAPSE_").join("suggest.state")
+    })
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -49,8 +101,12 @@ fn load_zsh(path: &PathBuf) -> Vec<String> {
         if trimmed.is_empty() {
             continue;
         }
-        // Extended format: `: timestamp:elapsed;command`
-        let cmd = if let Some(rest) = trimmed.strip_prefix(": ") {
+        // Extended format variants:
+        //   `: 1234567890:0;command`  (with space after colon)
+        //   `:1234567890:0;command`   (no space after colon)
+        //   `:1234567890:0;`          (empty command)
+        let cmd = if let Some(rest) = trimmed.strip_prefix(':') {
+            let rest = rest.trim_start(); // skip optional space
             if let Some(semi) = rest.find(';') {
                 rest[semi + 1..].trim()
             } else {

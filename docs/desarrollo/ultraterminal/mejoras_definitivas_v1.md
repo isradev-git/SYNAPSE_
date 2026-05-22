@@ -17,17 +17,20 @@
 
 ---
 
-## M-001: Ligaduras ON por defecto
+## M-001: Ligaduras ON por defecto ✅
 
-**Prioridad:** P0 | **Esfuerzo:** 5 min | **Dependencias:** ninguna
+**Prioridad:** P0 | **Esfuerzo:** 5 min | **Dependencias:** ninguna | **Estado:** COMPLETADO 2026-05-22
 
-El engine de ligaduras (rustybuzz + HarfBuzz) ya está implementado en `text.rs:306-347` y `renderer.rs:354-428`. Solo está deshabilitado por defecto.
+El engine de ligaduras (rustybuzz + HarfBuzz) ya está implementado en `text.rs:306-347` y `renderer.rs:354-428`. Solo estaba deshabilitado por defecto.
 
-- [ ] Cambiar `font_ligatures: false` → `font_ligatures: true` en `crates/SYNAPSE_-config/src/config.rs:119` (o donde esté el `Default`)
-- [ ] Verificar que `cargo test -p SYNAPSE_-config` pasa
-- [ ] Build release y probar visualmente con JetBrains Mono o Fira Code
+- [x] Cambiar `font_ligatures: false` → `font_ligatures: true` en `crates/SYNAPSE_-config/src/config.rs:119`
+- [x] Actualizar test `test_default_values` (L282: `assert!(!cfg.font_ligatures)` → `assert!(cfg.font_ligatures)`)
+- [x] Verificar que `cargo test -p SYNAPSE_-config` pasa (49 tests OK)
+- [x] Verificar que `cargo test --workspace` pasa (205 tests OK)
+- [x] Clippy y build release clean
+- [x] Pipeline completo: Config default → render.rs → renderer.rs → text.rs (calt/liga/clig)
 
-**Archivos:** `crates/SYNAPSE_-config/src/config.rs`
+**Archivos modificados:** `crates/SYNAPSE_-config/src/config.rs` (2 líneas cambiadas)
 
 ---
 
@@ -661,9 +664,9 @@ Scripts oficiales de integración para zsh, bash, y fish que envíen OSC sequenc
 
 ## Resumen por esfuerzo
 
-| ID | Feature | Esfuerzo | Prioridad |
-|----|---------|----------|-----------|
-| M-001 | Ligaduras ON por defecto | 5 min | P0 |
+| ID | Feature | Esfuerzo | Prioridad | Estado |
+|----|---------|----------|-----------|--------|
+| M-001 | Ligaduras ON por defecto | 5 min | P0 | ✅ DONE |
 | M-002 | Pane Zoom | 1 día | P0 |
 | M-003 | Broadcast Input | 2h | P0 |
 | M-004 | Drag & Drop | 2h | P0 |

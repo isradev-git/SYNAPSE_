@@ -116,7 +116,7 @@ impl Default for Config {
         Self {
             font_size: default_font_size(),
             font_family: default_font_family(),
-            font_ligatures: false,
+            font_ligatures: true,
             window_width: default_window_width(),
             window_height: default_window_height(),
             scrollback_lines: default_scrollback_lines(),
@@ -279,7 +279,7 @@ mod tests {
         let cfg = Config::default();
         assert_eq!(cfg.font_size, 14.0);
         assert_eq!(cfg.font_family, "monospace");
-        assert!(!cfg.font_ligatures);
+        assert!(cfg.font_ligatures);
         assert_eq!(cfg.window_width, 1280);
         assert_eq!(cfg.window_height, 800);
         assert_eq!(cfg.scrollback_lines, 100_000);
