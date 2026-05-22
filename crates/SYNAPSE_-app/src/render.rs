@@ -1581,5 +1581,8 @@ mod tests {
         let mut rects: Vec<UIRect> = Vec::new();
         push_cursor_rect(&mut rects, Some((10.0, 20.0)), true, 8.0, 16.0, &mut state);
         assert!(!rects.is_empty(), "normal mode must emit cursor rect");
+        let last = rects.last().unwrap();
+        assert_eq!(last.pos, [10.0, 20.0]);
+        assert_eq!(last.size, [8.0, 16.0]);
     }
 }
