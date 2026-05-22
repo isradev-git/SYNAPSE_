@@ -57,7 +57,13 @@
       "Bash(rustc --version)",
       "Bash(/home/glitchbane-server/.cargo/bin/cargo clippy *)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(p['name'],p['version']\\) for p in d['packages'] if 'alacritty' in p['name'] or 'vte' in p['name'].lower\\(\\)]\")",
-      "Bash(wait *)"
+      "Bash(wait *)",
+      "Bash(/home/glitchbane-server/.cargo/bin/cargo test *)",
+      "mcp__plugin_oh-my-claudecode_t__ast_grep_search",
+      "Bash(/home/glitchbane-server/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin/cargo check *)",
+      "Bash(grep -E --line-buffered \"Finished|error\\\\[|FAILED|test result|ok$|^error\")",
+      "Bash($CARGO clippy *)",
+      "Bash(PATH=\"/home/glitchbane-server/.cargo/bin:/home/glitchbane-server/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin:$PATH\" cargo check *)"
     ]
   }
 }

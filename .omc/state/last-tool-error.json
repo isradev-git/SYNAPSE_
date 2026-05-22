@@ -1,7 +1,7 @@
 {
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"~/.cargo/bin/cargo test -p synapse-app -- test_term_cursor_style 2>&1\",\"description\":\"Run the specific new test\"}",
-  "error": "Exit code 101\nerror: package ID specification `synapse-app` did not match any packages\n\nhelp: a package with a similar name exists: `SYNAPSE_-app`",
-  "timestamp": "2026-05-21T11:46:25.972Z",
+  "tool_name": "mcp__plugin_oh-my-claudecode_t__lsp_diagnostics",
+  "tool_input_preview": "{\"file\":\"/home/glitchbane-server/Documents/luna/crates/SYNAPSE_-app/src/render.rs\",\"severity\":\"warning\"}",
+  "error": "Language server 'rust-analyzer' not found.\nInstall with: rustup component add rust-analyzer",
+  "timestamp": "2026-05-22T07:49:36.650Z",
   "retry_count": 1
 }

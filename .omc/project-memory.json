@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1779258429220,
+  "lastScanned": 1779365831198,
   "projectRoot": "/home/glitchbane-server/Documents/luna",
   "techStack": {
     "languages": [
@@ -48,14 +48,14 @@
       "path": "assets",
       "purpose": "Static assets",
       "fileCount": 0,
-      "lastAccessed": 1779258429213,
+      "lastAccessed": 1779365831189,
       "keyFiles": []
     },
     "build": {
       "path": "build",
       "purpose": "Build output",
       "fileCount": 3,
-      "lastAccessed": 1779258429216,
+      "lastAccessed": 1779365831191,
       "keyFiles": [
         "bench.sh",
         "build-linux.sh",
@@ -66,21 +66,21 @@
       "path": "crates",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1779258429217,
+      "lastAccessed": 1779365831192,
       "keyFiles": []
     },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 0,
-      "lastAccessed": 1779258429217,
+      "lastAccessed": 1779365831195,
       "keyFiles": []
     },
     "target": {
       "path": "target",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1779258429217,
+      "lastAccessed": 1779365831196,
       "keyFiles": [
         "CACHEDIR.TAG"
       ]
@@ -89,7 +89,7 @@
       "path": "testing",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1779258429218,
+      "lastAccessed": 1779365831196,
       "keyFiles": [
         "README.md",
         "run_all.sh"
@@ -99,7 +99,7 @@
       "path": "testing/scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 9,
-      "lastAccessed": 1779258429219,
+      "lastAccessed": 1779365831197,
       "keyFiles": [
         "bench_quick.sh",
         "build_check.sh",
@@ -110,8 +110,26 @@
   "hotPaths": [
     {
       "path": "crates/SYNAPSE_-app/src/render.rs",
-      "accessCount": 91,
-      "lastAccessed": 1779364187984,
+      "accessCount": 107,
+      "lastAccessed": 1779436361440,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-app/src/keyboard.rs",
+      "accessCount": 67,
+      "lastAccessed": 1779436514218,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-ui/src/pane.rs",
+      "accessCount": 38,
+      "lastAccessed": 1779436353375,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-config/src/keybinds.rs",
+      "accessCount": 35,
+      "lastAccessed": 1779436392661,
       "type": "file"
     },
     {
@@ -121,27 +139,15 @@
       "type": "file"
     },
     {
-      "path": "crates/SYNAPSE_-config/src/keybinds.rs",
-      "accessCount": 25,
-      "lastAccessed": 1779364144152,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-ui/src/pane.rs",
-      "accessCount": 21,
-      "lastAccessed": 1779364100445,
+      "path": "crates/SYNAPSE_-app/src/state.rs",
+      "accessCount": 28,
+      "lastAccessed": 1779436352826,
       "type": "file"
     },
     {
       "path": "crates/SYNAPSE_-app/src/app.rs",
       "accessCount": 20,
       "lastAccessed": 1779342177580,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/state.rs",
-      "accessCount": 20,
-      "lastAccessed": 1779363921425,
       "type": "file"
     },
     {
@@ -154,12 +160,6 @@
       "path": "crates/SYNAPSE_-app/src/pane_ops.rs",
       "accessCount": 18,
       "lastAccessed": 1779295054249,
-      "type": "file"
-    },
-    {
-      "path": "crates/SYNAPSE_-app/src/keyboard.rs",
-      "accessCount": 16,
-      "lastAccessed": 1779364230615,
       "type": "file"
     },
     {
@@ -229,6 +229,12 @@
       "type": "file"
     },
     {
+      "path": "crates/SYNAPSE_-app/src/mouse.rs",
+      "accessCount": 3,
+      "lastAccessed": 1779436399198,
+      "type": "file"
+    },
+    {
       "path": "crates/SYNAPSE_-renderer/src/shaders/cell.wgsl",
       "accessCount": 2,
       "lastAccessed": 1779273643957,
@@ -256,6 +262,24 @@
       "path": "crates/SYNAPSE_-app/Cargo.toml",
       "accessCount": 2,
       "lastAccessed": 1779341751942,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-05-21-phase11b-copy-mode-design.md",
+      "accessCount": 2,
+      "lastAccessed": 1779366454478,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-05-21-phase11b-copy-mode.md",
+      "accessCount": 2,
+      "lastAccessed": 1779376211336,
+      "type": "file"
+    },
+    {
+      "path": "crates/SYNAPSE_-app/src/search.rs",
+      "accessCount": 2,
+      "lastAccessed": 1779378268892,
       "type": "file"
     },
     {
