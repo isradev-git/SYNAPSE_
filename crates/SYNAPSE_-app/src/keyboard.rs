@@ -135,6 +135,159 @@ fn scroll_to_follow_cursor(pane: &mut Pane) {
     }
 }
 
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+fn cell_char_at(
+    term: &alacritty_terminal::term::Term<synapse_ui::pane::EventProxy>,
+    row: i32,
+    col: usize,
+) -> char {
+    let grid = term.grid();
+    let cell = &grid[alacritty_terminal::index::Line(row)][alacritty_terminal::index::Column(col)];
+    cell.c
+}
+
+fn word_motion_w(pane: &mut Pane) {
+    let target = {
+        let term = match pane.term.lock() {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let start = match pane.copy_mode.as_ref() {
+            Some(cms) => cms.cursor,
+            None => return,
+        };
+        let cols = term.columns();
+        let max_row = term.screen_lines() as i32 - 1;
+        let mut row = start.line.0;
+        let mut col = start.column.0;
+
+        // Skip current word chars
+        while row <= max_row && is_word_char(cell_char_at(&term, row, col)) {
+            col += 1;
+            if col >= cols { col = 0; row += 1; }
+        }
+        // Skip whitespace
+        while row <= max_row && !is_word_char(cell_char_at(&term, row, col)) {
+            col += 1;
+            if col >= cols { col = 0; row += 1; }
+        }
+        if row > max_row { row = max_row; col = cols.saturating_sub(1); }
+        alacritty_terminal::index::Point::new(
+            alacritty_terminal::index::Line(row),
+            alacritty_terminal::index::Column(col),
+        )
+    };
+    if let Some(ref mut cms) = pane.copy_mode {
+        cms.cursor = target;
+    }
+    pane.dirty.store(true, Ordering::Release);
+}
+
+fn word_motion_b(pane: &mut Pane) {
+    let target = {
+        let term = match pane.term.lock() {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let start = match pane.copy_mode.as_ref() {
+            Some(cms) => cms.cursor,
+            None => return,
+        };
+        let cols = term.columns();
+        let min_row = -(term.grid().history_size() as i32);
+        let mut row = start.line.0;
+        let mut col = start.column.0;
+
+        // Step back one position to start movement
+        if col == 0 {
+            col = cols.saturating_sub(1);
+            row -= 1;
+        } else {
+            col -= 1;
+        }
+        if row < min_row { row = min_row; col = 0; }
+
+        // Skip whitespace backwards
+        while row >= min_row && !is_word_char(cell_char_at(&term, row, col)) {
+            if col == 0 {
+                if row <= min_row { break; }
+                col = cols.saturating_sub(1);
+                row -= 1;
+            } else {
+                col -= 1;
+            }
+        }
+        // Find start of word
+        while row >= min_row && is_word_char(cell_char_at(&term, row, col)) {
+            if col == 0 { break; }
+            col -= 1;
+        }
+        // If we stepped back past the start of word, advance one
+        if !is_word_char(cell_char_at(&term, row, col)) && col + 1 < cols {
+            col += 1;
+        }
+        alacritty_terminal::index::Point::new(
+            alacritty_terminal::index::Line(row),
+            alacritty_terminal::index::Column(col),
+        )
+    };
+    if let Some(ref mut cms) = pane.copy_mode {
+        cms.cursor = target;
+    }
+    pane.dirty.store(true, Ordering::Release);
+}
+
+fn word_motion_e(pane: &mut Pane) {
+    let target = {
+        let term = match pane.term.lock() {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let start = match pane.copy_mode.as_ref() {
+            Some(cms) => cms.cursor,
+            None => return,
+        };
+        let cols = term.columns();
+        let max_row = term.screen_lines() as i32 - 1;
+        let mut row = start.line.0;
+        let mut col = start.column.0;
+
+        // Advance one position to start
+        col += 1;
+        if col >= cols { col = 0; row += 1; }
+        if row > max_row { row = max_row; col = cols.saturating_sub(1); }
+
+        // Skip whitespace
+        while row <= max_row && !is_word_char(cell_char_at(&term, row, col)) {
+            col += 1;
+            if col >= cols { col = 0; row += 1; }
+        }
+        // Advance to end of word
+        while row <= max_row {
+            let next_col = col + 1;
+            let next_row = if next_col >= cols { row + 1 } else { row };
+            let nc = if next_col >= cols { 0 } else { next_col };
+            if next_row > max_row || !is_word_char(cell_char_at(&term, next_row, nc)) {
+                break;
+            }
+            col = nc;
+            row = next_row;
+        }
+        if row > max_row { row = max_row; col = cols.saturating_sub(1); }
+        alacritty_terminal::index::Point::new(
+            alacritty_terminal::index::Line(row),
+            alacritty_terminal::index::Column(col),
+        )
+    };
+    if let Some(ref mut cms) = pane.copy_mode {
+        cms.cursor = target;
+    }
+    pane.dirty.store(true, Ordering::Release);
+}
+
 fn handle_copy_mode_key(
     key: &winit::keyboard::Key,
     _modifiers: ModifiersState,
@@ -169,6 +322,18 @@ fn handle_copy_mode_key(
         }
         Some("l") => {
             move_cursor(pane, 1, 0);
+            scroll_to_follow_cursor(pane);
+        }
+        Some("w") => {
+            word_motion_w(pane);
+            scroll_to_follow_cursor(pane);
+        }
+        Some("b") => {
+            word_motion_b(pane);
+            scroll_to_follow_cursor(pane);
+        }
+        Some("e") => {
+            word_motion_e(pane);
             scroll_to_follow_cursor(pane);
         }
         _ => {}
@@ -856,5 +1021,17 @@ mod tests {
     #[test]
     fn test_compute_scroll_delta_visible() {
         assert_eq!(compute_scroll_delta(12, 24), 0);
+    }
+
+    #[test]
+    fn test_is_word_char() {
+        assert!(is_word_char('a'));
+        assert!(is_word_char('Z'));
+        assert!(is_word_char('5'));
+        assert!(is_word_char('_'));
+        assert!(!is_word_char(' '));
+        assert!(!is_word_char('-'));
+        assert!(!is_word_char('.'));
+        assert!(!is_word_char('\0'));
     }
 }
