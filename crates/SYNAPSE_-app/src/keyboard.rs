@@ -160,6 +160,7 @@ fn word_motion_w(pane: &mut Pane) {
             None => return,
         };
         let cols = term.columns();
+        if cols == 0 { return start; }
         let max_row = term.screen_lines() as i32 - 1;
         let mut row = start.line.0;
         let mut col = start.column.0;
@@ -181,9 +182,11 @@ fn word_motion_w(pane: &mut Pane) {
         )
     };
     if let Some(ref mut cms) = pane.copy_mode {
-        cms.cursor = target;
+        if cms.cursor != target {
+            cms.cursor = target;
+            pane.dirty.store(true, Ordering::Release);
+        }
     }
-    pane.dirty.store(true, Ordering::Release);
 }
 
 fn word_motion_b(pane: &mut Pane) {
@@ -235,9 +238,11 @@ fn word_motion_b(pane: &mut Pane) {
         )
     };
     if let Some(ref mut cms) = pane.copy_mode {
-        cms.cursor = target;
+        if cms.cursor != target {
+            cms.cursor = target;
+            pane.dirty.store(true, Ordering::Release);
+        }
     }
-    pane.dirty.store(true, Ordering::Release);
 }
 
 fn word_motion_e(pane: &mut Pane) {
@@ -251,6 +256,7 @@ fn word_motion_e(pane: &mut Pane) {
             None => return,
         };
         let cols = term.columns();
+        if cols == 0 { return start; }
         let max_row = term.screen_lines() as i32 - 1;
         let mut row = start.line.0;
         let mut col = start.column.0;
@@ -283,9 +289,11 @@ fn word_motion_e(pane: &mut Pane) {
         )
     };
     if let Some(ref mut cms) = pane.copy_mode {
-        cms.cursor = target;
+        if cms.cursor != target {
+            cms.cursor = target;
+            pane.dirty.store(true, Ordering::Release);
+        }
     }
-    pane.dirty.store(true, Ordering::Release);
 }
 
 fn handle_copy_mode_key(
