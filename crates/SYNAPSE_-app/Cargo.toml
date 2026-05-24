@@ -24,7 +24,11 @@ wgpu = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = "1"
 arboard = { workspace = true }
 base64 = { workspace = true }
 png = { workspace = true }
+image = { workspace = true }
 notify-rust = "4"

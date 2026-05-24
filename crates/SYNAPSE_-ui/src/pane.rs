@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc;
@@ -8,7 +9,9 @@ use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::Term;
 use portable_pty::MasterPty;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct PaneId(pub u64);
 
 /// A clipboard operation queued from OSC 52 (alacritty event).
@@ -34,6 +37,10 @@ pub struct SemanticMark {
     /// `term.grid().history_size()` at capture time (requires Dimensions in scope).
     /// Used to compute how far into history the mark is: `current_history - history_snapshot`.
     pub history_snapshot: usize,
+    /// Exit code for CommandEnd (D;<code>), None for other marks.
+    pub exit_code: Option<i32>,
+    /// Extracted command text, set when CommandEnd processes a matching CommandStart.
+    pub command_text: Option<String>,
 }
 
 #[derive(Clone)]
@@ -85,6 +92,7 @@ pub struct Pane {
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     pub event_rx: mpsc::Receiver<Event>,
     pub dirty: Arc<AtomicBool>,
+    pub frozen: Arc<AtomicBool>,
     pub cols: usize,
     pub rows: usize,
     /// Kitty keyboard protocol flags (0 = disabled). Written from reader thread.
@@ -103,6 +111,11 @@ pub struct Pane {
     pub osc133_rx: mpsc::Receiver<SemanticMark>,
     /// Channel for OSC 9/777 notification strings from the PTY reader thread.
     pub osc9_rx: mpsc::Receiver<String>,
+    /// Channel for extracted Sixel data from the PTY reader thread.
+    pub sixel_rx: mpsc::Receiver<Vec<u8>>,
+    /// Channel for extracted iTerm2 OSC 1337 inline image data.
+    /// Format: "display_width,display_height,preserve_aspect_ratio:base64data"
+    pub iterm2_rx: mpsc::Receiver<String>,
     title: String,
     cwd: String,
     pub pending_bell: bool,
@@ -110,6 +123,9 @@ pub struct Pane {
     pub notifications: std::collections::VecDeque<String>,
     pub semantic_marks: Vec<SemanticMark>,
     pub copy_mode: Option<CopyModeState>,
+    /// Pending commands extracted via OSC 133. (command_text, exit_code).
+    pub pending_commands: VecDeque<(String, Option<i32>)>,
+    current_command: Option<String>,
 }
 
 impl Pane {
@@ -121,6 +137,7 @@ impl Pane {
         pty_master: Box<dyn MasterPty + Send>,
         event_rx: mpsc::Receiver<Event>,
         dirty: Arc<AtomicBool>,
+        frozen: Arc<AtomicBool>,
         cols: usize,
         rows: usize,
         kitty_flags: Arc<AtomicU8>,
@@ -130,6 +147,8 @@ impl Pane {
         osc7_rx: mpsc::Receiver<String>,
         osc133_rx: mpsc::Receiver<SemanticMark>,
         osc9_rx: mpsc::Receiver<String>,
+        sixel_rx: mpsc::Receiver<Vec<u8>>,
+        iterm2_rx: mpsc::Receiver<String>,
     ) -> Self {
         Self {
             id,
@@ -138,6 +157,7 @@ impl Pane {
             pty_master: Arc::new(Mutex::new(pty_master)),
             event_rx,
             dirty,
+            frozen,
             cols,
             rows,
             kitty_flags,
@@ -148,6 +168,8 @@ impl Pane {
             osc7_rx,
             osc133_rx,
             osc9_rx,
+            sixel_rx,
+            iterm2_rx,
             title: String::new(),
             cwd: String::new(),
             pending_bell: false,
@@ -155,6 +177,8 @@ impl Pane {
             notifications: std::collections::VecDeque::new(),
             semantic_marks: Vec::new(),
             copy_mode: None,
+            pending_commands: VecDeque::new(),
+            current_command: None,
         }
     }
 
@@ -217,6 +241,20 @@ impl Pane {
             if let Ok(term) = self.term.lock() {
                 use alacritty_terminal::grid::Dimensions;
                 mark.history_snapshot = term.grid().history_size();
+
+                // Extract command text when CommandStart arrives
+                if mark.kind == MarkKind::CommandStart {
+                    if let Some(cmd_text) = Self::extract_command_line(&term) {
+                        self.current_command = Some(cmd_text);
+                    }
+                }
+
+                // When CommandEnd arrives, push to pending_commands
+                if mark.kind == MarkKind::CommandEnd {
+                    if let Some(cmd) = self.current_command.take() {
+                        self.pending_commands.push_back((cmd, mark.exit_code));
+                    }
+                }
             }
             self.semantic_marks.push(mark);
             if self.semantic_marks.len() > 500 {
@@ -251,6 +289,29 @@ impl Pane {
 
     pub fn cwd(&self) -> String {
         self.cwd.clone()
+    }
+
+    /// Extract the command text from the grid line above the current cursor.
+    /// Called when OSC 133 B (CommandStart) is received.
+    fn extract_command_line(term: &Term<EventProxy>) -> Option<String> {
+        use alacritty_terminal::grid::Dimensions;
+        let grid = term.grid();
+        let cursor = grid.cursor.point;
+        // Command is on the line above the cursor (the user just pressed Enter,
+        // cursor moved down. The previous line contains the typed command.)
+        let target_line = alacritty_terminal::index::Line(cursor.line.0 - 1);
+        let history_size = grid.history_size() as i32;
+        if target_line.0 < -history_size {
+            return None;
+        }
+        let row = &grid[target_line];
+        let text: String = row.into_iter().map(|cell| cell.c).collect();
+        let trimmed = text.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }
 }
 
@@ -296,8 +357,12 @@ mod tests {
         let m = SemanticMark {
             kind: MarkKind::PromptStart,
             history_snapshot: 42,
+            exit_code: None,
+            command_text: None,
         };
         assert_eq!(m.history_snapshot, 42);
+        assert!(m.exit_code.is_none());
+        assert!(m.command_text.is_none());
     }
 
     #[test]
@@ -311,6 +376,26 @@ mod tests {
         if let ClipboardOp::Read(_, f) = op {
             assert_eq!(f("clipboard_text"), "response:clipboard_text");
         }
+    }
+
+    #[test]
+    fn frozen_flag_defaults_to_false() {
+        let frozen = Arc::new(AtomicBool::new(false));
+        assert!(!frozen.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn frozen_flag_can_be_set() {
+        let frozen = Arc::new(AtomicBool::new(false));
+        frozen.store(true, Ordering::Release);
+        assert!(frozen.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn frozen_flag_can_be_cleared() {
+        let frozen = Arc::new(AtomicBool::new(true));
+        frozen.store(false, Ordering::Release);
+        assert!(!frozen.load(Ordering::Acquire));
     }
 
     #[test]

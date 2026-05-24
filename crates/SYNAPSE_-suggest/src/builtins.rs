@@ -149,7 +149,6 @@ pub const BUILTINS_TIERED: &[(&str, u32)] = &[
     ("docker compose down", 5),
     ("docker compose build", 5),
     ("docker compose logs", 5),
-
     // ── Tier 2 (count=3): common but situational ──────────────────────────────
     ("ls -1", 3),
     ("ls -R", 3),
@@ -330,7 +329,6 @@ pub const BUILTINS_TIERED: &[(&str, u32)] = &[
     ("docker compose logs -f", 3),
     ("docker compose ps", 3),
     ("docker compose exec", 3),
-
     // ── Tier 1 (count=1): rare / specialized ──────────────────────────────────
     ("tail -n 100", 1),
     ("printf", 1),

@@ -4,6 +4,9 @@ use std::collections::HashMap;
 
 use base64::Engine;
 
+/// Reserved image ID for the per-pane background image.
+pub const BG_IMAGE_ID: u32 = u32::MAX - 100;
+
 // ─── Public types ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -85,6 +88,80 @@ impl ImageStore {
             placements: Vec::new(),
             pending: HashMap::new(),
         }
+    }
+
+    pub fn store_bg_image(&mut self, id: u32, width: u32, height: u32, rgba: Vec<u8>) {
+        self.images.insert(
+            id,
+            StoredImage {
+                id,
+                width,
+                height,
+                rgba,
+            },
+        );
+    }
+
+    /// Accept a decoded Sixel image into the store and create a placement.
+    #[allow(clippy::too_many_arguments)]
+    pub fn accept_sixel(
+        &mut self,
+        id: u32,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+        col: usize,
+        row: usize,
+        pane_id: Option<synapse_ui::PaneId>,
+    ) {
+        self.images.insert(
+            id,
+            StoredImage {
+                id,
+                width,
+                height,
+                rgba,
+            },
+        );
+        self.placements.push(ImagePlacement {
+            image_id: id,
+            col,
+            row,
+            columns: 0,
+            rows: 0,
+            pane_id,
+        });
+    }
+
+    /// Accept a decoded iTerm2 OSC 1337 inline image into the store and create a placement.
+    #[allow(clippy::too_many_arguments)]
+    pub fn accept_iterm2(
+        &mut self,
+        id: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+        col: usize,
+        row: usize,
+        pane_id: Option<synapse_ui::PaneId>,
+    ) {
+        self.images.insert(
+            id,
+            StoredImage {
+                id,
+                width,
+                height,
+                rgba: rgba.to_vec(),
+            },
+        );
+        self.placements.push(ImagePlacement {
+            image_id: id,
+            col,
+            row,
+            columns: 0,
+            rows: 0,
+            pane_id,
+        });
     }
 
     /// Process a parsed APC command with optional pane context.
@@ -347,6 +424,276 @@ pub fn scan_kkp(bytes: &[u8]) -> Vec<KkpScan> {
     results
 }
 
+// ─── Sixel sequence detection ────────────────────────────────────────────────
+
+/// Extract complete Sixel DCS sequences from a byte buffer.
+/// Sixel format: ESC P <params> q <data> ST  (where ST is ESC \ or 0x9c).
+/// This finds them and strips the full DCS from staging.
+/// Returns (extracted data bytes, filtered staging).
+pub fn process_sixel_sequences(staging: &mut Vec<u8>) -> Vec<Vec<u8>> {
+    let mut results = Vec::new();
+    let bytes = staging.as_slice();
+    let mut filtered = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    let mut had_sixel = false;
+
+    while i < bytes.len() {
+        if i + 2 < bytes.len() && bytes[i] == 0x1b && bytes[i + 1] == 0x50 {
+            let dcs_start = i;
+            // Look for the final character 'q' of the DCS introducer.
+            let mut j = i + 2;
+            let mut found_q = false;
+            while j < bytes.len() && (j - dcs_start) <= 256 {
+                if bytes[j] == b'q' {
+                    found_q = true;
+                    break;
+                }
+                // Allow digits, semicolons, space, colon, '<', '>', '$' in DCS params.
+                if !bytes[j].is_ascii_digit()
+                    && bytes[j] != b';'
+                    && bytes[j] != b' '
+                    && bytes[j] != b':'
+                    && bytes[j] != b'<'
+                    && bytes[j] != b'>'
+                    && bytes[j] != b'$'
+                {
+                    break;
+                }
+                j += 1;
+            }
+
+            if !found_q {
+                // Not a Sixel DCS, keep the bytes.
+                filtered.extend_from_slice(&bytes[dcs_start..=i.min(bytes.len() - 1)]);
+                i += 1;
+                continue;
+            }
+
+            let data_start = j + 1;
+            // Find ST terminator: ESC \ or 0x9c.
+            let mut k = data_start;
+            let terminator_found = loop {
+                if k >= bytes.len() {
+                    break false;
+                }
+                if bytes[k] == 0x1b && k + 1 < bytes.len() && bytes[k + 1] == 0x5c {
+                    break true;
+                }
+                if bytes[k] == 0x9c {
+                    break true;
+                }
+                k += 1;
+            };
+
+            if !terminator_found {
+                // Incomplete sequence, keep as-is (may complete next iteration).
+                filtered.extend_from_slice(&bytes[dcs_start..]);
+                break;
+            }
+
+            let data_end = k;
+            let sixel_data = bytes[data_start..data_end].to_vec();
+            results.push(sixel_data);
+            had_sixel = true;
+
+            // Skip past ST
+            if bytes.get(data_end) == Some(&0x1b) {
+                i = data_end + 2;
+            } else {
+                i = data_end + 1;
+            }
+        } else {
+            filtered.push(bytes[i]);
+            i += 1;
+        }
+    }
+
+    if had_sixel {
+        *staging = filtered;
+    }
+    results
+}
+
+// ─── iTerm2 OSC 1337 inline image detection ──────────────────────────────────
+
+/// A parsed iTerm2 OSC 1337 inline image command.
+#[derive(Debug, Clone)]
+pub struct Iterm2Image {
+    /// Raw base64-encoded image data.
+    pub data: String,
+    /// Display width in pixels (from `width=` attribute, 0 = auto).
+    pub display_width: u32,
+    /// Display height in pixels (from `height=` attribute, 0 = auto).
+    pub display_height: u32,
+    /// Whether to preserve aspect ratio.
+    pub preserve_aspect_ratio: bool,
+}
+
+/// Extract complete iTerm2 OSC 1337 inline image sequences from staging.
+/// Format: `ESC ] 1337 ; File=inline=1 ; key=val : base64data BEL|ST`
+/// Strips matched sequences from staging. Returns parsed images.
+pub fn process_iterm2_sequences(staging: &mut Vec<u8>) -> Vec<Iterm2Image> {
+    let mut results = Vec::new();
+    let bytes = staging.as_slice();
+    let mut filtered = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    let mut had_iterm2 = false;
+
+    while i < bytes.len() {
+        // Look for ESC ] 1337
+        if i + 8 < bytes.len() && bytes[i] == 0x1b && bytes[i + 1] == b']' {
+            let rest = &bytes[i + 2..];
+            if rest.starts_with(b"1337") && rest.len() > 4 && (rest[4] == b';' || rest[4] == b' ') {
+                let seq_start = i;
+                // Find the colon that separates params from base64 data.
+                let mut colon_pos = None;
+                let mut j = 5; // after "1337"
+                while j < rest.len() && j <= 4096 {
+                    if rest[j] == b':' {
+                        colon_pos = Some(j);
+                        break;
+                    }
+                    // Terminator before colon → malformed, keep bytes.
+                    if rest[j] == 0x07
+                        || (rest[j] == 0x1b && j + 1 < rest.len() && rest[j + 1] == b'\\')
+                        || rest[j] == 0x9c
+                    {
+                        break;
+                    }
+                    j += 1;
+                }
+
+                let colon = match colon_pos {
+                    Some(c) => c,
+                    None => {
+                        filtered.push(bytes[i]);
+                        i += 1;
+                        continue;
+                    }
+                };
+
+                let params_bytes = &rest[..colon];
+
+                // Find terminator after data: BEL (0x07), ST (ESC \), or 0x9c.
+                let data_start = colon + 1;
+                let mut k = data_start;
+                let terminator_found = loop {
+                    if k >= rest.len() {
+                        break false;
+                    }
+                    if rest[k] == 0x07 {
+                        break true;
+                    }
+                    if rest[k] == 0x1b && k + 1 < rest.len() && rest[k + 1] == b'\\' {
+                        break true;
+                    }
+                    if rest[k] == 0x9c {
+                        break true;
+                    }
+                    k += 1;
+                };
+
+                if !terminator_found {
+                    // Incomplete, keep as-is.
+                    filtered.extend_from_slice(&bytes[seq_start..]);
+                    break;
+                }
+
+                let data_bytes = &rest[data_start..k];
+                let terminator_len = if rest[k] == 0x1b { 2 } else { 1 };
+
+                // Check if this is an inline image: must contain "inline=1".
+                let is_inline = params_bytes.windows(9).any(|w| w == b"inline=1;")
+                    || params_bytes.windows(9).any(|w| w == b"inline=1:")
+                    || params_bytes.windows(9).any(|w| w == b"inline=1\t")
+                    || params_bytes.ends_with(b"inline=1");
+
+                if !is_inline {
+                    // Not an inline image; keep bytes.
+                    filtered.extend_from_slice(
+                        &bytes[seq_start..=seq_start + 2 + k.min(rest.len() - 1)],
+                    );
+                    i = seq_start + 2 + k + terminator_len;
+                    continue;
+                }
+
+                // Parse params: display_width, display_height, preserveAspectRatio.
+                let mut display_width: u32 = 0;
+                let mut display_height: u32 = 0;
+                let mut preserve_aspect_ratio = false;
+
+                if let Ok(params_str) = std::str::from_utf8(params_bytes) {
+                    for kv in params_str.split(';') {
+                        let kv = kv.trim();
+                        let mut parts = kv.splitn(2, '=');
+                        let key = parts.next().unwrap_or("").trim();
+                        let val = parts.next().unwrap_or("").trim();
+                        match key {
+                            "width" => display_width = val.parse().unwrap_or(0),
+                            "height" => display_height = val.parse().unwrap_or(0),
+                            "preserveAspectRatio" => {
+                                preserve_aspect_ratio = val == "1" || val == "true"
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                if let Ok(data_str) = std::str::from_utf8(data_bytes) {
+                    results.push(Iterm2Image {
+                        data: data_str.trim_end().to_string(),
+                        display_width,
+                        display_height,
+                        preserve_aspect_ratio,
+                    });
+                    had_iterm2 = true;
+                }
+
+                i = seq_start + 2 + k + terminator_len;
+            } else {
+                filtered.push(bytes[i]);
+                i += 1;
+            }
+        } else {
+            filtered.push(bytes[i]);
+            i += 1;
+        }
+    }
+
+    if had_iterm2 {
+        *staging = filtered;
+    }
+    results
+}
+
+// ─── Image decoding (multi-format) ───────────────────────────────────────────
+
+/// Decode raw image bytes (PNG, JPEG, GIF, BMP) to RGBA using the `image` crate.
+/// Returns (width, height, RGBA bytes).
+pub fn decode_image_bytes(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    use image::GenericImageView;
+    let img = image::load_from_memory(bytes).ok()?;
+    let (w, h) = img.dimensions();
+    let rgba = img.to_rgba8().into_raw();
+    Some((w, h, rgba))
+}
+
+/// Load a background image from a file path, apply opacity to alpha.
+pub fn load_background_image(path: &str, opacity: f32) -> Option<(u32, u32, Vec<u8>)> {
+    let bytes = std::fs::read(path).ok()?;
+    use image::GenericImageView;
+    let img = image::load_from_memory(&bytes).ok()?;
+    let (w, h) = img.dimensions();
+    let mut rgba = img.to_rgba8().into_raw();
+    if (opacity - 1.0).abs() > f32::EPSILON {
+        let alpha_u8 = (opacity.clamp(0.0, 1.0) * 255.0) as u8;
+        for alpha in rgba.chunks_exact_mut(4).map(|c| &mut c[3]) {
+            *alpha = ((*alpha as u16 * alpha_u8 as u16) / 255) as u8;
+        }
+    }
+    Some((w, h, rgba))
+}
+
 // ─── Image decoding ──────────────────────────────────────────────────────────
 
 fn decode_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
@@ -563,5 +910,111 @@ mod tests {
         );
         assert!(!store.images.contains_key(&2));
         assert!(store.placements.is_empty());
+    }
+
+    // ─── iTerm2 OSC 1337 tests ────────────────────────────────────────────
+
+    #[test]
+    fn iterm2_basic_inline_bel() {
+        let mut staging = b"\x1b]1337;File=inline=1:QUFB\x07".to_vec();
+        let imgs = process_iterm2_sequences(&mut staging);
+        assert_eq!(imgs.len(), 1);
+        assert_eq!(imgs[0].data, "QUFB");
+        assert_eq!(imgs[0].display_width, 0);
+        assert_eq!(imgs[0].display_height, 0);
+        assert!(!imgs[0].preserve_aspect_ratio);
+        assert!(staging.is_empty());
+    }
+
+    #[test]
+    fn iterm2_st_terminator() {
+        let mut staging = b"\x1b]1337;File=inline=1:QUFB\x1b\\".to_vec();
+        let imgs = process_iterm2_sequences(&mut staging);
+        assert_eq!(imgs.len(), 1);
+        assert_eq!(imgs[0].data, "QUFB");
+        assert!(staging.is_empty());
+    }
+
+    #[test]
+    fn iterm2_with_dimensions() {
+        let mut staging = b"\x1b]1337;File=inline=1;width=800;height=600:QUFB\x07".to_vec();
+        let imgs = process_iterm2_sequences(&mut staging);
+        assert_eq!(imgs.len(), 1);
+        assert_eq!(imgs[0].data, "QUFB");
+        assert_eq!(imgs[0].display_width, 800);
+        assert_eq!(imgs[0].display_height, 600);
+    }
+
+    #[test]
+    fn iterm2_preserve_aspect_ratio() {
+        let mut staging = b"\x1b]1337;File=inline=1;preserveAspectRatio=1:QUFB\x07".to_vec();
+        let imgs = process_iterm2_sequences(&mut staging);
+        assert_eq!(imgs.len(), 1);
+        assert!(imgs[0].preserve_aspect_ratio);
+    }
+
+    #[test]
+    fn iterm2_non_inline_ignored() {
+        let mut staging = b"\x1b]1337;File=something;size=100:QUFB\x07extra\x07".to_vec();
+        let _imgs = process_iterm2_sequences(&mut staging);
+        // Non-inline sequences are preserved in staging (not stripped).
+        assert!(!staging.is_empty());
+    }
+
+    #[test]
+    fn iterm2_multiple_images() {
+        let mut staging =
+            b"\x1b]1337;File=inline=1:QUFB\x07\x1b]1337;File=inline=1:QkJC\x07".to_vec();
+        let imgs = process_iterm2_sequences(&mut staging);
+        assert_eq!(imgs.len(), 2);
+        assert_eq!(imgs[0].data, "QUFB");
+        assert_eq!(imgs[1].data, "QkJC");
+        assert!(staging.is_empty());
+    }
+
+    #[test]
+    fn iterm2_incomplete_ignored() {
+        let mut staging = b"\x1b]1337;File=inline=1:INCOMPLETE".to_vec();
+        let imgs = process_iterm2_sequences(&mut staging);
+        assert!(imgs.is_empty());
+        assert!(!staging.is_empty());
+    }
+
+    #[test]
+    fn iterm2_stripping_preserves_surrounding() {
+        let mut staging = b"hello\x1b]1337;File=inline=1:QUFB\x07world".to_vec();
+        let imgs = process_iterm2_sequences(&mut staging);
+        assert_eq!(imgs.len(), 1);
+        assert_eq!(staging, b"helloworld");
+    }
+
+    #[test]
+    fn accept_iterm2_creates_entry() {
+        let mut store = ImageStore::new();
+        store.accept_iterm2(42, 100, 50, &[0u8; 20000], 10, 5, None);
+        assert!(store.images.contains_key(&42));
+        assert_eq!(store.placements.len(), 1);
+        assert_eq!(store.placements[0].image_id, 42);
+        assert_eq!(store.placements[0].col, 10);
+        assert_eq!(store.placements[0].row, 5);
+    }
+
+    #[test]
+    fn decode_image_bytes_smoke() {
+        // Generate a valid 1x1 black RGBA PNG using the png crate.
+        let mut png_buf = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_buf, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            let pixel: [u8; 4] = [255, 0, 0, 255]; // red, opaque
+            writer.write_image_data(&pixel).unwrap();
+        }
+        let (w, h, rgba) = decode_image_bytes(&png_buf).expect("should decode generated PNG");
+        assert_eq!(w, 1);
+        assert_eq!(h, 1);
+        assert_eq!(rgba.len(), 4);
+        assert_eq!(rgba, vec![255, 0, 0, 255]);
     }
 }

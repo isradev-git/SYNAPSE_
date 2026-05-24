@@ -9,6 +9,8 @@ pub struct CellInstance {
     pub uv_rect: [f32; 4],
     pub fg_color: [f32; 4],
     pub bg_color: [f32; 4],
+    pub is_emoji: u32,
+    pub _pad: u32,
 }
 
 impl CellInstance {
@@ -41,6 +43,11 @@ impl CellInstance {
                     format: wgpu::VertexFormat::Float32x4,
                     offset: 48,
                     shader_location: 4,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Uint32,
+                    offset: 64,
+                    shader_location: 5,
                 },
             ],
         }

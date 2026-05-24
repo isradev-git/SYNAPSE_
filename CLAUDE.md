@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+# SYNAPSE_
+
+Terminal personalizada. Buscamos crear la mejor terminal del mercado.
+
+## CodeGraph — OBLIGATORIO
+
+Este proyecto tiene `.codegraph/` inicializado.
+
+- Usa `codegraph_explore` como herramienta PRIMARIA para explorar código
+- Usa `codegraph_search` para buscar símbolos por nombre
+- Usa `codegraph_impact` antes de modificar cualquier símbolo
+- Usa `codegraph_callers` / `codegraph_callees` para trazar flujo de llamadas
+- NUNCA uses grep/glob/read si codegraph_explore ya devolvió el contenido
+
 ## Commands
 
 ```sh

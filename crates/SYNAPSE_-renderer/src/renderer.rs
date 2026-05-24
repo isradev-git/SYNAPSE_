@@ -40,7 +40,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: Arc<Window>, font_family: &str) -> Result<Self, String> {
+    pub fn new(window: Arc<Window>, font_families: &[String]) -> Result<Self, String> {
         let instance_desc = wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -137,7 +137,7 @@ impl Renderer {
         let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
         let image_renderer = ImageRenderer::new(Arc::clone(&device), config.format);
         let underline_renderer = UnderlineRenderer::new(Arc::clone(&device), config.format);
-        let text = TextShaping::with_family(font_family);
+        let text = TextShaping::with_families(font_families);
 
         let postproc = PostProcRenderer::new(Arc::clone(&device), format, size.width, size.height);
 
@@ -249,7 +249,8 @@ impl Renderer {
                 x_offset += cell_w;
                 continue;
             }
-            let key = crate::text::GlyphKey::new(c, font_size, false, false);
+            let fi = self.text.glyph_font_index(c);
+            let key = crate::text::GlyphKey::new_with_index(c, font_size, false, false, fi);
             let bitmap = self.text.rasterize(key);
             self.push_glyph_instance(&mut instances, &bitmap, key, x_offset, y, font_size, fg);
             x_offset += cell_w;
@@ -311,11 +312,6 @@ impl Renderer {
                 self.atlas
                     .upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
             }
-            // Baseline must be derived from the *per-glyph* font size, not
-            // the cached cell_h (which reflects the main buffer's font size).
-            // Using the global cell_h here meant tab bar glyphs (12pt) were
-            // placed with the offset for 14pt cells, drifting them down and
-            // creating phantom shapes outside the tab.
             let line_h = font_size * 1.2;
             let baseline = cell_y + line_h * 0.8;
             instances.push(CellInstance {
@@ -327,6 +323,62 @@ impl Renderer {
                 uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
                 fg_color: fg,
                 bg_color: [0.0, 0.0, 0.0, 0.0],
+                is_emoji: 0,
+                _pad: 0,
+            });
+        }
+    }
+
+    fn push_emoji_instance(
+        &mut self,
+        instances: &mut Vec<CellInstance>,
+        c: char,
+        font_size: f32,
+        cell_x: f32,
+        cell_y: f32,
+        family_idx: usize,
+    ) {
+        let target = font_size as u32;
+        let rgba = match self
+            .text
+            .extract_emoji_bitmap(family_idx, c, target)
+        {
+            Some((w, h, mut pixels)) => {
+                for chunk in pixels.chunks_exact_mut(4) {
+                    let a = chunk[3] as f32 / 255.0;
+                    chunk[0] = (chunk[0] as f32 * a) as u8;
+                    chunk[1] = (chunk[1] as f32 * a) as u8;
+                    chunk[2] = (chunk[2] as f32 * a) as u8;
+                }
+                Some((w, h, pixels))
+            }
+            None => None,
+        };
+
+        let (w, h, rgba) = match rgba {
+            Some(data) => (data.0, data.1, data.2),
+            None => return,
+        };
+
+        let emoji_key = (c as u32) ^ ((font_size.to_bits() as u32) << 16);
+        if let Some((uv, is_new)) = self.atlas.get_or_insert_emoji(emoji_key, w, h) {
+            if is_new {
+                self.atlas.upload_glyph(&self.queue, uv, &rgba, w, h);
+            }
+            let line_h = font_size * 1.2;
+            let baseline = cell_y + line_h * 0.5;
+
+            let offset_x = cell_x;
+            let offset_y = baseline - target as f32;
+
+            instances.push(CellInstance {
+                cell_pos: [offset_x, offset_y],
+                cell_size: [target as f32, target as f32],
+                uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
+                fg_color: [1.0, 1.0, 1.0, 1.0],
+                bg_color: [0.0, 0.0, 0.0, 0.0],
+                is_emoji: 1,
+                _pad: 0,
             });
         }
     }
@@ -343,7 +395,21 @@ impl Renderer {
                 continue;
             }
 
-            let key = crate::text::GlyphKey::new(c, font_size, false, false);
+            // Check all font families for color emoji support
+            let mut is_emoji = false;
+            for fi in 0..self.text.family_count() {
+                if self.text.has_color_emoji_in_family(fi, c) {
+                    self.push_emoji_instance(&mut instances, c, font_size, x, y, fi);
+                    is_emoji = true;
+                    break;
+                }
+            }
+            if is_emoji {
+                continue;
+            }
+
+            let fi = self.text.glyph_font_index(c);
+            let key = crate::text::GlyphKey::new_with_index(c, font_size, false, false, fi);
             let bitmap = self.text.rasterize(key);
             self.push_glyph_instance(&mut instances, &bitmap, key, x, y, font_size, fg);
         }
@@ -407,8 +473,11 @@ impl Renderer {
                         font_size_bits: fs0.to_bits(),
                         bold: false,
                         italic: false,
+                        font_index: sg.font_index,
                     };
-                    let bitmap = self.text.rasterize_glyph_id(sg.glyph_id, fs0, false, false);
+                    let bitmap =
+                        self.text
+                            .rasterize_glyph_id(sg.glyph_id, fs0, false, false, sg.font_index);
                     self.push_shaped_instance(
                         &mut instances,
                         &bitmap,
@@ -427,7 +496,8 @@ impl Renderer {
             if !ligature_rendered {
                 let (c, x, y, font_size, fg, _) = cells[i];
                 if c != ' ' {
-                    let key = crate::text::GlyphKey::new(c, font_size, false, false);
+                    let fi = self.text.glyph_font_index(c);
+                    let key = crate::text::GlyphKey::new_with_index(c, font_size, false, false, fi);
                     let bitmap = self.text.rasterize(key);
                     self.push_glyph_instance(&mut instances, &bitmap, key, x, y, font_size, fg);
                 }
@@ -472,6 +542,8 @@ impl Renderer {
                 uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
                 fg_color: fg,
                 bg_color: [0.0, 0.0, 0.0, 0.0],
+                is_emoji: 0,
+                _pad: 0,
             });
         }
     }

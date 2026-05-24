@@ -1,6 +1,6 @@
 use crate::pane::PaneId;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SplitDirection {
     Horizontal,
     Vertical,
@@ -32,6 +32,7 @@ pub struct DividerInfo {
     pub parent_rect: PaneRect,
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum PaneTree {
     Leaf(PaneId),
     Split {

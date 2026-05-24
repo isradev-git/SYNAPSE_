@@ -8,6 +8,7 @@ pub struct Layout {
     pub tab_bar_height: f32,
     pub sidebar_width: f32,
     pub status_bar_visible: bool,
+    pub wayland_decorated: bool,
 }
 
 impl Layout {
@@ -18,7 +19,12 @@ impl Layout {
             tab_bar_height: theme::TAB_BAR_HEIGHT,
             sidebar_width: theme::SIDEBAR_DEFAULT_WIDTH,
             status_bar_visible: true,
+            wayland_decorated: false,
         }
+    }
+
+    pub fn title_bar_height(&self) -> f32 {
+        if self.wayland_decorated { 28.0 } else { 0.0 }
     }
 
     pub fn update(&mut self, width: f32, height: f32) {
@@ -27,15 +33,16 @@ impl Layout {
     }
 
     pub fn pane_area(&self) -> (f32, f32, f32, f32) {
+        let title_h = self.title_bar_height();
         let x = self.sidebar_width;
-        let y = 0.0;
+        let y = title_h;
         let w = (self.window_width - self.sidebar_width).max(0.0);
         let bar_h = if self.status_bar_visible {
             theme::STATUS_BAR_HEIGHT
         } else {
             0.0
         };
-        let h = (self.window_height - bar_h).max(0.0);
+        let h = (self.window_height - title_h - bar_h).max(0.0);
         (x, y, w, h)
     }
 
@@ -45,8 +52,9 @@ impl Layout {
 
     pub fn sidebar_visible_height(&self) -> f32 {
         let header = theme::SIDEBAR_HEADER_HEIGHT;
-        let bottom = theme::SIDEBAR_TAB_HEIGHT; // "+" button row
-        (self.window_height - header - bottom).max(0.0)
+        let bottom = theme::SIDEBAR_TAB_HEIGHT;
+        let title_h = self.title_bar_height();
+        (self.window_height - title_h - header - bottom).max(0.0)
     }
 
     /// Returns (first_visible_idx, end_exclusive, show_up_btn, show_down_btn).
@@ -74,7 +82,7 @@ impl Layout {
     }
 
     pub fn tab_y(&self, vis_index: usize, show_up_btn: bool) -> f32 {
-        let header = theme::SIDEBAR_HEADER_HEIGHT;
+        let header = theme::SIDEBAR_HEADER_HEIGHT + self.title_bar_height();
         let up_btn_h = if show_up_btn {
             theme::SIDEBAR_SCROLL_BTN_H
         } else {
@@ -101,6 +109,7 @@ mod tests {
             tab_bar_height: 32.0,
             sidebar_width: 180.0,
             status_bar_visible: false,
+            wayland_decorated: false,
         }
     }
 
@@ -241,6 +250,7 @@ mod tests {
             tab_bar_height: 32.0,
             sidebar_width: 180.0,
             status_bar_visible: true,
+            wayland_decorated: false,
         };
         let (x, y, w, h) = layout.pane_area();
         assert_eq!(x, 180.0);
@@ -257,6 +267,7 @@ mod tests {
             tab_bar_height: 32.0,
             sidebar_width: 180.0,
             status_bar_visible: false,
+            wayland_decorated: false,
         };
         let (_, _, _, h) = layout.pane_area();
         assert_eq!(h, 800.0);

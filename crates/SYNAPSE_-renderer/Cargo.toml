@@ -19,3 +19,5 @@ pollster = { workspace = true }
 bytemuck = { workspace = true }
 rustybuzz = { workspace = true }
 SYNAPSE_-config = { path = "../SYNAPSE_-config" }
+ttf-parser = { workspace = true }
+image = { workspace = true }

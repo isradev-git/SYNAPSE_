@@ -10,12 +10,13 @@ use std::sync::atomic::Ordering;
 use synapse_config::Action;
 use synapse_ui::pane::{CopyModeState, CopySelMode};
 use synapse_ui::{
-    auto_split_direction, layout::Layout, pane::Pane, splitter::SplitDirection, tab_bar::TabBar,
+    auto_split_direction, layout::Layout, pane::Pane, splitter::PaneTree, splitter::SplitDirection,
+    tab_bar::TabBar,
 };
 
 use crate::{
     input::InputAction,
-    pane_ops::{active_pane_mut, adjacent_pane, create_pane_full, find_pane},
+    pane_ops::{active_pane_mut, adjacent_pane, create_pane_full, find_pane, write_to_panes},
     search::{handle_history_search_input, handle_search_input, update_search_matches},
     state::AppState,
 };
@@ -26,6 +27,7 @@ pub enum PostKeyAction {
     ThemeChange,
     EffectsToggle,
     ToggleStatusBar,
+    WorkspaceAction(synapse_config::keybinds::Action),
 }
 
 fn ensure_tab_visible(
@@ -83,6 +85,26 @@ fn exit_copy_mode(pane: &mut Pane, state: &mut AppState) {
     pane.copy_mode = None;
     state.in_copy_mode = false;
     pane.dirty.store(true, Ordering::Release);
+}
+
+pub(crate) fn toggle_zoom(state: &mut AppState, tab_bar: &mut TabBar) {
+    if let Some(_zoomed) = state.zoomed_pane.take() {
+        if let Some(tree) = state.zoom_saved_tree.take() {
+            tab_bar.active_tab_mut().pane_tree = tree;
+        }
+    } else {
+        let active_id = tab_bar.active_tab().active_pane;
+        let saved = tab_bar.active_tab().pane_tree.clone();
+        state.zoom_saved_tree = Some(saved);
+        state.zoomed_pane = Some(active_id);
+        tab_bar.active_tab_mut().pane_tree = PaneTree::leaf(active_id);
+    }
+}
+
+pub(crate) fn clear_zoom(state: &mut AppState, tab_bar: &mut TabBar) {
+    if state.zoomed_pane.is_some() {
+        toggle_zoom(state, tab_bar);
+    }
 }
 
 fn compute_moved_cursor(
@@ -547,17 +569,34 @@ pub fn handle_keyboard(
                 return PostKeyAction::None;
             }
 
+            // Overlay input handling (when active)
+            if state.overlay.active {
+                return handle_overlay_input(logical_key, state);
+            }
+
             // Command palette input handling (when active)
             if state.palette.active {
                 crate::palette::handle_palette_input(logical_key, event, state, tab_bar);
                 // If palette just closed via Enter with a pending action or theme reload:
                 if !state.palette.active {
                     if let Some(action) = state.palette.take_pending_action() {
-                        let result = dispatch_action(
-                            action, state, tab_bar, panes, layout, margin, cell_w, cell_h,
-                            clipboard, window,
-                        );
-                        return result;
+                        match action {
+                            Action::WorkspaceNew
+                            | Action::WorkspaceSwitch
+                            | Action::WorkspaceDelete
+                            | Action::ToggleProfiler
+                            | Action::ToggleRecording
+                            | Action::PluginExecute(_) => {
+                                return PostKeyAction::WorkspaceAction(action);
+                            }
+                            _ => {
+                                let result = dispatch_action(
+                                    action, state, tab_bar, panes, layout, margin, cell_w, cell_h,
+                                    clipboard, window,
+                                );
+                                return result;
+                            }
+                        }
                     }
                     if state.palette.take_pending_theme_reload() {
                         return PostKeyAction::ThemeChange;
@@ -598,6 +637,12 @@ pub fn handle_keyboard(
                                 }
                                 state.history_search.activate();
                                 state.history_search.build_history(&lines_buf);
+                                // Inject persistent history entries
+                                if state.config.persistent_history {
+                                    state
+                                        .history_search
+                                        .add_persistent_commands(state.command_history.commands());
+                                }
                             }
                         }
                     }
@@ -633,6 +678,7 @@ pub fn handle_keyboard(
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::CloseTab) => {
+                    clear_zoom(state, tab_bar);
                     if let Some(closed) = tab_bar.close_tab(tab_bar.active) {
                         let closed_panes = closed.pane_tree.all_panes();
                         // Dropping the panes drops their PTY writers/masters and ends the children.
@@ -645,56 +691,67 @@ pub fn handle_keyboard(
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::NextTab) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.next_tab();
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::PrevTab) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.prev_tab();
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch1) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(0);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch2) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(1);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch3) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(2);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch4) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(3);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch5) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(4);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch6) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(5);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch7) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(6);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch8) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(7);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
                 }
                 Some(Action::TabSwitch9) => {
+                    clear_zoom(state, tab_bar);
                     tab_bar.activate(8);
                     let n = tab_bar.tabs.len();
                     ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
@@ -839,14 +896,21 @@ pub fn handle_keyboard(
                 Some(Action::Paste) => {
                     if let Some(ref mut clip) = clipboard {
                         if let Ok(text) = clip.get_text() {
-                            let pane = active_pane_mut(panes, tab_bar);
-                            let bracketed = bracketed_paste_active(pane);
+                            let bracketed = {
+                                let pane = active_pane_mut(panes, tab_bar);
+                                bracketed_paste_active(pane)
+                            };
                             if bracketed {
-                                pane.write_to_pty(b"\x1b[200~");
-                                pane.write_to_pty(sanitize_paste(&text).as_bytes());
-                                pane.write_to_pty(b"\x1b[201~");
+                                write_to_panes(panes, tab_bar, state.broadcasting, b"\x1b[200~");
+                                write_to_panes(
+                                    panes,
+                                    tab_bar,
+                                    state.broadcasting,
+                                    sanitize_paste(&text).as_bytes(),
+                                );
+                                write_to_panes(panes, tab_bar, state.broadcasting, b"\x1b[201~");
                             } else {
-                                pane.write_to_pty(text.as_bytes());
+                                write_to_panes(panes, tab_bar, state.broadcasting, text.as_bytes());
                             }
                         }
                     }
@@ -1014,6 +1078,12 @@ pub fn handle_keyboard(
                     state.status_bar_visible = !state.status_bar_visible;
                     return PostKeyAction::ToggleStatusBar;
                 }
+                Some(Action::Zoom) => {
+                    toggle_zoom(state, tab_bar);
+                }
+                Some(Action::ToggleBroadcast) => {
+                    state.broadcasting = !state.broadcasting;
+                }
                 Some(Action::ReloadConfig) => {
                     state.config.reload();
                     state.theme = synapse_config::Theme::load(
@@ -1038,6 +1108,15 @@ pub fn handle_keyboard(
                         pane.write_to_pty(cmd.as_bytes());
                     }
                     return PostKeyAction::ThemeChange;
+                }
+                Some(Action::WorkspaceNew)
+                | Some(Action::WorkspaceSwitch)
+                | Some(Action::WorkspaceRename)
+                | Some(Action::WorkspaceDelete)
+                | Some(Action::ToggleProfiler)
+                | Some(Action::ToggleRecording)
+                | Some(Action::PluginExecute(_)) => {
+                    return PostKeyAction::WorkspaceAction(action_opt.unwrap());
                 }
                 None => {
                     keybind_handled = false;
@@ -1103,8 +1182,7 @@ pub fn handle_keyboard(
                     }
                 }
 
-                let pane = active_pane_mut(panes, tab_bar);
-                pane.write_to_pty(&bytes);
+                write_to_panes(panes, tab_bar, state.broadcasting, &bytes);
 
                 // Learn executed command and update suggestions (first press only —
                 // repeats would corrupt the prefix trie with duplicate characters).
@@ -1168,14 +1246,21 @@ pub fn handle_keyboard(
                 if !is_repeat {
                     if let Some(ref mut clip) = clipboard {
                         if let Ok(text) = clip.get_text() {
-                            let pane = active_pane_mut(panes, tab_bar);
-                            let bracketed = bracketed_paste_active(pane);
+                            let bracketed = {
+                                let pane = active_pane_mut(panes, tab_bar);
+                                bracketed_paste_active(pane)
+                            };
                             if bracketed {
-                                pane.write_to_pty(b"\x1b[200~");
-                                pane.write_to_pty(sanitize_paste(&text).as_bytes());
-                                pane.write_to_pty(b"\x1b[201~");
+                                write_to_panes(panes, tab_bar, state.broadcasting, b"\x1b[200~");
+                                write_to_panes(
+                                    panes,
+                                    tab_bar,
+                                    state.broadcasting,
+                                    sanitize_paste(&text).as_bytes(),
+                                );
+                                write_to_panes(panes, tab_bar, state.broadcasting, b"\x1b[201~");
                             } else {
-                                pane.write_to_pty(text.as_bytes());
+                                write_to_panes(panes, tab_bar, state.broadcasting, text.as_bytes());
                             }
                         }
                     }
@@ -1183,6 +1268,24 @@ pub fn handle_keyboard(
             }
             InputAction::Ignore => {}
         }
+    }
+    PostKeyAction::None
+}
+
+fn handle_overlay_input(logical_key: &winit::keyboard::Key, state: &mut AppState) -> PostKeyAction {
+    use winit::keyboard::NamedKey;
+    match logical_key {
+        winit::keyboard::Key::Named(NamedKey::Escape) => {
+            state.overlay.close();
+        }
+        winit::keyboard::Key::Named(NamedKey::ArrowUp) => {
+            state.overlay.scroll_down();
+        }
+        winit::keyboard::Key::Named(NamedKey::ArrowDown) => {
+            let vis = 15usize;
+            state.overlay.scroll_up(vis);
+        }
+        _ => {}
     }
     PostKeyAction::None
 }
@@ -1227,6 +1330,7 @@ fn dispatch_action(
             ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
         }
         Action::CloseTab => {
+            clear_zoom(state, tab_bar);
             if let Some(closed) = tab_bar.close_tab(tab_bar.active) {
                 let closed_panes = closed.pane_tree.all_panes();
                 panes.retain(|p| !closed_panes.contains(&p.id));
@@ -1238,11 +1342,13 @@ fn dispatch_action(
             ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
         }
         Action::NextTab => {
+            clear_zoom(state, tab_bar);
             tab_bar.next_tab();
             let n = tab_bar.tabs.len();
             ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
         }
         Action::PrevTab => {
+            clear_zoom(state, tab_bar);
             tab_bar.prev_tab();
             let n = tab_bar.tabs.len();
             ensure_tab_visible(tab_bar.active, n, layout, &mut state.tab_scroll_offset);
@@ -1366,6 +1472,12 @@ fn dispatch_action(
                 }
             }
         }
+        Action::Zoom => {
+            toggle_zoom(state, tab_bar);
+        }
+        Action::ToggleBroadcast => {
+            state.broadcasting = !state.broadcasting;
+        }
         Action::NavigateUp
         | Action::NavigateDown
         | Action::NavigateLeft
@@ -1414,6 +1526,11 @@ fn dispatch_action(
                         }
                         state.history_search.activate();
                         state.history_search.build_history(&lines_buf);
+                        if state.config.persistent_history {
+                            state
+                                .history_search
+                                .add_persistent_commands(state.command_history.commands());
+                        }
                     }
                 }
             }
@@ -1605,11 +1722,43 @@ use crate::app::AppCore;
 
 impl AppCore {
     pub(crate) fn handle_keyboard(&mut self, event: winit::event::KeyEvent) {
+        // Handle workspace/profiler actions before main keyboard handler
+        // (these need access to AppCore.workspaces).
+        if event.state == winit::event::ElementState::Pressed && !event.repeat {
+            let logical_key = &event.logical_key;
+            if let Some(ws_action) = self
+                .state
+                .keybinds
+                .lookup(logical_key, self.state.modifiers)
+            {
+                match ws_action {
+                    synapse_config::keybinds::Action::WorkspaceNew
+                    | synapse_config::keybinds::Action::WorkspaceSwitch
+                    | synapse_config::keybinds::Action::WorkspaceDelete
+                    | synapse_config::keybinds::Action::ToggleProfiler
+                    | synapse_config::keybinds::Action::PluginExecute(_) => {
+                        self.handle_workspace_action(ws_action);
+                        return;
+                    }
+                    synapse_config::keybinds::Action::WorkspaceRename => {
+                        if self.state.palette.active {
+                            self.state.palette.active = false;
+                        } else {
+                            self.state.palette.toggle(self.workspaces.active_tab_bar());
+                        }
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let (tab_bar, panes, _) = self.workspaces.active_split_mut();
         let action = handle_keyboard(
             &event,
             &mut self.state,
-            &mut self.tab_bar,
-            &mut self.panes,
+            tab_bar,
+            panes,
             &self.layout,
             self.margin,
             self.cell_w,
@@ -1620,7 +1769,10 @@ impl AppCore {
         match action {
             PostKeyAction::FontChange(size) => self.change_font_size(size),
             PostKeyAction::ThemeChange => {
-                self.renderer.set_clear_color(self.state.theme.bg);
+                self.renderer.set_clear_color(crate::app::adjusted_bg(
+                    self.state.theme.bg,
+                    self.state.config.window_opacity,
+                ));
                 self.renderer
                     .set_effects_config(self.state.config.effects.clone());
                 self.change_font_size(self.state.config.font_size);
@@ -1635,7 +1787,265 @@ impl AppCore {
                 self.handle_resize(size);
             }
             PostKeyAction::None => {}
+            PostKeyAction::WorkspaceAction(wa) => {
+                if let Action::PluginExecute(n) = wa {
+                    self.execute_plugin(n);
+                } else {
+                    self.handle_workspace_action(wa);
+                }
+            }
         }
+        crate::pane_ops::apply_tab_freeze(
+            self.workspaces.active_panes(),
+            self.workspaces.active_tab_bar(),
+            self.state.config.freeze_background_tabs,
+        );
+    }
+}
+
+impl AppCore {
+    fn handle_workspace_action(&mut self, action: synapse_config::keybinds::Action) {
+        match action {
+            synapse_config::keybinds::Action::WorkspaceNew => {
+                let name = format!("workspace-{}", self.workspaces.workspaces.len() + 1);
+                let pane_area = self.layout.pane_area();
+                let new_cols = ((pane_area.2 - self.margin * 2.0) / self.cell_w).max(1.0) as usize;
+                let new_rows = ((pane_area.3 - self.margin * 2.0) / self.cell_h).max(1.0) as usize;
+                if let Err(e) = self.workspaces.create(
+                    &name,
+                    new_cols,
+                    new_rows,
+                    &self.state.config.shell_program,
+                    &self.state.config.shell_args,
+                    self.state.config.scrollback_lines,
+                ) {
+                    tracing::warn!("Failed to create workspace: {e}");
+                } else {
+                    self.cached_cell_data.clear();
+                    self.cached_ui_rects.clear();
+                    self.cached_bg_rects.clear();
+                    self.cached_underline_instances.clear();
+                    self.workspaces.active_cell_caches_mut().clear();
+                }
+            }
+            synapse_config::keybinds::Action::WorkspaceSwitch => {
+                let names_clone: Vec<String> = self
+                    .workspaces
+                    .workspace_names()
+                    .iter()
+                    .map(|n| n.to_string())
+                    .collect();
+                if names_clone.len() > 1 {
+                    let pos = names_clone
+                        .iter()
+                        .position(|n| *n == self.workspaces.active)
+                        .unwrap_or(0);
+                    let next = &names_clone[(pos + 1) % names_clone.len()];
+                    self.workspaces.switch(next);
+                    self.state.active_workspace = next.clone();
+                    self.cached_cell_data.clear();
+                    self.cached_ui_rects.clear();
+                    self.cached_bg_rects.clear();
+                    self.cached_underline_instances.clear();
+                    self.workspaces.active_cell_caches_mut().clear();
+                    self.cached_active_tab = 0;
+                    self.state.tab_scroll_offset = 0;
+                }
+            }
+            synapse_config::keybinds::Action::WorkspaceDelete => {
+                if self.workspaces.workspaces.len() <= 1 {
+                    return;
+                }
+                let name = self.workspaces.active.clone();
+                self.workspaces.delete(&name);
+                self.state.active_workspace = self.workspaces.active.clone();
+                self.cached_cell_data.clear();
+                self.cached_ui_rects.clear();
+                self.cached_bg_rects.clear();
+                self.cached_underline_instances.clear();
+                self.workspaces.active_cell_caches_mut().clear();
+                self.cached_active_tab = 0;
+                self.state.tab_scroll_offset = 0;
+            }
+            synapse_config::keybinds::Action::ToggleProfiler => {
+                self.state.profiler_active = !self.state.profiler_active;
+            }
+            synapse_config::keybinds::Action::ToggleRecording => {
+                if let Some(shared) = crate::record::RECORDING.get() {
+                    if shared.is_recording() {
+                        self.stop_recording_if_active();
+                    } else {
+                        shared.start();
+                        self.state.recording = true;
+                    }
+                }
+            }
+            synapse_config::keybinds::Action::PluginExecute(n) => {
+                self.execute_plugin(n);
+            }
+            _ => {}
+        }
+    }
+
+    fn execute_plugin(&mut self, index: usize) {
+        let plugin = match self.state.config.plugins.get(index) {
+            Some(p) => p.clone(),
+            None => return,
+        };
+
+        let (pane_cwd, selected_text, clipboard_text) = {
+            let ws = self.workspaces.active_ws();
+            let active_id = ws.tab_bar.active_tab().active_pane;
+            let cwd = ws
+                .panes
+                .iter()
+                .find(|p| p.id == active_id)
+                .map(|p| p.cwd())
+                .unwrap_or_default();
+
+            let sel = ws
+                .panes
+                .iter()
+                .find(|p| p.id == active_id)
+                .and_then(|pane| pane.term.lock().ok())
+                .and_then(|term| term.selection_to_string())
+                .unwrap_or_default();
+
+            let clip = self
+                .clipboard
+                .as_mut()
+                .and_then(|cb| cb.get_text().ok())
+                .unwrap_or_default();
+
+            (cwd, sel, clip)
+        };
+
+        let resolved_cwd =
+            crate::overlay::resolve_plugin_cwd(&plugin, &pane_cwd, &selected_text, &clipboard_text);
+        let resolved_cmd = crate::overlay::resolve_plugin_command(
+            &plugin,
+            &pane_cwd,
+            &selected_text,
+            &clipboard_text,
+        );
+
+        match plugin.split.as_str() {
+            "horizontal" | "vertical" | "tab" => {
+                self.execute_plugin_split(&plugin, resolved_cmd, resolved_cwd, &plugin.split);
+            }
+            "overlay" => {
+                let title = plugin.name.clone();
+                self.state.overlay.active = true;
+                self.state.overlay.title = title.clone();
+                self.state.overlay.lines.clear();
+                self.state.overlay.scroll = 0;
+                self.state.overlay.status = crate::overlay::OverlayStatus::Running;
+
+                let (tx, rx) = std::sync::mpsc::channel();
+                crate::overlay::spawn_overlay_command(tx, title, resolved_cmd);
+                self.overlay_rx = Some(rx);
+            }
+            _ => {
+                self.execute_plugin_split(&plugin, resolved_cmd, resolved_cwd, &plugin.split);
+            }
+        }
+
+        if plugin.replace_selection {
+            match crate::overlay::run_replace_selection(
+                &plugin,
+                &pane_cwd,
+                &selected_text,
+                &clipboard_text,
+            ) {
+                Ok(output) => {
+                    let ws = self.workspaces.active_ws_mut();
+                    let active_id = ws.tab_bar.active_tab().active_pane;
+                    if let Some(pane) = ws.panes.iter().find(|p| p.id == active_id) {
+                        if let Ok(mut w) = pane.pty_writer.lock() {
+                            let _ = std::io::Write::write_all(&mut *w, output.as_bytes());
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("replace_selection command failed: {}", e);
+                }
+            }
+        }
+    }
+
+    fn execute_plugin_split(
+        &mut self,
+        _plugin: &synapse_config::PluginCommand,
+        command: String,
+        cwd: Option<String>,
+        split: &str,
+    ) {
+        let ws = self.workspaces.active_ws_mut();
+        let tab_bar = &mut ws.tab_bar;
+        let panes = &mut ws.panes;
+
+        let active_id = tab_bar.active_tab().active_pane;
+        let pane_geometry = panes.iter().find(|p| p.id == active_id);
+
+        let (cols, rows) = match pane_geometry {
+            Some(p) => (p.cols, p.rows),
+            None => {
+                let pane_area = self.layout.pane_area();
+                let cols = ((pane_area.2 - self.margin * 2.0) / self.cell_w).max(1.0) as usize;
+                let rows = ((pane_area.3 - self.margin * 2.0) / self.cell_h).max(1.0) as usize;
+                (cols, rows)
+            }
+        };
+
+        let shell_args: Vec<String> = vec!["-c".to_string(), command];
+
+        if split == "tab" {
+            let (_, new_pane_id) = tab_bar.new_tab();
+            match crate::pane_ops::create_pane_full(
+                new_pane_id,
+                cols,
+                rows,
+                cwd,
+                Some("/bin/sh"),
+                &shell_args,
+                self.state.config.scrollback_lines,
+            ) {
+                Ok(pane) => panes.push(pane),
+                Err(e) => tracing::warn!("Plugin tab spawn failed: {}", e),
+            }
+        } else {
+            let direction = match split {
+                "horizontal" => synapse_ui::SplitDirection::Horizontal,
+                _ => synapse_ui::SplitDirection::Vertical,
+            };
+
+            let new_pane_id = tab_bar.next_pane_id();
+            if tab_bar
+                .active_tab_mut()
+                .pane_tree
+                .split(active_id, new_pane_id, direction)
+                .is_ok()
+            {
+                match crate::pane_ops::create_pane_full(
+                    new_pane_id,
+                    cols,
+                    rows,
+                    cwd,
+                    Some("/bin/sh"),
+                    &shell_args,
+                    self.state.config.scrollback_lines,
+                ) {
+                    Ok(pane) => panes.push(pane),
+                    Err(e) => tracing::warn!("Plugin split spawn failed: {}", e),
+                }
+            }
+        }
+
+        self.cached_cell_data.clear();
+        self.cached_ui_rects.clear();
+        self.cached_bg_rects.clear();
+        self.cached_underline_instances.clear();
+        self.workspaces.active_cell_caches_mut().clear();
     }
 }
 

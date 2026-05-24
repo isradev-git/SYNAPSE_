@@ -145,11 +145,8 @@ impl Suggester {
 
     /// Returns all (command, count) pairs for persistence.
     pub fn snapshot_counts(&self) -> Vec<(String, u32)> {
-        let mut pairs: Vec<(String, u32)> = self
-            .counts
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
+        let mut pairs: Vec<(String, u32)> =
+            self.counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
         pairs.sort_by_key(|(_, v)| std::cmp::Reverse(*v));
         pairs
     }

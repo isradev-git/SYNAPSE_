@@ -16,3 +16,4 @@ alacritty_terminal = { workspace = true }
 portable-pty = { workspace = true }
 SYNAPSE_-renderer = { path = "../SYNAPSE_-renderer" }
 winit = { workspace = true }
+serde = { workspace = true }

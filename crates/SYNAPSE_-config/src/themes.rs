@@ -30,6 +30,9 @@ pub struct Theme {
     pub ghost_text: [f32; 4],
     // Hyperlink / URL underline color
     pub hyperlink: [f32; 4],
+    // Scrollbar
+    pub scrollbar_track: [f32; 4],
+    pub scrollbar_thumb: [f32; 4],
     // ANSI 16-color palette (indices 0-15)
     // 0=Black, 1=Red, 2=Green, 3=Yellow, 4=Blue, 5=Magenta, 6=Cyan, 7=White
     // 8=BrightBlack, 9=BrightRed, 10=BrightGreen, 11=BrightYellow,
@@ -79,6 +82,8 @@ impl Theme {
             search_text_dim: hex("444444"),
             ghost_text: hex("405060"),
             hyperlink: hex("4499FF"),
+            scrollbar_track: [0.06, 0.00, 0.12, 0.4],
+            scrollbar_thumb: [1.0, 0.0, 0.235, 0.6],
             // Cyberpunk ANSI palette: negro puro + rojos/neons
             ansi_colors: [
                 hex("0A0A0A"), // 0  Black
@@ -125,6 +130,8 @@ impl Theme {
             search_text_dim: hex("6272a4"),
             ghost_text: hex("6272a4"),
             hyperlink: hex("8be9fd"),
+            scrollbar_track: [0.27, 0.28, 0.35, 0.4],
+            scrollbar_thumb: [0.74, 0.58, 0.98, 0.5],
             ansi_colors: [
                 hex("21222c"), // 0  Black
                 hex("ff5555"), // 1  Red
@@ -170,6 +177,8 @@ impl Theme {
             search_text_dim: hex("a6adc8"),
             ghost_text: hex("585b70"),
             hyperlink: hex("89b4fa"),
+            scrollbar_track: [0.18, 0.18, 0.24, 0.4],
+            scrollbar_thumb: [0.80, 0.65, 0.97, 0.5],
             ansi_colors: [
                 hex("45475a"), // 0  Black (Surface1)
                 hex("f38ba8"), // 1  Red
@@ -215,6 +224,8 @@ impl Theme {
             search_text_dim: hex("565f89"),
             ghost_text: hex("414868"),
             hyperlink: hex("7dcfff"),
+            scrollbar_track: [0.16, 0.18, 0.26, 0.4],
+            scrollbar_thumb: [0.73, 0.63, 0.97, 0.5],
             ansi_colors: [
                 hex("15161e"), // 0  Black
                 hex("f7768e"), // 1  Red
@@ -232,6 +243,53 @@ impl Theme {
                 hex("bb9af7"), // 13 BrightMagenta
                 hex("7dcfff"), // 14 BrightCyan
                 hex("c0caf5"), // 15 BrightWhite
+            ],
+        }
+    }
+
+    pub fn high_contrast_dark() -> Self {
+        Self {
+            bg: hex("000000"),
+            fg: hex("FFFFFF"),
+            cursor: hex("FFFF00"),
+            selection: [1.0, 1.0, 1.0, 0.3],
+            tab_bar_bg: hex("000000"),
+            tab_active_bg: hex("000000"),
+            tab_inactive_bg: hex("000000"),
+            tab_hover_bg: [1.0, 1.0, 0.0, 0.2],
+            tab_text: hex("FFFFFF"),
+            tab_text_inactive: hex("FFFFFF"),
+            tab_button_text: hex("FFFF00"),
+            tab_separator: hex("FFFFFF"),
+            panel_active_border: hex("FFFF00"),
+            panel_inactive_border: hex("FFFFFF"),
+            panel_divider: hex("FFFFFF"),
+            search_bar_bg: hex("000000"),
+            search_highlight: [1.0, 1.0, 0.0, 0.4],
+            search_current: [1.0, 1.0, 0.0, 0.7],
+            search_text: hex("FFFFFF"),
+            search_text_dim: hex("FFFFFF"),
+            ghost_text: hex("FFFFFF"),
+            hyperlink: hex("FFFF00"),
+            scrollbar_track: [0.5, 0.5, 0.5, 0.4],
+            scrollbar_thumb: [1.0, 1.0, 1.0, 0.7],
+            ansi_colors: [
+                hex("000000"), // 0  Black
+                hex("FF0000"), // 1  Red
+                hex("00FF00"), // 2  Green
+                hex("FFFF00"), // 3  Yellow
+                hex("0000FF"), // 4  Blue
+                hex("FF00FF"), // 5  Magenta
+                hex("00FFFF"), // 6  Cyan
+                hex("FFFFFF"), // 7  White
+                hex("808080"), // 8  BrightBlack
+                hex("FF4444"), // 9  BrightRed
+                hex("44FF44"), // 10 BrightGreen
+                hex("FFFF44"), // 11 BrightYellow
+                hex("4444FF"), // 12 BrightBlue
+                hex("FF44FF"), // 13 BrightMagenta
+                hex("44FFFF"), // 14 BrightCyan
+                hex("FFFFFF"), // 15 BrightWhite
             ],
         }
     }
@@ -256,6 +314,7 @@ impl Theme {
             "dracula" => Self::dracula(),
             "catppuccin-mocha" => Self::catppuccin_mocha(),
             "tokyo-night" => Self::tokyo_night(),
+            "high-contrast" => Self::high_contrast_dark(),
             _ => Self::synapse_(),
         }
     }
@@ -366,7 +425,7 @@ mod tests {
 
     #[test]
     fn all_builtin_themes_load() {
-        for name in &["synapse_", "dracula", "catppuccin-mocha", "tokyo-night"] {
+        for name in &["synapse_", "dracula", "catppuccin-mocha", "tokyo-night", "high-contrast"] {
             let t = Theme::load(name, None);
             // bg alpha should always be 1.0
             assert!(

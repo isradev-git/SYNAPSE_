@@ -1,9 +1,10 @@
 use crate::pane::PaneId;
 use crate::splitter::PaneTree;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TabId(pub u64);
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Tab {
     pub id: TabId,
     pub title: String,
@@ -26,10 +27,13 @@ impl Tab {
     }
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct TabBar {
     pub tabs: Vec<Tab>,
     pub active: usize,
+    #[serde(skip)]
     next_tab_id: u64,
+    #[serde(skip)]
     next_pane_id: u64,
 }
 
@@ -43,6 +47,21 @@ impl TabBar {
             next_tab_id,
             next_pane_id,
         }
+    }
+
+    /// Reconstruct a TabBar from deserialized data, computing correct next IDs.
+    pub fn from_saved(mut self) -> Self {
+        let max_tab = self.tabs.iter().map(|t| t.id.0).max().unwrap_or(0);
+        let max_pane = self
+            .tabs
+            .iter()
+            .flat_map(|t| t.pane_tree.all_panes())
+            .map(|p| p.0)
+            .max()
+            .unwrap_or(0);
+        self.next_tab_id = max_tab + 1;
+        self.next_pane_id = max_pane + 1;
+        self
     }
 
     pub fn active_tab(&self) -> &Tab {

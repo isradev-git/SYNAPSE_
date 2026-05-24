@@ -1,5 +1,7 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::time::Instant;
+
+use crate::history::CommandHistory;
 
 fn read_git_branch_sync(cwd: &str) -> Option<String> {
     let mut dir = std::path::Path::new(cwd).to_path_buf();
@@ -68,12 +70,13 @@ fn read_user_host() -> String {
     }
 }
 
+use crate::overlay::OverlayState;
 use crate::palette::PaletteState;
 use alacritty_terminal::vte::ansi::CursorShape;
 use synapse_config::{Config, Keybinds, Theme};
 use synapse_suggest::Suggester;
 use synapse_ui::pane::PaneId;
-use synapse_ui::splitter::{PaneRect, SplitDirection};
+use synapse_ui::splitter::{PaneRect, PaneTree, SplitDirection};
 use winit::keyboard::ModifiersState;
 
 /// Pixel-space bounding box of a clickable URL in the terminal viewport.
@@ -104,6 +107,8 @@ pub struct SearchState {
     pub matches: Vec<SearchMatch>,
     pub current_match: usize,
     pub cursor_pos: usize,
+    pub regex_mode: bool,
+    pub invalid_regex: bool,
 }
 
 impl SearchState {
@@ -114,6 +119,8 @@ impl SearchState {
             matches: Vec::new(),
             current_match: 0,
             cursor_pos: 0,
+            regex_mode: false,
+            invalid_regex: false,
         }
     }
 
@@ -124,7 +131,14 @@ impl SearchState {
             self.matches.clear();
             self.current_match = 0;
             self.cursor_pos = 0;
+            self.regex_mode = false;
+            self.invalid_regex = false;
         }
+    }
+
+    pub fn toggle_regex(&mut self) {
+        self.regex_mode = !self.regex_mode;
+        self.invalid_regex = false;
     }
 
     pub fn next_match(&mut self) {
@@ -266,10 +280,63 @@ impl SuggestState {
                         }
                     }
                 }
-                self.ghost = None;
                 false
             }
         }
+    }
+}
+
+#[derive(Default)]
+#[allow(dead_code)]
+pub struct ProfilerData {
+    pub frame_time_ms: f32,
+    pub cell_count: usize,
+    pub draw_calls: usize,
+    pub pty_bytes_per_sec: f32,
+    pub fps: f32,
+    pub atlas_used_percent: f32,
+    pub frame_cache_hit_rate: f32,
+    pty_bytes_buf: Vec<(std::time::Instant, usize)>,
+    frame_times: Vec<f32>,
+}
+
+#[allow(dead_code)]
+impl ProfilerData {
+    pub fn new() -> Self {
+        Self {
+            frame_time_ms: 0.0,
+            cell_count: 0,
+            draw_calls: 0,
+            pty_bytes_per_sec: 0.0,
+            fps: 0.0,
+            atlas_used_percent: 0.0,
+            frame_cache_hit_rate: 0.0,
+            pty_bytes_buf: Vec::new(),
+            frame_times: Vec::with_capacity(60),
+        }
+    }
+
+    pub fn add_frame_time(&mut self, dt_ms: f32) {
+        self.frame_times.push(dt_ms);
+        if self.frame_times.len() > 60 {
+            self.frame_times.remove(0);
+        }
+        self.fps = if self.frame_times.is_empty() {
+            0.0
+        } else {
+            1000.0 / (self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32)
+        };
+    }
+
+    pub fn add_pty_bytes(&mut self, bytes: usize) {
+        let now = std::time::Instant::now();
+        self.pty_bytes_buf.push((now, bytes));
+        let cutoff = now - std::time::Duration::from_secs(2);
+        self.pty_bytes_buf.retain(|(t, _)| *t > cutoff);
+        let total: usize = self.pty_bytes_buf.iter().map(|(_, b)| *b).sum();
+        let oldest = self.pty_bytes_buf.first().map(|(t, _)| *t).unwrap_or(now);
+        let elapsed = now.duration_since(oldest).as_secs_f32().max(0.001);
+        self.pty_bytes_per_sec = total as f32 / elapsed;
     }
 }
 
@@ -282,6 +349,7 @@ pub struct AppState {
     pub cursor_x: f64,
     pub cursor_y: f64,
     pub dragging_divider: Option<DividerDrag>,
+    pub scrollbar_drag: Option<PaneId>,
     pub hover_divider: bool,
     pub hover_tab: Option<usize>,
     pub last_click_time: Instant,
@@ -310,12 +378,24 @@ pub struct AppState {
     pub k8s_context: Option<String>,
     pub user_host: String,
     pub cached_time_sec: u64,
+    pub zoomed_pane: Option<PaneId>,
+    pub zoom_saved_tree: Option<PaneTree>,
+    pub broadcasting: bool,
+    pub recording: bool,
+    pub profiler_active: bool,
+    pub profiler: ProfilerData,
+    pub active_workspace: String,
+    pub command_history: CommandHistory,
+    pub overlay: OverlayState,
+    /// Word occurrence highlights (the word under selection)
+    pub word_highlight_word: Option<String>,
+    pub word_highlight_positions: HashSet<(usize, i32)>,
 }
 
 impl AppState {
     pub fn new(config: Config, keybinds: Keybinds, font_size: f32) -> Self {
         let theme = Theme::load(&config.theme, synapse_config::Config::config_dir());
-        let suggester = synapse_suggest::load_suggester();
+        let mut suggester = synapse_suggest::load_suggester();
         let effects_enabled = config.effects.enabled;
         let status_bar_visible = config.status_bar;
         let k8s_context = if config.status_bar_show_k8s {
@@ -323,6 +403,18 @@ impl AppState {
         } else {
             None
         };
+        let mut command_history = CommandHistory::new(config.history_max_entries);
+        command_history.set_path(
+            crate::history::command_history_path()
+                .unwrap_or_else(|| std::path::PathBuf::from("history.json")),
+        );
+        command_history.load();
+        // Feed persistent history into the suggester
+        if config.persistent_history {
+            for cmd in command_history.commands() {
+                suggester.insert(cmd);
+            }
+        }
         Self {
             config,
             keybinds,
@@ -332,6 +424,7 @@ impl AppState {
             cursor_x: 0.0,
             cursor_y: 0.0,
             dragging_divider: None,
+            scrollbar_drag: None,
             hover_divider: false,
             hover_tab: None,
             last_click_time: Instant::now(),
@@ -359,6 +452,17 @@ impl AppState {
             k8s_context,
             user_host: read_user_host(),
             cached_time_sec: 0,
+            zoomed_pane: None,
+            zoom_saved_tree: None,
+            broadcasting: false,
+            recording: false,
+            profiler_active: false,
+            profiler: ProfilerData::new(),
+            active_workspace: String::from("default"),
+            command_history,
+            overlay: OverlayState::new(),
+            word_highlight_word: None,
+            word_highlight_positions: HashSet::new(),
         }
     }
 
@@ -437,6 +541,17 @@ impl HistorySearchState {
                 if seen.insert(owned.clone()) {
                     self.history.push(owned);
                 }
+            }
+        }
+    }
+
+    /// Add persistent command history entries (cross-session).
+    pub fn add_persistent_commands(&mut self, commands: impl Iterator<Item = impl AsRef<str>>) {
+        let mut seen: std::collections::HashSet<String> = self.history.iter().cloned().collect();
+        for cmd in commands {
+            let trimmed = cmd.as_ref().trim();
+            if trimmed.len() > 1 && seen.insert(trimmed.to_string()) {
+                self.history.push(trimmed.to_string());
             }
         }
     }

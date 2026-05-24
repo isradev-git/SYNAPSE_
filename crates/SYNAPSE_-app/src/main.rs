@@ -1,13 +1,24 @@
 mod app;
+mod cli;
+mod history;
 mod image_protocol;
 mod input;
 mod keyboard;
 mod mouse;
+mod overlay;
 mod palette;
 mod pane_ops;
+mod quake;
+mod record;
 mod render;
 mod search;
+mod session;
+mod setup;
+mod sixel;
 mod state;
+mod workspace;
+
+use clap::Parser;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -40,6 +51,9 @@ fn main() {
 }
 
 fn try_main() -> Result<(), Box<dyn std::error::Error>> {
-    let (app, event_loop) = app::App::new()?;
+    let cli = cli::Cli::parse();
+    let config = synapse_config::config::Config::load();
+    setup::maybe_install_integration(&cli, &config);
+    let (app, event_loop) = app::App::new(cli)?;
     app.run(event_loop)
 }

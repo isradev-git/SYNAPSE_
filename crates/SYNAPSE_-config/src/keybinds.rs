@@ -55,6 +55,15 @@ pub enum Action {
     ResizePaneDown,
     ToggleStatusBar,
     PaletteOpen,
+    Zoom,
+    ToggleBroadcast,
+    WorkspaceNew,
+    WorkspaceSwitch,
+    WorkspaceRename,
+    WorkspaceDelete,
+    ToggleProfiler,
+    PluginExecute(usize),
+    ToggleRecording,
 }
 
 impl Action {
@@ -101,8 +110,23 @@ impl Action {
             "resize_pane_up" => Some(Action::ResizePaneUp),
             "resize_pane_down" => Some(Action::ResizePaneDown),
             "toggle_status_bar" => Some(Action::ToggleStatusBar),
+            "palette" => Some(Action::PaletteOpen),
             "palette_open" => Some(Action::PaletteOpen),
-            _ => None,
+            "toggle_recording" => Some(Action::ToggleRecording),
+            "zoom_pane" => Some(Action::Zoom),
+            "toggle_broadcast" => Some(Action::ToggleBroadcast),
+            "workspace_new" => Some(Action::WorkspaceNew),
+            "workspace_switch" => Some(Action::WorkspaceSwitch),
+            "workspace_rename" => Some(Action::WorkspaceRename),
+            "workspace_delete" => Some(Action::WorkspaceDelete),
+            "toggle_profiler" => Some(Action::ToggleProfiler),
+            _ => {
+                if let Some(n) = s.strip_prefix("plugin_") {
+                    n.parse::<usize>().ok().map(Action::PluginExecute)
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -210,12 +234,56 @@ impl Keybinds {
             Some((combo, action))
         })
     }
+
+    pub fn push(&mut self, entry: KeyBindEntry) {
+        self.entries.push(entry);
+    }
 }
 
 impl Default for Keybinds {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn parse_keybind_string(raw: &str) -> Option<KeyCombo> {
+    let parts: Vec<&str> = raw.split('+').map(|s| s.trim()).collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let mut ctrl = false;
+    let mut shift = false;
+    let mut alt = false;
+    let key = parts.last().unwrap().to_string();
+    for part in &parts[..parts.len() - 1] {
+        match part.to_lowercase().as_str() {
+            "ctrl" | "control" => ctrl = true,
+            "shift" => shift = true,
+            "alt" | "option" | "meta" => alt = true,
+            _ => {}
+        }
+    }
+    Some(KeyCombo {
+        key,
+        ctrl,
+        shift,
+        alt,
+    })
+}
+
+pub fn combo_to_string(combo: &KeyCombo) -> String {
+    let mut parts = Vec::new();
+    if combo.ctrl {
+        parts.push("Ctrl");
+    }
+    if combo.shift {
+        parts.push("Shift");
+    }
+    if combo.alt {
+        parts.push("Alt");
+    }
+    parts.push(&combo.key);
+    parts.join("+")
 }
 
 fn entry_to_combo(entry: &KeyBindEntry) -> Option<KeyCombo> {
@@ -516,6 +584,62 @@ fn default_entries() -> Vec<KeyBindEntry> {
             alt: false,
             action: "palette_open".into(),
         },
+        KeyBindEntry {
+            key: "z".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "zoom_pane".into(),
+        },
+        KeyBindEntry {
+            key: "b".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "toggle_broadcast".into(),
+        },
+        KeyBindEntry {
+            key: "n".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "workspace_new".into(),
+        },
+        KeyBindEntry {
+            key: "Tab".into(),
+            ctrl: true,
+            shift: false,
+            alt: true,
+            action: "workspace_switch".into(),
+        },
+        KeyBindEntry {
+            key: "r".into(),
+            ctrl: true,
+            shift: true,
+            alt: true,
+            action: "workspace_rename".into(),
+        },
+        KeyBindEntry {
+            key: "d".into(),
+            ctrl: true,
+            shift: true,
+            alt: true,
+            action: "workspace_delete".into(),
+        },
+        KeyBindEntry {
+            key: "F12".into(),
+            ctrl: false,
+            shift: false,
+            alt: false,
+            action: "toggle_profiler".into(),
+        },
+        KeyBindEntry {
+            key: "r".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "toggle_recording".into(),
+        },
     ]
 }
 
@@ -582,6 +706,8 @@ mod tests {
             "resize_pane_down",
             "toggle_status_bar",
             "palette_open",
+            "zoom_pane",
+            "toggle_broadcast",
         ];
         for &action_str in &actions {
             assert!(
@@ -603,8 +729,8 @@ mod tests {
     fn test_default_entries_count() {
         let kb = Keybinds::new();
         assert!(
-            kb.entries().len() >= 28,
-            "Expected at least 28 default bindings"
+            kb.entries().len() >= 30,
+            "Expected at least 30 default bindings"
         );
     }
 
@@ -823,5 +949,72 @@ mod tests {
         let kb = Keybinds::new();
         let action = kb.lookup(&Key::Character("s".into()), mods(true, true, false));
         assert_eq!(action, Some(Action::ToggleStatusBar));
+    }
+
+    #[test]
+    fn test_parse_keybind_string_ctrl_shift() {
+        let combo = parse_keybind_string("Ctrl+Shift+G").unwrap();
+        assert_eq!(combo.key, "G");
+        assert!(combo.ctrl);
+        assert!(combo.shift);
+        assert!(!combo.alt);
+    }
+
+    #[test]
+    fn test_parse_keybind_string_alt() {
+        let combo = parse_keybind_string("Alt+Tab").unwrap();
+        assert_eq!(combo.key, "Tab");
+        assert!(!combo.ctrl);
+        assert!(!combo.shift);
+        assert!(combo.alt);
+    }
+
+    #[test]
+    fn test_parse_keybind_string_solo_key() {
+        let combo = parse_keybind_string("F12").unwrap();
+        assert_eq!(combo.key, "F12");
+        assert!(!combo.ctrl);
+        assert!(!combo.shift);
+        assert!(!combo.alt);
+    }
+
+    #[test]
+    fn test_combo_to_string_roundtrip() {
+        let combo = KeyCombo {
+            key: "g".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+        };
+        let s = combo_to_string(&combo);
+        assert_eq!(s, "Ctrl+Shift+g");
+        let parsed = parse_keybind_string(&s).unwrap();
+        assert_eq!(parsed.key, "g");
+        assert!(parsed.ctrl);
+        assert!(parsed.shift);
+    }
+
+    #[test]
+    fn test_plugin_execute_from_str() {
+        assert_eq!(Action::from_str("plugin_0"), Some(Action::PluginExecute(0)));
+        assert_eq!(
+            Action::from_str("plugin_42"),
+            Some(Action::PluginExecute(42))
+        );
+        assert_eq!(Action::from_str("plugin_abc"), None);
+    }
+
+    #[test]
+    fn test_keybinds_push_and_lookup() {
+        let mut kb = Keybinds::new();
+        kb.push(KeyBindEntry {
+            key: "g".into(),
+            ctrl: true,
+            shift: true,
+            alt: false,
+            action: "plugin_0".into(),
+        });
+        let action = kb.lookup(&Key::Character("g".into()), mods(true, true, false));
+        assert_eq!(action, Some(Action::PluginExecute(0)));
     }
 }

@@ -4,12 +4,16 @@ const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../../../assets/fonts/JetBrai
 const JETBRAINS_MONO_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf");
 
+const DOGICA_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/dogica.ttf");
+const DOGICA_BOLD: &[u8] = include_bytes!("../../../assets/fonts/dogicabold.ttf");
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlyphKey {
     pub ch: char,
     pub font_size_bits: u32,
     pub bold: bool,
     pub italic: bool,
+    pub font_index: u8,
 }
 
 impl GlyphKey {
@@ -19,6 +23,23 @@ impl GlyphKey {
             font_size_bits: font_size.to_bits(),
             bold,
             italic,
+            font_index: 0,
+        }
+    }
+
+    pub fn new_with_index(
+        ch: char,
+        font_size: f32,
+        bold: bool,
+        italic: bool,
+        font_index: u8,
+    ) -> Self {
+        Self {
+            ch,
+            font_size_bits: font_size.to_bits(),
+            bold,
+            italic,
+            font_index,
         }
     }
 }
@@ -30,6 +51,7 @@ pub struct ShapedGlyphKey {
     pub font_size_bits: u32,
     pub bold: bool,
     pub italic: bool,
+    pub font_index: u8,
 }
 
 pub struct GlyphBitmap {
@@ -42,6 +64,7 @@ pub struct GlyphBitmap {
 }
 
 /// One glyph returned from a rustybuzz shaping run.
+#[derive(Clone, Copy)]
 pub struct ShapedGlyph {
     pub glyph_id: u16,
     /// Horizontal advance in pixels at the requested font size.
@@ -52,6 +75,8 @@ pub struct ShapedGlyph {
     pub y_offset: f32,
     /// Original cluster index (byte offset in input string).
     pub cluster: u32,
+    /// Which font family (0 = primary, 1+ = fallback).
+    pub font_index: u8,
 }
 
 fn normalize_family(family: &str) -> String {
@@ -185,79 +210,22 @@ fn find_font_bytes(family_key: &str) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     Some((reg_bytes, bold_bytes, italic_bytes))
 }
 
-pub struct TextShaping {
-    font_regular: fontdue::Font,
-    font_bold: fontdue::Font,
-    font_italic: fontdue::Font,
+pub struct FontFamily {
+    regular: fontdue::Font,
+    bold: fontdue::Font,
+    italic: fontdue::Font,
     rb_regular: rustybuzz::Face<'static>,
     rb_bold: rustybuzz::Face<'static>,
     rb_italic: rustybuzz::Face<'static>,
+    font_data: &'static [u8],
 }
 
-impl TextShaping {
-    pub fn new() -> Self {
-        Self::from_static(
-            JETBRAINS_MONO_REGULAR,
-            JETBRAINS_MONO_BOLD,
-            JETBRAINS_MONO_ITALIC,
-        )
-    }
-
-    /// Load the requested font family from system fonts, falling back to embedded
-    /// JetBrains Mono if the family is empty, "monospace", or not found.
-    pub fn with_family(family: &str) -> Self {
-        let key = normalize_family(family);
-        if key.is_empty() || key == "monospace" || key == "jetbrainsmono" {
-            return Self::new();
-        }
-        match find_font_bytes(&key) {
-            Some((reg, bold, italic)) => {
-                tracing::info!("Loaded font family '{family}' from system");
-                Self::from_owned(reg, bold, italic)
-            }
-            None => {
-                tracing::warn!("Font family '{family}' not found — using embedded JetBrains Mono");
-                Self::new()
-            }
-        }
-    }
-
-    fn from_static(reg: &'static [u8], bold: &'static [u8], italic: &'static [u8]) -> Self {
-        let settings = fontdue::FontSettings::default();
-        let font_regular =
-            fontdue::Font::from_bytes(reg, settings).expect("font Regular bytes invalid");
-        let font_bold = fontdue::Font::from_bytes(bold, settings).expect("font Bold bytes invalid");
-        let font_italic =
-            fontdue::Font::from_bytes(italic, settings).expect("font Italic bytes invalid");
-        let rb_regular =
-            rustybuzz::Face::from_slice(reg, 0).expect("rustybuzz: font Regular invalid");
-        let rb_bold = rustybuzz::Face::from_slice(bold, 0).expect("rustybuzz: font Bold invalid");
-        let rb_italic =
-            rustybuzz::Face::from_slice(italic, 0).expect("rustybuzz: font Italic invalid");
-        Self {
-            font_regular,
-            font_bold,
-            font_italic,
-            rb_regular,
-            rb_bold,
-            rb_italic,
-        }
-    }
-
-    fn from_owned(reg: Vec<u8>, bold: Vec<u8>, italic: Vec<u8>) -> Self {
-        // Leak so rustybuzz::Face can hold a 'static reference.
-        // Each font file is ~200–400 KB; leaking once at startup is acceptable.
-        let reg: &'static [u8] = Box::leak(reg.into_boxed_slice());
-        let bold: &'static [u8] = Box::leak(bold.into_boxed_slice());
-        let italic: &'static [u8] = Box::leak(italic.into_boxed_slice());
-        Self::from_static(reg, bold, italic)
-    }
-
+impl FontFamily {
     fn font(&self, bold: bool, italic: bool) -> &fontdue::Font {
         match (bold, italic) {
-            (true, _) => &self.font_bold,
-            (_, true) => &self.font_italic,
-            _ => &self.font_regular,
+            (true, _) => &self.bold,
+            (_, true) => &self.italic,
+            _ => &self.regular,
         }
     }
 
@@ -269,9 +237,180 @@ impl TextShaping {
         }
     }
 
+    fn has_glyph(&self, ch: char) -> bool {
+        self.regular.lookup_glyph_index(ch) != 0
+    }
+
+    pub fn has_color_emoji(&self, ch: char) -> bool {
+        let face = ttf_parser::Face::parse(self.font_data, 0);
+        match face {
+            Ok(face) => {
+                let gid = face.glyph_index(ch);
+                gid.map_or(false, |gid| face.glyph_raster_image(gid, u16::MAX).is_some())
+            }
+            Err(_) => false,
+        }
+    }
+
+    pub fn extract_emoji_bitmap(
+        &self,
+        ch: char,
+        target_size_px: f32,
+    ) -> Option<(u32, u32, Vec<u8>)> {
+        let face = ttf_parser::Face::parse(self.font_data, 0).ok()?;
+        let gid = face.glyph_index(ch)?;
+        let image_data = face.glyph_raster_image(gid, u16::MAX)?;
+        let img = image::load_from_memory(image_data.data).ok()?;
+        let target = target_size_px as u32;
+        if img.width() == target && img.height() == target {
+            Some((target, target, img.to_rgba8().into_raw()))
+        } else {
+            let resized =
+                image::imageops::resize(&img, target, target, image::imageops::FilterType::Lanczos3);
+            Some((target, target, resized.into_raw()))
+        }
+    }
+}
+
+pub struct TextShaping {
+    families: Vec<FontFamily>,
+}
+
+impl TextShaping {
+    pub fn new() -> Self {
+        Self {
+            families: vec![Self::embedded_family()],
+        }
+    }
+
+    pub fn with_family(family: &str) -> Self {
+        Self::with_families(&[family.to_string()])
+    }
+
+    pub fn with_families(families: &[String]) -> Self {
+        let mut loaded: Vec<FontFamily> = Vec::with_capacity(families.len());
+
+        for (idx, family) in families.iter().enumerate() {
+            let key = normalize_family(family);
+            if key == "dogica" || key == "dogicapixel" {
+                loaded.push(Self::embedded_dogica_family());
+                continue;
+            }
+            if key == "jetbrainsmono" || key == "jetbrains" {
+                loaded.push(Self::embedded_family());
+                continue;
+            }
+            if idx == 0 && (key.is_empty() || key == "monospace") {
+                tracing::info!("'{family}' → default Dogica");
+                loaded.push(Self::embedded_dogica_family());
+                continue;
+            }
+            match find_font_bytes(&key) {
+                Some((reg, bold, italic)) => {
+                    tracing::info!("Loaded font family '{family}' from system");
+                    loaded.push(Self::own_family(reg, bold, italic));
+                }
+                None => {
+                    if idx == 0 {
+                        tracing::warn!(
+                            "Font family '{family}' not found — using embedded Dogica"
+                        );
+                        loaded.push(Self::embedded_dogica_family());
+                    } else {
+                        tracing::warn!("Fallback font family '{family}' not found — skipping");
+                    }
+                }
+            }
+        }
+
+        if loaded.is_empty() {
+            loaded.push(Self::embedded_family());
+        }
+
+        Self { families: loaded }
+    }
+
+    fn embedded_family() -> FontFamily {
+        let settings = fontdue::FontSettings::default();
+        FontFamily {
+            regular: fontdue::Font::from_bytes(JETBRAINS_MONO_REGULAR, settings)
+                .expect("font Regular bytes invalid"),
+            bold: fontdue::Font::from_bytes(JETBRAINS_MONO_BOLD, settings)
+                .expect("font Bold bytes invalid"),
+            italic: fontdue::Font::from_bytes(JETBRAINS_MONO_ITALIC, settings)
+                .expect("font Italic bytes invalid"),
+            rb_regular: rustybuzz::Face::from_slice(JETBRAINS_MONO_REGULAR, 0)
+                .expect("rustybuzz: font Regular invalid"),
+            rb_bold: rustybuzz::Face::from_slice(JETBRAINS_MONO_BOLD, 0)
+                .expect("rustybuzz: font Bold invalid"),
+            rb_italic: rustybuzz::Face::from_slice(JETBRAINS_MONO_ITALIC, 0)
+                .expect("rustybuzz: font Italic invalid"),
+            font_data: JETBRAINS_MONO_REGULAR,
+        }
+    }
+
+    fn embedded_dogica_family() -> FontFamily {
+        let settings = fontdue::FontSettings::default();
+        FontFamily {
+            regular: fontdue::Font::from_bytes(DOGICA_REGULAR, settings)
+                .expect("Dogica Regular font bytes invalid"),
+            bold: fontdue::Font::from_bytes(DOGICA_BOLD, settings)
+                .expect("Dogica Bold font bytes invalid"),
+            italic: fontdue::Font::from_bytes(DOGICA_REGULAR, settings)
+                .expect("Dogica Italic(regular) font bytes invalid"),
+            rb_regular: rustybuzz::Face::from_slice(DOGICA_REGULAR, 0)
+                .expect("rustybuzz: Dogica Regular invalid"),
+            rb_bold: rustybuzz::Face::from_slice(DOGICA_BOLD, 0)
+                .expect("rustybuzz: Dogica Bold invalid"),
+            rb_italic: rustybuzz::Face::from_slice(DOGICA_REGULAR, 0)
+                .expect("rustybuzz: Dogica Italic(regular) invalid"),
+            font_data: DOGICA_REGULAR,
+        }
+    }
+
+    fn own_family(reg: Vec<u8>, bold: Vec<u8>, italic: Vec<u8>) -> FontFamily {
+        let reg: &'static [u8] = Box::leak(reg.into_boxed_slice());
+        let bold: &'static [u8] = Box::leak(bold.into_boxed_slice());
+        let italic: &'static [u8] = Box::leak(italic.into_boxed_slice());
+        let settings = fontdue::FontSettings::default();
+        FontFamily {
+            regular: fontdue::Font::from_bytes(reg, settings).expect("font Regular bytes invalid"),
+            bold: fontdue::Font::from_bytes(bold, settings).expect("font Bold bytes invalid"),
+            italic: fontdue::Font::from_bytes(italic, settings).expect("font Italic bytes invalid"),
+            rb_regular: rustybuzz::Face::from_slice(reg, 0)
+                .expect("rustybuzz: font Regular invalid"),
+            rb_bold: rustybuzz::Face::from_slice(bold, 0).expect("rustybuzz: font Bold invalid"),
+            rb_italic: rustybuzz::Face::from_slice(italic, 0)
+                .expect("rustybuzz: font Italic invalid"),
+            font_data: reg,
+        }
+    }
+
+    fn font(&self, family_idx: usize, bold: bool, italic: bool) -> &fontdue::Font {
+        self.families[family_idx].font(bold, italic)
+    }
+
+    fn rb_face(&self, family_idx: usize, bold: bool, italic: bool) -> &rustybuzz::Face<'static> {
+        self.families[family_idx].rb_face(bold, italic)
+    }
+
+    pub fn family_count(&self) -> usize {
+        self.families.len()
+    }
+
+    pub fn glyph_font_index(&self, ch: char) -> u8 {
+        for (idx, family) in self.families.iter().enumerate() {
+            if family.has_glyph(ch) {
+                return idx as u8;
+            }
+        }
+        0
+    }
+
     pub fn rasterize(&self, key: GlyphKey) -> GlyphBitmap {
         let font_size = f32::from_bits(key.font_size_bits);
-        let font = self.font(key.bold, key.italic);
+        let family_idx = key.font_index as usize;
+        let font = self.font(family_idx, key.bold, key.italic);
         let (metrics, data) = font.rasterize(key.ch, font_size);
         GlyphBitmap {
             width: metrics.width as u32,
@@ -283,15 +422,16 @@ impl TextShaping {
         }
     }
 
-    /// Rasterize by glyph ID (for ligature glyphs from rustybuzz shaping).
     pub fn rasterize_glyph_id(
         &self,
         glyph_id: u16,
         font_size: f32,
         bold: bool,
         italic: bool,
+        font_index: u8,
     ) -> GlyphBitmap {
-        let font = self.font(bold, italic);
+        let family_idx = font_index as usize;
+        let font = self.font(family_idx, bold, italic);
         let (metrics, data) = font.rasterize_indexed(glyph_id, font_size);
         GlyphBitmap {
             width: metrics.width as u32,
@@ -303,19 +443,35 @@ impl TextShaping {
         }
     }
 
-    /// Shape a run of text using HarfBuzz (via rustybuzz). Returns shaped glyphs
-    /// with glyph IDs and pixel-accurate advances at the given font size.
-    pub fn shape_run(
+    pub fn has_color_emoji_in_family(&self, family_idx: usize, ch: char) -> bool {
+        self.families
+            .get(family_idx)
+            .map_or(false, |f| f.has_color_emoji(ch))
+    }
+
+    pub fn extract_emoji_bitmap(
+        &self,
+        family_idx: usize,
+        ch: char,
+        target_px: u32,
+    ) -> Option<(u32, u32, Vec<u8>)> {
+        self.families
+            .get(family_idx)?
+            .extract_emoji_bitmap(ch, target_px as f32)
+    }
+
+    fn shape_run_single(
         &self,
         text: &str,
         font_size: f32,
         bold: bool,
         italic: bool,
+        family_idx: u8,
     ) -> Vec<ShapedGlyph> {
         if text.is_empty() {
             return Vec::new();
         }
-        let face = self.rb_face(bold, italic);
+        let face = self.rb_face(family_idx as usize, bold, italic);
         let units_per_em = face.units_per_em() as f32;
         let scale = font_size / units_per_em;
 
@@ -323,8 +479,6 @@ impl TextShaping {
         buffer.set_direction(rustybuzz::Direction::LeftToRight);
         buffer.push_str(text);
 
-        // Explicitly enable contextual alternates (calt) and standard ligatures (liga).
-        // rustybuzz needs these named for JetBrains Mono arrow sequences like -> and =>.
         let features: Vec<rustybuzz::Feature> = ["calt", "liga", "clig"]
             .iter()
             .filter_map(|s| s.parse().ok())
@@ -342,12 +496,143 @@ impl TextShaping {
                 x_offset: gp.x_offset as f32 * scale,
                 y_offset: gp.y_offset as f32 * scale,
                 cluster: gi.cluster,
+                font_index: family_idx,
             })
             .collect()
     }
 
+    pub fn shape_run(
+        &self,
+        text: &str,
+        font_size: f32,
+        bold: bool,
+        italic: bool,
+    ) -> Vec<ShapedGlyph> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+
+        if self.families.len() == 1 {
+            return self.shape_run_single(text, font_size, bold, italic, 0);
+        }
+
+        let primary = self.shape_run_single(text, font_size, bold, italic, 0);
+        let num_primary = primary.len();
+
+        let char_count = text.chars().count();
+        if char_count == 0 {
+            return primary;
+        }
+
+        let mut char_indices: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
+        char_indices.push(text.len());
+
+        let cluster_to_char = |cluster: u32| -> Option<usize> {
+            if cluster as usize >= char_indices.len() {
+                return None;
+            }
+            Some(char_indices[cluster as usize])
+        };
+
+        let mut result: Vec<ShapedGlyph> = Vec::with_capacity(num_primary);
+        let mut i = 0;
+
+        while i < num_primary {
+            let gi = primary[i].glyph_id;
+            let cluster = primary[i].cluster;
+
+            if gi != 0
+                || self.families[0].has_glyph(
+                    text[cluster_to_char(cluster)
+                        .unwrap_or(cluster as usize)
+                        .min(text.len().saturating_sub(1))..]
+                        .chars()
+                        .next()
+                        .unwrap_or('\0'),
+                )
+            {
+                result.push(primary[i]);
+                i += 1;
+                continue;
+            }
+
+            let start_cluster = cluster;
+            let start_byte = cluster_to_char(start_cluster)
+                .unwrap_or(start_cluster as usize)
+                .min(text.len());
+            let mut end_cluster = start_cluster;
+            let mut j = i;
+
+            while j < num_primary {
+                let gj = primary[j].glyph_id;
+                let cj = primary[j].cluster;
+                if gj != 0
+                    && self.families[0].has_glyph(
+                        text[cluster_to_char(cj)
+                            .unwrap_or(cj as usize)
+                            .min(text.len().saturating_sub(1))..]
+                            .chars()
+                            .next()
+                            .unwrap_or('\0'),
+                    )
+                {
+                    break;
+                }
+                end_cluster = cj;
+                j += 1;
+            }
+
+            let end_byte = cluster_to_char(end_cluster)
+                .map(|b| {
+                    let next_idx = char_indices
+                        .iter()
+                        .position(|&x| x > b)
+                        .unwrap_or(char_indices.len());
+                    if next_idx < char_indices.len() {
+                        char_indices[next_idx]
+                    } else {
+                        text.len()
+                    }
+                })
+                .unwrap_or(text.len());
+
+            let sub = &text[start_byte..end_byte.min(text.len())];
+
+            let mut found = false;
+            for fb_idx in 1..self.families.len() {
+                let first_ch = sub.chars().next().unwrap_or('\0');
+                if !self.families[fb_idx].has_glyph(first_ch) {
+                    continue;
+                }
+                let fb_glyphs = self.shape_run_single(sub, font_size, bold, italic, fb_idx as u8);
+                for g in &fb_glyphs {
+                    result.push(ShapedGlyph {
+                        glyph_id: g.glyph_id,
+                        x_advance: g.x_advance,
+                        x_offset: g.x_offset,
+                        y_offset: g.y_offset,
+                        cluster: start_cluster + g.cluster,
+                        font_index: fb_idx as u8,
+                    });
+                }
+                found = true;
+                break;
+            }
+
+            if !found {
+                for item in primary.iter().take(j).skip(i) {
+                    result.push(*item);
+                }
+            }
+
+            i = j;
+        }
+
+        result
+    }
+
     pub fn cell_metrics(&self, font_size: f32) -> (f32, f32) {
-        let metrics = self.font_regular.metrics('M', font_size);
+        let metrics = self.families[0].regular.metrics('M', font_size);
         let cell_w = metrics.advance_width;
         let cell_h = font_size * 1.2;
         (cell_w, cell_h)
@@ -444,21 +729,12 @@ mod tests {
     }
 
     #[test]
-    fn shape_run_single_char() {
-        let shaping = TextShaping::new();
-        let glyphs = shaping.shape_run("A", 14.0, false, false);
-        assert_eq!(glyphs.len(), 1);
-        assert!(glyphs[0].glyph_id > 0, "glyph_id for 'A' must be nonzero");
-    }
-
-    #[test]
     fn rasterize_glyph_id_matches_char() {
         let shaping = TextShaping::new();
-        // Shape 'A' to get its glyph_id, then rasterize by ID.
         let shaped = shaping.shape_run("A", 14.0, false, false);
         assert!(!shaped.is_empty());
         let glyph_id = shaped[0].glyph_id;
-        let by_id = shaping.rasterize_glyph_id(glyph_id, 14.0, false, false);
+        let by_id = shaping.rasterize_glyph_id(glyph_id, 14.0, false, false, 0);
         let by_char = shaping.rasterize(GlyphKey::new('A', 14.0, false, false));
         assert_eq!(
             by_id.width, by_char.width,
@@ -468,5 +744,54 @@ mod tests {
             by_id.height, by_char.height,
             "glyph_id and char rasterize to same height"
         );
+    }
+
+    #[test]
+    fn glyph_key_font_index_defaults_to_zero() {
+        let key = GlyphKey::new('A', 14.0, false, false);
+        assert_eq!(key.font_index, 0);
+    }
+
+    #[test]
+    fn glyph_key_with_index() {
+        let key = GlyphKey::new_with_index('A', 14.0, false, false, 2);
+        assert_eq!(key.font_index, 2);
+        assert_eq!(key.ch, 'A');
+    }
+
+    #[test]
+    fn shaped_glyph_has_font_index_zero_for_primary() {
+        let shaping = TextShaping::new();
+        let glyphs = shaping.shape_run("Hello", 14.0, false, false);
+        for g in &glyphs {
+            assert_eq!(
+                g.font_index, 0,
+                "all glyphs should use primary font (index 0)"
+            );
+        }
+    }
+
+    #[test]
+    fn glyph_font_index_ascii_is_zero() {
+        let shaping = TextShaping::new();
+        assert_eq!(shaping.glyph_font_index('A'), 0);
+        assert_eq!(shaping.glyph_font_index('z'), 0);
+        assert_eq!(shaping.glyph_font_index('9'), 0);
+        assert_eq!(shaping.glyph_font_index(' '), 0);
+    }
+
+    #[test]
+    fn family_count_is_one_for_default() {
+        let shaping = TextShaping::new();
+        assert_eq!(shaping.family_count(), 1);
+    }
+
+    #[test]
+    fn shape_run_primary_font_index() {
+        let shaping = TextShaping::new();
+        let glyphs = shaping.shape_run("Abc", 14.0, false, false);
+        for g in &glyphs {
+            assert_eq!(g.font_index, 0);
+        }
     }
 }

@@ -64,7 +64,9 @@ fn extract_osc7_paths(bytes: &[u8]) -> Vec<String> {
 /// Scan `bytes` for OSC 133 sequences and return the mark kinds found.
 /// OSC 133 format: `ESC ] 133 ; <kind>[;<data>] BEL|ST`
 /// Kinds: A=PromptStart, B=CommandStart, C/D=CommandEnd.
-fn extract_osc133_marks(bytes: &[u8]) -> Vec<synapse_ui::pane::MarkKind> {
+/// For D, the data field is the exit code.
+/// Returns (MarkKind, Optional exit_code).
+fn extract_osc133_marks(bytes: &[u8]) -> Vec<(synapse_ui::pane::MarkKind, Option<i32>)> {
     use synapse_ui::pane::MarkKind;
     let mut results = Vec::new();
     let mut i = 0;
@@ -94,15 +96,28 @@ fn extract_osc133_marks(bytes: &[u8]) -> Vec<synapse_ui::pane::MarkKind> {
             if let Some((term_pos, next_i)) = end {
                 if term_pos > start {
                     let kind_byte = bytes[start];
-                    let mark = match kind_byte {
-                        b'A' => Some(MarkKind::PromptStart),
-                        b'B' => Some(MarkKind::CommandStart),
-                        b'C' | b'D' => Some(MarkKind::CommandEnd),
-                        _ => None,
+                    let (kind, exit_code) = match kind_byte {
+                        b'A' => (MarkKind::PromptStart, None),
+                        b'B' => (MarkKind::CommandStart, None),
+                        b'C' => (MarkKind::CommandEnd, None),
+                        b'D' => {
+                            let code = if term_pos > start + 2 && bytes[start + 1] == b';' {
+                                let code_start = start + 2;
+                                let code_slice = &bytes[code_start..term_pos];
+                                std::str::from_utf8(code_slice)
+                                    .ok()
+                                    .and_then(|s| s.parse::<i32>().ok())
+                            } else {
+                                None
+                            };
+                            (MarkKind::CommandEnd, code)
+                        }
+                        _ => {
+                            i = next_i;
+                            continue;
+                        }
                     };
-                    if let Some(k) = mark {
-                        results.push(k);
-                    }
+                    results.push((kind, exit_code));
                 }
                 i = next_i;
                 continue;
@@ -261,6 +276,7 @@ pub fn create_pane_full(
         _ => std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()),
     };
     let mut cmd = CommandBuilder::new(&shell);
+    cmd.env("SYNAPSE_INSIDE", "true");
     if shell_override.is_some() {
         for arg in shell_args {
             cmd.arg(arg);
@@ -304,6 +320,7 @@ pub fn create_pane_full(
     let term = Arc::new(Mutex::new(term));
 
     let dirty = Arc::new(AtomicBool::new(false));
+    let frozen = Arc::new(AtomicBool::new(false));
 
     // KKP: shared flags between reader thread and main thread.
     let kitty_flags = Arc::new(AtomicU8::new(0));
@@ -313,10 +330,13 @@ pub fn create_pane_full(
     let (osc7_tx, osc7_rx) = mpsc::sync_channel::<String>(16);
     let (osc133_tx, osc133_rx) = mpsc::sync_channel::<synapse_ui::pane::SemanticMark>(64);
     let (osc9_tx, osc9_rx) = mpsc::sync_channel::<String>(32);
+    let (sixel_tx, sixel_rx) = mpsc::sync_channel::<Vec<u8>>(64);
+    let (iterm2_tx, iterm2_rx) = mpsc::sync_channel::<String>(64);
 
     // 7. Spin up the reader thread: PTY bytes -> VTE parser -> Term handler.
     let term_reader = Arc::clone(&term);
     let dirty_reader = Arc::clone(&dirty);
+    let frozen_reader = Arc::clone(&frozen);
     // Clones needed inside the reader thread.
     let pty_writer_kkp = Arc::new(Mutex::new(pty_writer));
     let pty_writer_main = Arc::clone(&pty_writer_kkp);
@@ -337,6 +357,17 @@ pub fn create_pane_full(
                     }
                     Ok(n) => {
                         staging.extend_from_slice(&buf[..n]);
+
+                        // When frozen, pause processing but keep reading into
+                        // staging so we can detect bell (\x07) for auto-unfreeze.
+                        let is_frozen = frozen_reader.load(Ordering::Acquire);
+                        if is_frozen && staging.contains(&0x07) {
+                            frozen_reader.store(false, Ordering::Release);
+                        }
+                        if frozen_reader.load(Ordering::Acquire) {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            continue;
+                        }
 
                         // Pre-scan: detect KKP queries/push and APC image sequences
                         // before passing bytes to alacritty's VTE processor.
@@ -362,18 +393,44 @@ pub fn create_pane_full(
                         for path in extract_osc7_paths(&staging) {
                             let _ = osc7_tx.try_send(path);
                         }
-                        for kind in extract_osc133_marks(&staging) {
+                        for (kind, exit_code) in extract_osc133_marks(&staging) {
                             let _ = osc133_tx.try_send(synapse_ui::pane::SemanticMark {
                                 kind,
                                 history_snapshot: 0, // corrected in poll_events under term lock
+                                exit_code,
+                                command_text: None,
                             });
                         }
                         for notif in extract_osc9_notifications(&staging) {
                             let _ = osc9_tx.try_send(notif);
                         }
 
+                        // Extract and strip Sixel DCS sequences before VTE processes them.
+                        let sixel_seqs = image_protocol::process_sixel_sequences(&mut staging);
+                        for seq in sixel_seqs {
+                            let _ = sixel_tx.try_send(seq);
+                        }
+
+                        // Extract and strip iTerm2 OSC 1337 inline images.
+                        for img in image_protocol::process_iterm2_sequences(&mut staging) {
+                            let encoded = format!(
+                                "{},{},{}:{}",
+                                img.display_width,
+                                img.display_height,
+                                img.preserve_aspect_ratio as u8,
+                                img.data
+                            );
+                            let _ = iterm2_tx.try_send(encoded);
+                        }
+
                         match term_reader.lock() {
                             Ok(mut term) => {
+                                // Push to recording if active (before VTE processing)
+                                if let Some(rec) = crate::record::RECORDING.get() {
+                                    if rec.is_recording() {
+                                        rec.push_event(&staging);
+                                    }
+                                }
                                 for &byte in &staging {
                                     processor.advance(&mut *term, byte);
                                 }
@@ -398,6 +455,7 @@ pub fn create_pane_full(
         pty_master,
         event_rx,
         dirty,
+        frozen,
         cols,
         rows,
         kitty_flags,
@@ -407,11 +465,30 @@ pub fn create_pane_full(
         osc7_rx,
         osc133_rx,
         osc9_rx,
+        sixel_rx,
+        iterm2_rx,
     ))
 }
 
 pub fn find_pane(panes: &[Pane], id: PaneId) -> Option<&Pane> {
     panes.iter().find(|p| p.id == id)
+}
+
+pub fn apply_tab_freeze(panes: &[Pane], tab_bar: &TabBar, freeze_bg: bool) {
+    if tab_bar.tabs.is_empty() {
+        return;
+    }
+    let active_pane_ids: std::collections::HashSet<PaneId> = tab_bar
+        .active_tab()
+        .pane_tree
+        .all_panes()
+        .into_iter()
+        .collect();
+
+    for pane in panes {
+        let should_freeze = freeze_bg && !active_pane_ids.contains(&pane.id);
+        pane.frozen.store(should_freeze, Ordering::Release);
+    }
 }
 
 pub fn active_pane_mut<'a>(panes: &'a mut [Pane], tab_bar: &TabBar) -> &'a mut Pane {
@@ -420,6 +497,20 @@ pub fn active_pane_mut<'a>(panes: &'a mut [Pane], tab_bar: &TabBar) -> &'a mut P
         .iter_mut()
         .find(|p| p.id == active_id)
         .expect("Active pane not found")
+}
+
+pub fn write_to_panes(panes: &[Pane], tab_bar: &TabBar, broadcasting: bool, data: &[u8]) {
+    if broadcasting {
+        let pane_ids = tab_bar.active_tab().pane_tree.all_panes();
+        for pane in panes.iter().filter(|p| pane_ids.contains(&p.id)) {
+            pane.write_to_pty(data);
+        }
+    } else {
+        let active_id = tab_bar.active_tab().active_pane;
+        if let Some(pane) = find_pane(panes, active_id) {
+            pane.write_to_pty(data);
+        }
+    }
 }
 
 pub fn adjacent_pane(
@@ -613,7 +704,8 @@ impl AppCore {
 
         // Resize panes across ALL tabs — background tabs keep correct PTY dimensions.
         let all_layouts: Vec<(synapse_ui::PaneId, synapse_ui::PaneRect)> = self
-            .tab_bar
+            .workspaces
+            .active_tab_bar()
             .tabs
             .iter()
             .flat_map(|tab| tab.pane_tree.get_layout(pane_rect))
@@ -622,7 +714,12 @@ impl AppCore {
         for (pane_id, rect) in &all_layouts {
             let new_cols = ((rect.w - margin * 2.0) / cell_w).max(1.0) as usize;
             let new_rows = ((rect.h - margin * 2.0) / cell_h).max(1.0) as usize;
-            if let Some(pane) = self.panes.iter_mut().find(|p| p.id == *pane_id) {
+            if let Some(pane) = self
+                .workspaces
+                .active_panes_mut()
+                .iter_mut()
+                .find(|p| p.id == *pane_id)
+            {
                 pane.cols = new_cols;
                 pane.rows = new_rows;
                 if let Ok(mut term) = pane.term.lock() {
@@ -671,7 +768,7 @@ mod tests {
         let bytes = b"\x1b]133;A\x07";
         let marks = extract_osc133_marks(bytes);
         assert_eq!(marks.len(), 1);
-        assert_eq!(marks[0], MarkKind::PromptStart);
+        assert_eq!(marks[0], (MarkKind::PromptStart, None));
     }
 
     #[test]
@@ -679,7 +776,7 @@ mod tests {
         let bytes = b"\x1b]133;B\x07";
         let marks = extract_osc133_marks(bytes);
         assert_eq!(marks.len(), 1);
-        assert_eq!(marks[0], MarkKind::CommandStart);
+        assert_eq!(marks[0], (MarkKind::CommandStart, None));
     }
 
     #[test]
@@ -687,7 +784,7 @@ mod tests {
         let bytes = b"\x1b]133;C\x07";
         let marks = extract_osc133_marks(bytes);
         assert_eq!(marks.len(), 1);
-        assert_eq!(marks[0], MarkKind::CommandEnd);
+        assert_eq!(marks[0], (MarkKind::CommandEnd, None));
     }
 
     #[test]
@@ -696,7 +793,7 @@ mod tests {
         let bytes = b"\x1b]133;D;1\x07";
         let marks = extract_osc133_marks(bytes);
         assert_eq!(marks.len(), 1);
-        assert_eq!(marks[0], MarkKind::CommandEnd);
+        assert_eq!(marks[0], (MarkKind::CommandEnd, Some(1)));
     }
 
     #[test]
@@ -705,7 +802,7 @@ mod tests {
         let bytes = b"\x1b]133;A\x1b\\";
         let marks = extract_osc133_marks(bytes);
         assert_eq!(marks.len(), 1);
-        assert_eq!(marks[0], MarkKind::PromptStart);
+        assert_eq!(marks[0], (MarkKind::PromptStart, None));
     }
 
     #[test]
@@ -713,8 +810,8 @@ mod tests {
         let bytes = b"\x1b]133;A\x07some output\x1b]133;B\x07";
         let marks = extract_osc133_marks(bytes);
         assert_eq!(marks.len(), 2);
-        assert_eq!(marks[0], MarkKind::PromptStart);
-        assert_eq!(marks[1], MarkKind::CommandStart);
+        assert_eq!(marks[0], (MarkKind::PromptStart, None));
+        assert_eq!(marks[1], (MarkKind::CommandStart, None));
     }
 
     #[test]

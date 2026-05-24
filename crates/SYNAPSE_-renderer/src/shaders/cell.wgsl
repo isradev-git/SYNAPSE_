@@ -3,6 +3,7 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
     @location(1) @interpolate(flat) fg_color: vec4<f32>,
     @location(2) @interpolate(flat) bg_color: vec4<f32>,
+    @location(3) @interpolate(flat) is_emoji: u32,
 }
 
 struct ScreenUniform {
@@ -13,11 +14,6 @@ struct ScreenUniform {
 @group(0) @binding(1) var atlas_sampler: sampler;
 @group(1) @binding(0) var<uniform> screen: ScreenUniform;
 
-// TriangleStrip with 4 vertices needs Z-order: TL, TR, BL, BR.
-// That produces two triangles (TL,TR,BL) and (TR,BL,BR) covering the quad.
-// The previous CW order (TL,TR,BR,BL) produced a bowtie — two crossed
-// triangles that mirrored half the glyph and made cached UV regions
-// from other glyphs visible (atlas-leak / pixelated text).
 fn corner_for_index(idx: u32) -> vec2<f32> {
     if (idx == 0u) { return vec2(0.0, 0.0); } // top-left
     if (idx == 1u) { return vec2(1.0, 0.0); } // top-right
@@ -33,6 +29,7 @@ fn vs_main(
     @location(2) uv_rect: vec4<f32>,
     @location(3) fg_color: vec4<f32>,
     @location(4) bg_color: vec4<f32>,
+    @location(5) is_emoji: u32,
 ) -> VertexOutput {
     let corner = corner_for_index(vertex_index);
 
@@ -50,16 +47,20 @@ fn vs_main(
     out.uv = uv_top_left + corner * uv_size;
     out.fg_color = fg_color;
     out.bg_color = bg_color;
+    out.is_emoji = is_emoji;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // atlas stores glyph coverage in the alpha channel (RGBA where rgb=1,1,1
-    // and a = coverage). The pipeline uses PREMULTIPLIED_ALPHA_BLENDING, so
-    // the output must be premultiplied: rgb already multiplied by a.
-    let coverage = textureSample(atlas, atlas_sampler, in.uv).a;
+    let sampled = textureSample(atlas, atlas_sampler, in.uv);
+    // Color emoji: atlas stores premultiplied RGBA, output directly.
+    if (in.is_emoji != 0u) {
+        return sampled;
+    }
+    // Atlas stores regular glyphs as (1, 1, 1, coverage).
     // Composite fg over bg manually, then premultiply.
+    let coverage = sampled.a;
     let composed_rgb = mix(in.bg_color.rgb * in.bg_color.a, in.fg_color.rgb, coverage);
     let composed_a = mix(in.bg_color.a, 1.0, coverage);
     return vec4(composed_rgb, composed_a);

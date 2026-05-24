@@ -10,6 +10,8 @@ pub struct PaletteState {
     pub selected: usize,
     pub pending_action: Option<Action>,
     pub pending_theme_reload: bool,
+    #[allow(dead_code)]
+    plugins: Vec<synapse_config::PluginCommand>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +39,12 @@ impl PaletteState {
             selected: 0,
             pending_action: None,
             pending_theme_reload: false,
+            plugins: Vec::new(),
         }
+    }
+
+    pub fn set_plugins(&mut self, plugins: Vec<synapse_config::PluginCommand>) {
+        self.plugins = plugins;
     }
 
     pub fn toggle(&mut self, tab_bar: &TabBar) {
@@ -45,7 +52,7 @@ impl PaletteState {
         if self.active {
             self.query.clear();
             self.selected = 0;
-            self.results = build_palette_items(tab_bar);
+            self.results = build_palette_items(tab_bar, &self.plugins);
         }
     }
 
@@ -104,7 +111,10 @@ macro_rules! theme_item {
     };
 }
 
-fn build_palette_items(tab_bar: &TabBar) -> Vec<PaletteItem> {
+fn build_palette_items(
+    tab_bar: &TabBar,
+    plugins: &[synapse_config::PluginCommand],
+) -> Vec<PaletteItem> {
     let mut items = vec![
         action_item!("New Tab", Some("Ctrl+T"), Action::NewTab),
         action_item!("Close Tab", Some("Ctrl+W"), Action::CloseTab),
@@ -189,7 +199,41 @@ fn build_palette_items(tab_bar: &TabBar) -> Vec<PaletteItem> {
             Action::JumpPrevMark
         ),
         action_item!("Jump to Next Mark", Some("Ctrl+Down"), Action::JumpNextMark),
+        action_item!("New Workspace", Some("Ctrl+Shift+N"), Action::WorkspaceNew),
+        action_item!(
+            "Switch Workspace",
+            Some("Ctrl+Alt+Tab"),
+            Action::WorkspaceSwitch
+        ),
+        action_item!(
+            "Delete Workspace",
+            Some("Ctrl+Shift+Alt+D"),
+            Action::WorkspaceDelete
+        ),
+        action_item!("Toggle Profiler", Some("F12"), Action::ToggleProfiler),
     ];
+
+    for (i, plugin) in plugins.iter().enumerate() {
+        let keybind_str = plugin
+            .keybind
+            .as_ref()
+            .map(|s| {
+                synapse_config::combo_to_string(&synapse_config::parse_keybind_string(s).unwrap_or(
+                    synapse_config::KeyCombo {
+                        key: s.clone(),
+                        ctrl: false,
+                        shift: false,
+                        alt: false,
+                    },
+                ))
+            })
+            .or_else(|| Some("<none>".to_string()));
+        items.push(PaletteItem::Action {
+            label: format!("Plugin: {}", plugin.name),
+            keybind: keybind_str,
+            action: Action::PluginExecute(i),
+        });
+    }
 
     for (i, tab) in tab_bar.tabs.iter().enumerate() {
         items.push(PaletteItem::Tab {
@@ -256,7 +300,7 @@ pub fn handle_palette_input(
         }
         Key::Named(NamedKey::Backspace) => {
             state.palette.query.pop();
-            let items = build_palette_items(tab_bar);
+            let items = build_palette_items(tab_bar, &state.palette.plugins);
             state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
             if state.palette.selected >= state.palette.results.len() {
                 state.palette.selected = state.palette.results.len().saturating_sub(1);
@@ -266,7 +310,7 @@ pub fn handle_palette_input(
             if !state.palette.query.is_empty() {
                 state.palette.query.remove(0);
             }
-            let items = build_palette_items(tab_bar);
+            let items = build_palette_items(tab_bar, &state.palette.plugins);
             state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
             if state.palette.selected >= state.palette.results.len() {
                 state.palette.selected = state.palette.results.len().saturating_sub(1);
@@ -280,7 +324,7 @@ pub fn handle_palette_input(
                             state.palette.query.push(c);
                         }
                     }
-                    let items = build_palette_items(tab_bar);
+                    let items = build_palette_items(tab_bar, &state.palette.plugins);
                     state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
                     state.palette.selected = 0;
                 }
@@ -404,14 +448,14 @@ mod tests {
 
     #[test]
     fn test_do_fuzzy_filter_returns_all_on_empty_query() {
-        let items = build_palette_items(&empty_tab_bar());
+        let items = build_palette_items(&empty_tab_bar(), &[]);
         let results = do_fuzzy_filter("", &items);
         assert_eq!(results.len(), items.len());
     }
 
     #[test]
     fn test_do_fuzzy_filter_specific_action() {
-        let items = build_palette_items(&empty_tab_bar());
+        let items = build_palette_items(&empty_tab_bar(), &[]);
         let results = do_fuzzy_filter("split vertical", &items);
         assert!(!results.is_empty());
         assert!(results.iter().any(|item| matches!(
@@ -422,14 +466,14 @@ mod tests {
 
     #[test]
     fn test_do_fuzzy_filter_no_results() {
-        let items = build_palette_items(&empty_tab_bar());
+        let items = build_palette_items(&empty_tab_bar(), &[]);
         let results = do_fuzzy_filter("zzz nonexistent", &items);
         assert!(results.is_empty());
     }
 
     #[test]
     fn test_do_fuzzy_filter_theme_results() {
-        let items = build_palette_items(&empty_tab_bar());
+        let items = build_palette_items(&empty_tab_bar(), &[]);
         let results = do_fuzzy_filter("dracula", &items);
         assert!(!results.is_empty());
         assert!(results.iter().any(|item| matches!(

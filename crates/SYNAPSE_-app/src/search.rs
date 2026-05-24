@@ -15,28 +15,61 @@ use crate::{
 };
 
 /// Search all rows (history + visible viewport) for `query` (case-insensitive).
-/// Returns one `SearchMatch` per match occurrence, ordered top-to-bottom.
-/// `SearchMatch.row` is the raw grid `Line.0` value: negative = history, >=0 = viewport.
+/// When `regex_mode` is true, `query` is compiled as a regex pattern.
+/// Returns `(matches, invalid_regex)` — `true` means the regex failed to compile.
 pub fn find_matches(
     term: &alacritty_terminal::term::Term<EventProxy>,
     query: &str,
-) -> Vec<SearchMatch> {
+    regex_mode: bool,
+) -> (Vec<SearchMatch>, bool) {
     if query.is_empty() {
-        return Vec::new();
+        return (Vec::new(), false);
     }
 
-    let query_lower: Vec<char> = query.to_lowercase().chars().collect();
-    let q_len = query_lower.len();
     let grid = term.grid();
     let history_size = grid.history_size();
     let screen_lines = grid.screen_lines();
     let columns = grid.columns();
 
+    if regex_mode {
+        let re = match regex::Regex::new(query) {
+            Ok(r) => r,
+            Err(_) => return (Vec::new(), true),
+        };
+
+        let mut matches = Vec::new();
+        let top = -(history_size as i32);
+        let bottom = screen_lines as i32;
+
+        for line_idx in top..bottom {
+            let line = alacritty_terminal::index::Line(line_idx);
+            let row = &grid[line];
+            let chars: String = (0..columns)
+                .map(|c| {
+                    let ch = row[alacritty_terminal::index::Column(c)].c;
+                    if ch == '\0' {
+                        ' '
+                    } else {
+                        ch
+                    }
+                })
+                .collect();
+
+            for m in re.find_iter(&chars) {
+                matches.push(SearchMatch {
+                    col: m.start(),
+                    row: line_idx,
+                });
+            }
+        }
+        return (matches, false);
+    }
+
+    let query_lower: Vec<char> = query.to_lowercase().chars().collect();
+    let q_len = query_lower.len();
+
     let mut matches = Vec::new();
 
-    // Iterate from oldest history row to bottom of viewport.
-    // Line(-history_size as i32) is the oldest history row.
-    // Line(screen_lines as i32 - 1) is the bottommost viewport row.
     let top = -(history_size as i32);
     let bottom = screen_lines as i32;
 
@@ -44,7 +77,6 @@ pub fn find_matches(
         let line = alacritty_terminal::index::Line(line_idx);
         let row = &grid[line];
 
-        // Collect visible chars, clamping to actual columns.
         let chars: Vec<char> = (0..columns)
             .map(|c| {
                 let ch = row[alacritty_terminal::index::Column(c)].c;
@@ -61,7 +93,6 @@ pub fn find_matches(
             .map(|c| c.to_lowercase().next().unwrap_or(*c))
             .collect();
 
-        // Slide the query window across this row.
         let search_len = chars_lower.len();
         if search_len < q_len {
             continue;
@@ -73,7 +104,7 @@ pub fn find_matches(
         }
     }
 
-    matches
+    (matches, false)
 }
 
 /// Returns a `HashSet<(col, row)>` covering every cell occupied by any match.
@@ -94,7 +125,9 @@ pub fn update_search_matches(state: &mut AppState, tab_bar: &TabBar, panes: &[Pa
         .find(|p| p.id == tab_bar.active_tab().active_pane)
         .unwrap();
     let term = pane.term.lock().unwrap();
-    state.search.matches = find_matches(&term, &state.search.term);
+    let (matches, invalid) = find_matches(&term, &state.search.term, state.search.regex_mode);
+    state.search.matches = matches;
+    state.search.invalid_regex = invalid;
     state.search.current_match = 0;
     if state.search.matches.is_empty() || state.search.current_match >= state.search.matches.len() {
         state.search.current_match = 0;
@@ -147,6 +180,16 @@ pub fn handle_search_input(
     tab_bar: &TabBar,
     panes: &[Pane],
 ) {
+    if state.modifiers.alt_key() {
+        if let Key::Character(c) = key {
+            if c == "r" || c == "R" {
+                state.search.toggle_regex();
+                update_search_matches(state, tab_bar, panes);
+                return;
+            }
+        }
+    }
+
     match key {
         Key::Named(NamedKey::Escape) => {
             state.search.toggle();

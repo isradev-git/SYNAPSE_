@@ -1,9 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
+use alacritty_terminal::term::{LineDamageBounds, TermDamage};
 use alacritty_terminal::vte::ansi::Color as TermColor;
 use alacritty_terminal::vte::ansi::CursorShape;
+use base64::Engine;
 use synapse_config::Theme;
 use synapse_renderer::{
     image::ImageInstance, renderer::Renderer, ui::UIRect, underline::UnderlineInstance,
@@ -17,6 +20,132 @@ use crate::search::build_match_set;
 use crate::state::{AppState, UrlSpan};
 
 const TAB_FONT_SIZE: f32 = 12.0;
+
+#[derive(Clone, Copy)]
+struct CachedGridCell {
+    ch: char,
+    fg: TermColor,
+    bg: TermColor,
+    flags: Flags,
+}
+
+impl Default for CachedGridCell {
+    fn default() -> Self {
+        Self {
+            ch: ' ',
+            fg: TermColor::Named(alacritty_terminal::vte::ansi::NamedColor::Foreground),
+            bg: TermColor::Named(alacritty_terminal::vte::ansi::NamedColor::Background),
+            flags: Flags::empty(),
+        }
+    }
+}
+
+/// Per-pane cache of grid cells in row-major order.
+/// Enables incremental updates via alacritty's damage tracking.
+/// Stores raw TermColor values so the existing processing pipeline
+/// (selection/match/URL detection) works unchanged.
+#[derive(Default)]
+pub(crate) struct PaneCellCache {
+    cols: usize,
+    rows: usize,
+    cells: Vec<CachedGridCell>,
+}
+
+impl PaneCellCache {
+    fn needs_resize(&self, cols: usize, rows: usize) -> bool {
+        self.cols != cols || self.rows != rows
+    }
+
+    fn ensure_size(&mut self, cols: usize, rows: usize) {
+        if self.cols != cols || self.rows != rows {
+            self.cols = cols;
+            self.rows = rows;
+            self.cells.resize(cols * rows, CachedGridCell::default());
+        }
+    }
+
+    fn row(&self, row: usize) -> &[CachedGridCell] {
+        let start = row * self.cols;
+        &self.cells[start..start + self.cols]
+    }
+
+    fn rebuild_full(
+        &mut self,
+        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
+        pane_cols: usize,
+        pane_rows: usize,
+        display_offset: usize,
+    ) {
+        self.ensure_size(pane_cols, pane_rows);
+        for indexed in grid.display_iter() {
+            let col = indexed.point.column.0;
+            let raw_row = indexed.point.line.0;
+            let viewport_row = raw_row + display_offset as i32;
+            if viewport_row < 0 || viewport_row as usize >= pane_rows {
+                continue;
+            }
+            if col >= pane_cols {
+                continue;
+            }
+            let idx = (viewport_row as usize) * pane_cols + col;
+            self.cells[idx] = CachedGridCell {
+                ch: indexed.c,
+                fg: indexed.fg,
+                bg: indexed.bg,
+                flags: indexed.flags,
+            };
+        }
+    }
+
+    fn update_damaged_from_term(
+        &mut self,
+        term: &mut alacritty_terminal::term::Term<impl alacritty_terminal::event::EventListener>,
+        pane_cols: usize,
+        pane_rows: usize,
+        display_offset: usize,
+    ) -> bool {
+        self.ensure_size(pane_cols, pane_rows);
+        match term.damage() {
+            TermDamage::Full => {
+                term.reset_damage();
+                let grid = term.grid();
+                self.rebuild_full(grid, pane_cols, pane_rows, display_offset);
+                true
+            }
+            TermDamage::Partial(iter) => {
+                let damaged: Vec<LineDamageBounds> = iter.collect();
+                term.reset_damage();
+                if damaged.is_empty() {
+                    return false;
+                }
+                let grid = term.grid();
+                let mut dirty_count = 0u32;
+                for bounds in &damaged {
+                    let viewport_row = bounds.line;
+                    if viewport_row >= pane_rows {
+                        continue;
+                    }
+                    let raw_grid_line = viewport_row as i32 - display_offset as i32;
+                    let row = &grid[Line(raw_grid_line)];
+                    let row_start = viewport_row * pane_cols;
+                    let left = bounds.left;
+                    let right = (bounds.right + 1).min(pane_cols);
+                    for col in left..right {
+                        let cell = &row[Column(col)];
+                        self.cells[row_start + col] = CachedGridCell {
+                            ch: cell.c,
+                            fg: cell.fg,
+                            bg: cell.bg,
+                            flags: cell.flags,
+                        };
+                    }
+                    dirty_count += 1;
+                }
+                dirty_count > 0
+            }
+        }
+    }
+}
 
 fn xterm256_to_rgba(idx: u8) -> [f32; 4] {
     let rgb: [u8; 3] = match idx {
@@ -182,6 +311,76 @@ fn has_prefix_at(chars: &[char], pos: usize, prefix: &str) -> bool {
             .iter()
             .zip(&pchars)
             .all(|(a, b)| a == b)
+}
+
+fn is_path_start(chars: &[char], pos: usize) -> bool {
+    if chars.len() <= pos {
+        return false;
+    }
+    let c = chars[pos];
+    if c == '/' || c == '~' {
+        return true;
+    }
+    if c == '.' {
+        return has_prefix_at(chars, pos, "./") || has_prefix_at(chars, pos, "../");
+    }
+    false
+}
+
+/// Scan visible terminal rows for clickable file paths.
+/// Detects: `./main.c:42:10`, `/home/user/project/src/main.rs:10`, `~/docs/readme.md`
+fn detect_paths(
+    cells: &[(usize, i32, char, TermColor, TermColor)],
+    display_offset: usize,
+    pane_rows: usize,
+) -> Vec<(usize, i32, usize, String)> {
+    let mut rows: std::collections::BTreeMap<i32, Vec<(usize, char)>> = Default::default();
+    for &(col, raw_row, ch, _, _) in cells {
+        let vrow = raw_row + display_offset as i32;
+        if vrow >= 0 && (vrow as usize) < pane_rows {
+            rows.entry(raw_row).or_default().push((col, ch));
+        }
+    }
+
+    let mut spans = Vec::new();
+    for (raw_row, mut row_cells) in rows {
+        row_cells.sort_by_key(|&(col, _)| col);
+        let chars: Vec<char> = row_cells.iter().map(|&(_, c)| c).collect();
+        let cols: Vec<usize> = row_cells.iter().map(|&(col, _)| col).collect();
+        let n = chars.len();
+
+        let mut i = 0;
+        while i < n {
+            if !is_path_start(&chars, i) {
+                i += 1;
+                continue;
+            }
+
+            let mut end = i + 1;
+            while end < n
+                && !chars[end].is_whitespace()
+                && chars[end] != '\''
+                && chars[end] != '"'
+                && chars[end] != ')'
+                && chars[end] != ']'
+                && chars[end] != '}'
+            {
+                end += 1;
+            }
+
+            let raw: String = chars[i..end].iter().collect();
+            let has_ext =
+                raw.rfind('.').map(|dot| dot > i + 1).unwrap_or(false) || raw.contains('/');
+
+            if has_ext && end > i + 2 {
+                let col_start = cols[i];
+                let col_end = cols[end - 1] + 1;
+                spans.push((col_start, raw_row, col_end, raw));
+            }
+            i = end;
+        }
+    }
+    spans
 }
 
 /// Scan visible terminal rows for bare `http://` / `https://` URLs.
@@ -508,11 +707,55 @@ pub fn build_tab_bar_text(
     result
 }
 
+fn build_title_bar(layout: &Layout, theme: &Theme) -> Vec<UIRect> {
+    if !layout.wayland_decorated {
+        return Vec::new();
+    }
+    let h = layout.title_bar_height();
+    vec![UIRect {
+        pos: [0.0, 0.0],
+        size: [layout.window_width, h],
+        color: theme.tab_bar_bg,
+    },
+    // Thin separator line below title bar
+    UIRect {
+        pos: [0.0, h - 1.0],
+        size: [layout.window_width, 1.0],
+        color: theme.tab_separator,
+    }]
+}
+
+fn build_title_bar_text(
+    layout: &Layout,
+    font_size: f32,
+    theme: &Theme,
+) -> Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> {
+    if !layout.wayland_decorated {
+        return Vec::new();
+    }
+    let y = (layout.title_bar_height() - font_size) / 2.0;
+    let x = layout.sidebar_width + 12.0;
+    let mut cells = Vec::new();
+    let transparent = [0.0, 0.0, 0.0, 0.0];
+    for (i, c) in "SYNAPSE_".chars().enumerate() {
+        cells.push((
+            c,
+            x + i as f32 * font_size * 0.6,
+            y,
+            font_size,
+            theme.tab_text_inactive,
+            transparent,
+        ));
+    }
+    cells
+}
+
 #[allow(clippy::type_complexity)]
 pub fn build_status_bar(
     layout: &Layout,
     state: &AppState,
     active_cwd: &str,
+    workspace_name: &str,
 ) -> (Vec<UIRect>, Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>) {
     let mut rects = Vec::new();
     let mut cells = Vec::new();
@@ -543,8 +786,14 @@ pub fn build_status_bar(
     let transparent = [0.0f32, 0.0, 0.0, 0.0];
     let fg = state.theme.tab_text_inactive;
 
-    // Left: CWD + git branch + k8s context
+    // Left: ws name + CWD + git branch + k8s context
     let mut left = String::new();
+    // Workspace name
+    if !workspace_name.is_empty() {
+        left.push('[');
+        left.push_str(workspace_name);
+        left.push_str("] ");
+    }
     let home = std::env::var("HOME").unwrap_or_default();
     if !active_cwd.is_empty() {
         let cwd = if !home.is_empty() && active_cwd.starts_with(&home) {
@@ -600,6 +849,30 @@ pub fn build_status_bar(
         }
     }
 
+    // Broadcast indicator
+    if state.broadcasting {
+        let label = "[BROADCAST]";
+        let bc = [1.0f32, 0.0, 0.24, 1.0];
+        let blw = label.chars().count() as f32 * char_w;
+        let blx = bar_x + bar_w - blw - 8.0;
+        for (j, c) in label.chars().enumerate() {
+            cells.push((c, blx + j as f32 * char_w, text_y, fs, bc, transparent));
+        }
+    }
+
+    // Recording indicator
+    if state.recording {
+        let label = "[REC]";
+        let rc = [1.0f32, 0.33, 0.0, 1.0];
+        let blw = "[BROADCAST]".chars().count() as f32 * char_w;
+        let broadcast_offset = if state.broadcasting { blw + 12.0 } else { 0.0 };
+        let rlw = label.chars().count() as f32 * char_w;
+        let rlx = bar_x + bar_w - rlw - broadcast_offset - 8.0;
+        for (j, c) in label.chars().enumerate() {
+            cells.push((c, rlx + j as f32 * char_w, text_y, fs, rc, transparent));
+        }
+    }
+
     // Right: HH:MM:SS (UTC)
     if state.config.status_bar_show_time && state.cached_time_sec > 0 {
         let s = state.cached_time_sec % 60;
@@ -607,7 +880,14 @@ pub fn build_status_bar(
         let h = (state.cached_time_sec / 3600) % 24;
         let time_str = format!("{:02}:{:02}:{:02}", h, m, s);
         let tw = time_str.chars().count() as f32 * char_w;
-        let tx = bar_x + bar_w - tw - 8.0;
+        let mut tx_offset = 8.0f32;
+        if state.broadcasting {
+            tx_offset += "[BROADCAST]".chars().count() as f32 * char_w + 12.0;
+        }
+        if state.recording {
+            tx_offset += "[REC]".chars().count() as f32 * char_w + 12.0;
+        }
+        let tx = bar_x + bar_w - tw - tx_offset;
         for (j, c) in time_str.chars().enumerate() {
             cells.push((c, tx + j as f32 * char_w, text_y, fs, fg, transparent));
         }
@@ -639,7 +919,7 @@ fn push_cursor_rect(
     // Push current position and render fading trail rects behind cursor
     let max_trail = state.config.effects.cursor_trail as usize;
     state.push_cursor_trail(cx, cy, max_trail);
-    if max_trail > 0 && state.effects_enabled {
+    if max_trail > 0 && state.effects_enabled && !state.config.reduce_motion {
         let trail_len = state.cursor_trail.len();
         for (i, &(tx, ty)) in state.cursor_trail.iter().enumerate().skip(1) {
             let alpha = 1.0 - (i as f32 / trail_len as f32);
@@ -718,6 +998,61 @@ fn push_cursor_rect(
     }
 }
 
+/// Compute the quad position(s) and size for a background image based on fit mode.
+fn compute_bg_quads(
+    content_x: f32,
+    content_y: f32,
+    cw: f32,
+    ch: f32,
+    img_w: f32,
+    img_h: f32,
+    mode: &synapse_config::BackgroundMode,
+) -> Vec<(f32, f32, f32, f32)> {
+    use synapse_config::BackgroundMode;
+    match mode {
+        BackgroundMode::Cover => {
+            let iar = img_w / img_h;
+            let par = cw / ch;
+            if iar > par {
+                let w = ch * iar;
+                vec![(content_x - (w - cw) / 2.0, content_y, w, ch)]
+            } else {
+                let h = cw / iar;
+                vec![(content_x, content_y - (h - ch) / 2.0, cw, h)]
+            }
+        }
+        BackgroundMode::Contain => {
+            let iar = img_w / img_h;
+            let par = cw / ch;
+            if iar > par {
+                let h = cw / iar;
+                vec![(content_x, content_y + (ch - h) / 2.0, cw, h)]
+            } else {
+                let w = ch * iar;
+                vec![(content_x + (cw - w) / 2.0, content_y, w, ch)]
+            }
+        }
+        BackgroundMode::Stretch => {
+            vec![(content_x, content_y, cw, ch)]
+        }
+        BackgroundMode::Tile => {
+            let mut quads = Vec::new();
+            let mut y_base = content_y;
+            while y_base < content_y + ch {
+                let h = (content_y + ch - y_base).min(img_h);
+                let mut x_base = content_x;
+                while x_base < content_x + cw {
+                    let w = (content_x + cw - x_base).min(img_w);
+                    quads.push((x_base, y_base, w, h));
+                    x_base += img_w;
+                }
+                y_base += img_h;
+            }
+            quads
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::ptr_arg, clippy::type_complexity)]
 pub fn render_frame(
     renderer: &mut Renderer,
@@ -739,6 +1074,7 @@ pub fn render_frame(
     cached_cursor_rects_start: &mut usize,
     cached_cursor_pixel: &mut Option<(f32, f32)>,
     cached_url_spans: &mut Vec<UrlSpan>,
+    pane_cell_caches: &mut HashMap<PaneId, PaneCellCache>,
     effective_font_size: f32,
     scale_factor: f32,
     time_secs: f32,
@@ -751,6 +1087,27 @@ pub fn render_frame(
         .iter_mut()
         .filter_map(|p| if p.poll_events() { Some(p.id) } else { None })
         .collect();
+
+    // Drain pending commands extracted via OSC 133 into persistent history
+    if state.config.persistent_history {
+        let history_save_interval = 100_usize; // save every N commands
+        let mut commands_since_save = 0_usize;
+        for pane in panes.iter_mut() {
+            while let Some((cmd, exit_code)) = pane.pending_commands.pop_front() {
+                let cwd = pane.cwd();
+                state.command_history.add(cmd, cwd, exit_code);
+                commands_since_save += 1;
+
+                // Update suggester with new command
+                if let Some(entry) = state.command_history.entries().back() {
+                    state.suggester.insert(&entry.cmd);
+                }
+            }
+        }
+        if commands_since_save > 0 && commands_since_save >= history_save_interval {
+            state.command_history.save();
+        }
+    }
 
     // 4.3: drain dirty for all panes but only trigger rebuild for active-tab panes.
     let active_ids: HashSet<PaneId> = tab_bar
@@ -784,7 +1141,8 @@ pub fn render_frame(
         || state.search.active
         || state.history_search.active
         || state.suggest.ghost.is_some()
-        || state.palette.active;
+        || state.palette.active
+        || state.overlay.active;
     let first_frame = cached_cell_data.is_empty();
     let label_active = state.config.show_pane_labels
         && state
@@ -867,12 +1225,18 @@ pub fn render_frame(
         let layouts = pane_tree.get_layout(pane_rect);
         let dividers = pane_tree.get_dividers(pane_rect);
 
-        let match_set: HashSet<(usize, i32)> =
-            if state.search.active && !state.search.term.is_empty() {
+        let match_set: HashSet<(usize, i32)> = {
+            let mut set = if state.search.active && !state.search.term.is_empty() {
                 build_match_set(&state.search.matches, state.search.term.len())
             } else {
                 HashSet::new()
             };
+            // Merge word occurrence highlights
+            for &pos in &state.word_highlight_positions {
+                set.insert(pos);
+            }
+            set
+        };
 
         // Reused across pane iterations to avoid per-frame allocation.
         let mut ul_buf: Vec<(usize, i32, u32, Option<TermColor>)> = Vec::new();
@@ -911,54 +1275,147 @@ pub fn render_frame(
                 usize,
                 usize,
             ) = {
-                let term = match pane.term.lock() {
+                let mut term = match pane.term.lock() {
                     Ok(t) => t,
                     Err(_) => continue,
                 };
-                let grid = term.grid();
-                let cursor_point = grid.cursor.point;
-                let cursor_col = cursor_point.column.0;
-                let cursor_row = cursor_point.line.0;
 
-                let sel_range = term.selection.as_ref().and_then(|s| s.to_range(&*term));
-                let display_offset = grid.display_offset();
-                let history_size = grid.history_size();
+                let cursor_col;
+                let cursor_row;
+                let display_offset;
+                let history_size;
+                let sel_range;
+                {
+                    let grid = term.grid();
+                    cursor_col = grid.cursor.point.column.0;
+                    cursor_row = grid.cursor.point.line.0;
+                    display_offset = grid.display_offset();
+                    history_size = grid.history_size();
+                    sel_range = term.selection.as_ref().and_then(|s| s.to_range(&*term));
+
+                    // Update word occurrence highlights for the active pane
+                    if is_active {
+                        if let Some(ref _range) = sel_range {
+                            if let Some(text) = term.selection_to_string() {
+                                let text = text.trim().to_string();
+                                if !text.is_empty()
+                                    && !text.contains(char::is_whitespace)
+                                    && text.len() <= 80
+                                {
+                                    if state.word_highlight_word.as_deref() != Some(&text) {
+                                        state.word_highlight_word = Some(text.clone());
+                                        state.word_highlight_positions.clear();
+                                        let grid = term.grid();
+                                        let word_chars: Vec<char> = text.chars().collect();
+                                        let word_len = word_chars.len();
+                                        let cols = grid.columns();
+                                        let start = -(display_offset as i32);
+                                        let end = start + pane_rows as i32;
+                                        for raw_row in start..end {
+                                            for col in 0..cols.saturating_sub(word_len.max(1) - 1) {
+                                                let mut matches_ok = true;
+                                                for (i, &wc) in word_chars.iter().enumerate() {
+                                                    let cell = &grid[Line(raw_row)][Column(col + i)];
+                                                    if cell.c != wc {
+                                                        matches_ok = false;
+                                                        break;
+                                                    }
+                                                }
+                                                if matches_ok {
+                                                    for i in 0..word_len {
+                                                        state.word_highlight_positions.insert((col + i, raw_row));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    state.word_highlight_word = None;
+                                    state.word_highlight_positions.clear();
+                                }
+                            }
+                        } else {
+                            state.word_highlight_word = None;
+                            state.word_highlight_positions.clear();
+                        }
+                    }
+                }
+
+                let use_cache = !first_frame
+                    && !font_changed
+                    && !tab_changed
+                    && !ui_active
+                    && !pane_cell_caches
+                        .get(&pane_id)
+                        .map(|c| c.needs_resize(pane_cols, pane_rows))
+                        .unwrap_or(true);
 
                 let mut buf = Vec::with_capacity(pane_cols * pane_rows);
                 let mut hyperlinks: Vec<(usize, i32, String)> = Vec::new();
-                for indexed in grid.display_iter() {
-                    let col = indexed.point.column.0;
-                    let raw_row = indexed.point.line.0;
-                    // Shift by display_offset to get the viewport row (0 = top of display).
-                    let viewport_row = raw_row + display_offset as i32;
-                    if viewport_row < 0 || viewport_row as usize >= pane_rows {
-                        continue;
+
+                if use_cache {
+                    let cache = pane_cell_caches.entry(pane_id).or_default();
+                    cache.update_damaged_from_term(&mut term, pane_cols, pane_rows, display_offset);
+
+                    for vp_row in 0..pane_rows {
+                        let raw_row = vp_row as i32 - display_offset as i32;
+                        let row_cells = cache.row(vp_row);
+                        for (col, c) in row_cells.iter().enumerate().take(pane_cols) {
+                            buf.push((col, raw_row, c.ch, c.fg, c.bg));
+                            if c.flags.intersects(Flags::ALL_UNDERLINES) {
+                                let style = if c.flags.contains(Flags::UNDERCURL) {
+                                    2u32
+                                } else if c.flags.contains(Flags::DOUBLE_UNDERLINE) {
+                                    1
+                                } else if c.flags.contains(Flags::DOTTED_UNDERLINE) {
+                                    3
+                                } else if c.flags.contains(Flags::DASHED_UNDERLINE) {
+                                    4
+                                } else {
+                                    0
+                                };
+                                ul_buf.push((col, vp_row as i32, style, None));
+                            }
+                        }
                     }
-                    if col >= pane_cols {
-                        continue;
+                } else {
+                    let grid = term.grid();
+                    for indexed in grid.display_iter() {
+                        let col = indexed.point.column.0;
+                        let raw_row = indexed.point.line.0;
+                        let viewport_row = raw_row + display_offset as i32;
+                        if viewport_row < 0 || viewport_row as usize >= pane_rows {
+                            continue;
+                        }
+                        if col >= pane_cols {
+                            continue;
+                        }
+                        if let Some(hl) = indexed.hyperlink() {
+                            hyperlinks.push((col, raw_row, hl.uri().to_string()));
+                        }
+                        buf.push((col, raw_row, indexed.c, indexed.fg, indexed.bg));
+                        let flags = indexed.flags;
+                        if flags.intersects(Flags::ALL_UNDERLINES) {
+                            let style = if flags.contains(Flags::UNDERCURL) {
+                                2u32
+                            } else if flags.contains(Flags::DOUBLE_UNDERLINE) {
+                                1
+                            } else if flags.contains(Flags::DOTTED_UNDERLINE) {
+                                3
+                            } else if flags.contains(Flags::DASHED_UNDERLINE) {
+                                4
+                            } else {
+                                0
+                            };
+                            ul_buf.push((col, viewport_row, style, indexed.underline_color()));
+                        }
                     }
-                    if let Some(hl) = indexed.hyperlink() {
-                        hyperlinks.push((col, raw_row, hl.uri().to_string()));
-                    }
-                    buf.push((col, raw_row, indexed.c, indexed.fg, indexed.bg));
-                    let flags = indexed.flags;
-                    if flags.intersects(Flags::ALL_UNDERLINES) {
-                        let style = if flags.contains(Flags::UNDERCURL) {
-                            2u32
-                        } else if flags.contains(Flags::DOUBLE_UNDERLINE) {
-                            1
-                        } else if flags.contains(Flags::DOTTED_UNDERLINE) {
-                            3
-                        } else if flags.contains(Flags::DASHED_UNDERLINE) {
-                            4
-                        } else {
-                            0
-                        };
-                        // buf uses raw_row; ul_buf uses viewport_row already shifted by display_offset.
-                        // build_underline_spans expects viewport-relative rows (0 = top of pane).
-                        ul_buf.push((col, viewport_row, style, indexed.underline_color()));
-                    }
+                    // Rebuild cache from full grid iteration.
+                    let cache = pane_cell_caches.entry(pane_id).or_default();
+                    cache.rebuild_full(grid, pane_cols, pane_rows, display_offset);
+                    term.reset_damage();
                 }
+
                 (
                     buf,
                     hyperlinks,
@@ -1012,6 +1469,40 @@ pub fn render_frame(
                     }
                 }
                 url_span_list.extend(detect_auto_urls(&cells, display_offset, pane_rows));
+                if state.config.clickable_paths {
+                    url_span_list.extend(detect_paths(&cells, display_offset, pane_rows));
+                }
+            }
+
+            // Pane badge watermark (semi-transparent large text behind cells)
+            if state.config.pane_badge {
+                let title = pane.title();
+                let cwd = pane.cwd();
+                let badge_text = state
+                    .config
+                    .pane_badge_format
+                    .replace("{cwd}", &cwd)
+                    .replace("{title}", &title)
+                    .replace("{user}@{host}", &state.user_host);
+                if !badge_text.is_empty() && !badge_text.ends_with("{}") {
+                    let badge_scale = (content_h * 0.5).min(60.0).max(20.0);
+                    let char_aspect = 0.6;
+                    let char_w = badge_scale * char_aspect;
+                    let total_w = badge_text.len() as f32 * char_w;
+                    let start_x = content_x + (content_w - total_w) / 2.0;
+                    let start_y = content_y + (content_h - badge_scale) / 2.0;
+                    let badge_fg = [
+                        state.theme.fg[0],
+                        state.theme.fg[1],
+                        state.theme.fg[2],
+                        0.05,
+                    ];
+                    let transparent = [0.0, 0.0, 0.0, 0.0];
+                    for (i, ch) in badge_text.chars().enumerate() {
+                        let cx = start_x + i as f32 * char_w;
+                        cached_cell_data.push((ch, cx, start_y, badge_scale, badge_fg, transparent));
+                    }
+                }
             }
 
             for (col, raw_row, ch, fg_c, bg_c) in cells {
@@ -1159,18 +1650,28 @@ pub fn render_frame(
                 });
             }
 
-            // Scrollback position indicator: slim thumb on the right edge
-            // when the viewport is scrolled above the bottom of history.
-            if display_offset > 0 && history_size > 0 {
-                let total_rows = (pane_rows + history_size) as f32;
-                let thumb_h = (content_h * pane_rows as f32 / total_rows).max(8.0);
-                let scroll_frac = (display_offset as f32 / history_size as f32).min(1.0);
+            // Scrollbar: track + thumb on the right edge when scrollable content exists
+            let has_history = history_size > 0 || display_offset > 0;
+            if state.config.scrollbar && has_history {
+                let bar_w = 6.0;
+                let bar_x = rect.x + rect.w - bar_w - 1.0;
+                let total = (pane_rows + history_size).max(1) as f32;
+                let thumb_h = (content_h * pane_rows as f32 / total).max(12.0);
+                let scroll_frac = (display_offset as f32 / history_size.max(1) as f32).min(1.0);
                 let travel = content_h - thumb_h;
                 let thumb_y = content_y + travel * (1.0 - scroll_frac);
+
+                // Track
                 cached_ui_rects.push(UIRect {
-                    pos: [rect.x + rect.w - 4.0, thumb_y],
-                    size: [3.0, thumb_h],
-                    color: [0.44, 0.56, 0.78, 0.55],
+                    pos: [bar_x, content_y],
+                    size: [bar_w, content_h],
+                    color: state.theme.scrollbar_track,
+                });
+                // Thumb
+                cached_ui_rects.push(UIRect {
+                    pos: [bar_x, thumb_y],
+                    size: [bar_w, thumb_h],
+                    color: state.theme.scrollbar_thumb,
                 });
             }
 
@@ -1195,7 +1696,7 @@ pub fn render_frame(
                         .unwrap_or(false);
                     if bell_active {
                         [1.0_f32, 0.0, 0.047, 1.0] // #FF000C cyberpunk red
-                    } else if state.effects_enabled && state.config.effects.pane_pulse {
+                    } else if state.effects_enabled && state.config.effects.pane_pulse && !state.config.reduce_motion {
                         let pulse = (time_secs * std::f32::consts::PI).sin() * 0.5 + 0.5;
                         let alpha = 0.6 + pulse * 0.4;
                         let c = state.theme.panel_active_border;
@@ -1334,17 +1835,42 @@ pub fn render_frame(
                     transparent,
                 ));
             }
+            let mut x_offset = prefix_chars.len();
+
+            if state.search.regex_mode {
+                let tag = if state.search.invalid_regex {
+                    " [invalid] "
+                } else {
+                    " [regex] "
+                };
+                for (j, c) in tag.chars().enumerate() {
+                    cached_cell_data.push((
+                        c,
+                        text_x + (x_offset + j) as f32 * char_w,
+                        text_y,
+                        search_fs,
+                        if state.search.invalid_regex {
+                            state.theme.search_highlight
+                        } else {
+                            state.theme.search_text_dim
+                        },
+                        transparent,
+                    ));
+                }
+                x_offset += tag.len();
+            }
+
             for (j, &c) in term_chars.iter().enumerate() {
                 cached_cell_data.push((
                     c,
-                    text_x + (prefix_chars.len() + j) as f32 * char_w,
+                    text_x + (x_offset + j) as f32 * char_w,
                     text_y,
                     search_fs,
                     state.theme.search_text,
                     transparent,
                 ));
             }
-            let cursor_col = prefix_chars.len() + state.search.cursor_pos;
+            let cursor_col = x_offset + state.search.cursor_pos;
             cached_cell_data.push((
                 '|',
                 text_x + cursor_col as f32 * char_w,
@@ -1625,6 +2151,14 @@ pub fn render_frame(
         );
         cached_bg_rects.extend(tab_ui);
 
+        // Wayland CSD title bar
+        for rect in build_title_bar(layout, &state.theme) {
+            cached_bg_rects.push(rect);
+        }
+        for cell in build_title_bar_text(layout, font_size, &state.theme) {
+            cached_cell_data.push(cell);
+        }
+
         for tab_cell in build_tab_bar_text(
             layout,
             tab_bar,
@@ -1637,8 +2171,12 @@ pub fn render_frame(
         }
 
         // Status bar
-        let (sb_rects, sb_cells) =
-            build_status_bar(layout, state, &tab_bar.active_tab().cwd.clone());
+        let (sb_rects, sb_cells) = build_status_bar(
+            layout,
+            state,
+            &tab_bar.active_tab().cwd.clone(),
+            &state.active_workspace,
+        );
         cached_bg_rects.extend(sb_rects);
         for cell in sb_cells {
             cached_cell_data.push(cell);
@@ -1701,6 +2239,32 @@ pub fn render_frame(
             h: pane_area.3,
         };
         let layouts = pane_tree.get_layout(pane_rect);
+
+        // ── Draw background image per pane ─────────────────────────────────
+        let bg_id = crate::image_protocol::BG_IMAGE_ID;
+        if let Some(bg_image) = image_store.images.get(&bg_id) {
+            if !renderer.has_image(bg_id) {
+                renderer.upload_image(bg_id, &bg_image.rgba, bg_image.width, bg_image.height);
+            }
+            let img_w = bg_image.width as f32;
+            let img_h = bg_image.height as f32;
+            for (_pid, layout_rect) in &layouts {
+                let content_x = layout_rect.x + margin;
+                let content_y = layout_rect.y + margin;
+                let cw = (layout_rect.w - margin * 2.0).max(1.0);
+                let ch = (layout_rect.h - margin * 2.0).max(1.0);
+
+                let clip = [content_x as u32, content_y as u32, cw as u32, ch as u32];
+                for (x, y, w, h) in compute_bg_quads(
+                    content_x, content_y, cw, ch, img_w, img_h,
+                    &state.config.background_mode,
+                ) {
+                    image_draws.push(ImageInstance { pos: [x, y], size: [w, h] });
+                    image_draw_ids.push(bg_id);
+                    image_clips.push(clip);
+                }
+            }
+        }
 
         for placement in &image_store.placements {
             // Only render placements for panes in the active tab.
@@ -1782,6 +2346,15 @@ pub fn render_frame(
         }
     }
 
+    render_overlay(
+        cached_cell_data,
+        cached_bg_rects,
+        state,
+        layout,
+        cell_w,
+        cell_h,
+    );
+
     renderer.draw_frame_with_options(
         cached_cell_data,
         cached_ui_rects,
@@ -1796,6 +2369,105 @@ pub fn render_frame(
     );
 
     exited_panes
+}
+
+fn render_overlay(
+    cell_data: &mut CellData,
+    bg_rects: &mut Vec<UIRect>,
+    state: &AppState,
+    layout: &Layout,
+    cell_w: f32,
+    cell_h: f32,
+) {
+    if !state.overlay.active {
+        return;
+    }
+
+    let pane_area = layout.pane_area();
+
+    let ov_w = pane_area.2 * 0.75;
+    let ov_h = pane_area.3 * 0.75;
+    let ov_x = pane_area.0 + (pane_area.2 - ov_w) / 2.0;
+    let ov_y = pane_area.1 + (pane_area.3 - ov_h) / 2.0;
+
+    let bg = [0.06, 0.07, 0.10, 0.92];
+    let title_bg = [0.12, 0.14, 0.20, 1.0];
+    let fg = state.theme.tab_text;
+    let dim_fg = [fg[0], fg[1], fg[2], 0.6];
+
+    bg_rects.push(UIRect {
+        pos: [ov_x, ov_y],
+        size: [ov_w, ov_h],
+        color: bg,
+    });
+
+    let title_h = cell_h + 8.0;
+    bg_rects.push(UIRect {
+        pos: [ov_x, ov_y],
+        size: [ov_w, title_h],
+        color: title_bg,
+    });
+
+    let title_max_chars = ((ov_w - 20.0) / cell_w).max(1.0) as usize;
+    let title_display = if state.overlay.title.len() > title_max_chars {
+        &state.overlay.title[..title_max_chars.min(state.overlay.title.len())]
+    } else {
+        &state.overlay.title
+    };
+    for (i, c) in title_display.chars().enumerate() {
+        cell_data.push((
+            c,
+            ov_x + 8.0 + i as f32 * cell_w,
+            ov_y + 4.0,
+            cell_h,
+            fg,
+            title_bg,
+        ));
+    }
+
+    let close_label = "ESC to close";
+    let close_x = ov_x + ov_w - close_label.len() as f32 * cell_w - 8.0;
+    for (i, c) in close_label.chars().enumerate() {
+        cell_data.push((
+            c,
+            close_x + i as f32 * cell_w,
+            ov_y + 4.0,
+            cell_h,
+            dim_fg,
+            title_bg,
+        ));
+    }
+
+    let content_y = ov_y + title_h + 4.0;
+    let content_h = ov_h - title_h - 8.0;
+    let visible_lines = (content_h / cell_h).max(1.0) as usize;
+    let visible = state.overlay.visible_lines(visible_lines);
+
+    if visible.is_empty() && state.overlay.status == crate::overlay::OverlayStatus::Running {
+        let msg = "Running...";
+        let msg_x = ov_x + (ov_w - msg.len() as f32 * cell_w) / 2.0;
+        for (i, c) in msg.chars().enumerate() {
+            cell_data.push((c, msg_x + i as f32 * cell_w, content_y, cell_h, dim_fg, bg));
+        }
+    }
+
+    for (row, line) in visible.iter().enumerate() {
+        let line_display = if line.len() > title_max_chars + 10 {
+            &line[..title_max_chars + 10]
+        } else {
+            line
+        };
+        for (col, c) in line_display.chars().enumerate() {
+            cell_data.push((
+                c,
+                ov_x + 8.0 + col as f32 * cell_w,
+                content_y + row as f32 * cell_h,
+                cell_h,
+                fg,
+                bg,
+            ));
+        }
+    }
 }
 
 /// Duración del splash en segundos.
@@ -1941,7 +2613,7 @@ pub fn render_splash_screen(
     );
 }
 
-fn send_desktop_notification(title: &str, body: &str) {
+pub fn send_desktop_notification(title: &str, body: &str) {
     let _ = notify_rust::Notification::new()
         .summary(title)
         .body(body)
@@ -1974,7 +2646,7 @@ impl AppCore {
         }
 
         // Drain APC image sequences from all panes into the image store.
-        for pane in self.panes.iter_mut() {
+        for pane in self.workspaces.active_panes_mut().iter_mut() {
             while let Ok(raw) = pane.apc_rx.try_recv() {
                 if let Some(cmd) = parse_apc(&raw) {
                     if matches!(cmd.action, KittyAction::Delete) && cmd.image_id != 0 {
@@ -1985,8 +2657,111 @@ impl AppCore {
             }
         }
 
+        // Drain Sixel sequences from all panes into the image store.
+        if self.state.config.sixel_enabled {
+            for pane in self.workspaces.active_panes_mut().iter_mut() {
+                while let Ok(raw) = pane.sixel_rx.try_recv() {
+                    if let Some(result) = crate::sixel::decode_sixel(&raw) {
+                        let image_rows = (result.height as f32 / self.cell_h).ceil() as usize;
+                        let (cursor_col, cursor_row) = if let Ok(mut term) = pane.term.lock() {
+                            let point = term.grid().cursor.point;
+                            let row = point.line.0.max(0) as usize;
+
+                            if image_rows > 0
+                                && row + image_rows > pane.rows
+                                && pane.rows > 0
+                                && term.grid().display_offset() == 0
+                            {
+                                let overflow = (row + image_rows) - pane.rows;
+                                use alacritty_terminal::index::Line;
+                                term.grid_mut()
+                                    .scroll_up(&(Line(0)..Line(pane.rows as i32)), overflow);
+                            }
+                            (point.column.0, row)
+                        } else {
+                            (0, 0)
+                        };
+                        let next_id = (self.image_store.images.len() as u32).max(1) + 1;
+                        self.image_store.accept_sixel(
+                            next_id,
+                            result.width,
+                            result.height,
+                            result.rgba,
+                            cursor_col,
+                            cursor_row,
+                            Some(pane.id),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Drain iTerm2 OSC 1337 inline image sequences from all panes.
+        if self.state.config.iterm2_images {
+            for pane in self.workspaces.active_panes_mut().iter_mut() {
+                while let Ok(encoded) = pane.iterm2_rx.try_recv() {
+                    let (meta, b64) = if let Some(pos) = encoded.find(':') {
+                        (&encoded[..pos], &encoded[pos + 1..])
+                    } else {
+                        continue;
+                    };
+                    let mut meta_parts = meta.splitn(3, ',');
+                    let _display_width: u32 =
+                        meta_parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    let _display_height: u32 =
+                        meta_parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    let _preserve_aspect: bool = meta_parts
+                        .next()
+                        .and_then(|s| s.parse::<u8>().ok())
+                        .unwrap_or(0)
+                        != 0;
+
+                    let raw_bytes = match base64::engine::general_purpose::STANDARD.decode(b64) {
+                        Ok(b) => b,
+                        Err(_) => continue,
+                    };
+
+                    let (img_w, img_h, rgba) =
+                        match crate::image_protocol::decode_image_bytes(&raw_bytes) {
+                            Some(v) => v,
+                            None => continue,
+                        };
+
+                    let image_rows = (img_h as f32 / self.cell_h).ceil() as usize;
+                    let (cursor_col, cursor_row) = if let Ok(mut term) = pane.term.lock() {
+                        let point = term.grid().cursor.point;
+                        let row = point.line.0.max(0) as usize;
+
+                        if image_rows > 0
+                            && row + image_rows > pane.rows
+                            && pane.rows > 0
+                            && term.grid().display_offset() == 0
+                        {
+                            let overflow = (row + image_rows) - pane.rows;
+                            use alacritty_terminal::index::Line;
+                            term.grid_mut()
+                                .scroll_up(&(Line(0)..Line(pane.rows as i32)), overflow);
+                        }
+                        (point.column.0, row)
+                    } else {
+                        (0, 0)
+                    };
+                    let next_id = (self.image_store.images.len() as u32).max(1) + 1;
+                    self.image_store.accept_iterm2(
+                        next_id,
+                        img_w,
+                        img_h,
+                        &rgba,
+                        cursor_col,
+                        cursor_row,
+                        Some(pane.id),
+                    );
+                }
+            }
+        }
+
         // Drain bell signals from all panes.
-        for pane in self.panes.iter_mut() {
+        for pane in self.workspaces.active_panes_mut().iter_mut() {
             if pane.pending_bell {
                 pane.pending_bell = false;
                 if self.state.config.bell.visual {
@@ -2000,7 +2775,7 @@ impl AppCore {
         }
 
         // Drain OSC 9/777 desktop notifications from all panes (only when unfocused).
-        for pane in self.panes.iter_mut() {
+        for pane in self.workspaces.active_panes_mut().iter_mut() {
             while let Some(raw) = pane.notifications.pop_front() {
                 if !self.state.window_focused {
                     let (title, body) = if let Some(sep) = raw.find('\x00') {
@@ -2014,7 +2789,7 @@ impl AppCore {
         }
 
         // Drain OSC 52 clipboard operations.
-        for pane in self.panes.iter_mut() {
+        for pane in self.workspaces.active_panes_mut().iter_mut() {
             while let Some(op) = pane.clipboard_pending.pop_front() {
                 match op {
                     synapse_ui::pane::ClipboardOp::Write(_, data) => {
@@ -2047,7 +2822,12 @@ impl AppCore {
             self.fps_last_print = now;
         }
 
-        if self.state.config.cursor_blink {
+        if self.state.profiler_active {
+            let dt = now.duration_since(self.fps_last_print).as_secs_f32() * 1000.0;
+            self.state.profiler.add_frame_time(dt);
+        }
+
+        if self.state.config.cursor_blink && !self.state.config.reduce_motion {
             let blink_ms = self.state.config.cursor_blink_ms;
             if self.last_blink.elapsed() >= std::time::Duration::from_millis(blink_ms) {
                 self.cursor_blink_on = !self.cursor_blink_on;
@@ -2057,12 +2837,15 @@ impl AppCore {
             self.cursor_blink_on = true;
         }
 
+        self.poll_overlay_events();
+
         let effective_fs = self.state.font_size * self.scale_factor;
+        let (tab_bar, panes, cell_caches) = self.workspaces.active_split_mut();
         let exited = render_frame(
             &mut self.renderer,
             &self.layout,
-            &mut self.tab_bar,
-            &mut self.panes,
+            tab_bar,
+            panes,
             &self.image_store,
             &mut self.state,
             self.cell_w,
@@ -2078,6 +2861,7 @@ impl AppCore {
             &mut self.cached_cursor_rects_start,
             &mut self.cached_cursor_pixel,
             &mut self.cached_url_spans,
+            cell_caches,
             effective_fs,
             self.scale_factor,
             self.start_time.elapsed().as_secs_f32(),
@@ -2090,50 +2874,122 @@ impl AppCore {
             self.cached_cursor_rects_start = 0;
             self.cached_cursor_pixel = None;
         }
+
+        if self.state.profiler_active {
+            self.render_profiler_overlay();
+        }
+    }
+
+    fn poll_overlay_events(&mut self) {
+        if let Some(ref rx) = self.overlay_rx {
+            while let Ok(event) = rx.try_recv() {
+                match event {
+                    crate::overlay::OverlayEvent::Output {
+                        title: _,
+                        lines,
+                        success,
+                    } => {
+                        self.state.overlay.lines = lines;
+                        self.state.overlay.scroll = 0;
+                        self.state.overlay.status = if success {
+                            crate::overlay::OverlayStatus::Completed
+                        } else {
+                            crate::overlay::OverlayStatus::Failed
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_profiler_overlay(&mut self) {
+        let pane_area = self.layout.pane_area();
+        let line_h = self.cell_h;
+        let char_w = self.cell_w;
+
+        let bg = [0.0f32, 0.0, 0.0, 0.6];
+        let fg = self.state.theme.tab_text;
+
+        let lines = [
+            format!("FPS: {:.1}", self.state.profiler.fps),
+            format!("Frame: {:.1}ms", self.state.profiler.frame_time_ms),
+            format!(
+                "PTY: {:.1} KB/s",
+                self.state.profiler.pty_bytes_per_sec / 1024.0
+            ),
+            format!("Cells: {}", self.state.profiler.cell_count),
+            format!("Atlas: {:.0}%", self.state.profiler.atlas_used_percent),
+        ];
+
+        let max_w = lines.iter().map(|l| l.len()).max().unwrap_or(0) as f32 * char_w;
+        let bg_w = max_w + 12.0;
+        let bg_h = lines.len() as f32 * line_h + 8.0;
+        let bg_x = pane_area.0 + pane_area.2 - bg_w - 8.0;
+        let bg_y = pane_area.1 + 4.0;
+
+        self.cached_bg_rects.push(UIRect {
+            pos: [bg_x, bg_y],
+            size: [bg_w, bg_h],
+            color: bg,
+        });
+
+        for (i, line) in lines.iter().enumerate() {
+            let tx = bg_x + 6.0;
+            let ty = bg_y + 4.0 + i as f32 * line_h;
+            for (j, c) in line.chars().enumerate() {
+                self.cached_cell_data
+                    .push((c, tx + j as f32 * char_w, ty, self.cell_h, fg, bg));
+            }
+        }
     }
 
     fn handle_pane_exit(&mut self, pane_id: synapse_ui::PaneId) {
-        let tab_idx = self
-            .tab_bar
+        let ws = self.workspaces.active_ws_mut();
+        let tab_bar = &mut ws.tab_bar;
+        let panes = &mut ws.panes;
+        let cell_caches = &mut ws.pane_cell_caches;
+
+        let tab_idx = tab_bar
             .tabs
             .iter()
             .position(|t| t.pane_tree.all_panes().contains(&pane_id));
 
         if let Some(idx) = tab_idx {
-            let pane_count = self.tab_bar.tabs[idx].pane_tree.all_panes().len();
+            let pane_count = tab_bar.tabs[idx].pane_tree.all_panes().len();
 
             if pane_count == 1 {
-                if self.tab_bar.tabs.len() == 1 {
+                if tab_bar.tabs.len() == 1 {
                     let pane_area = self.layout.pane_area();
                     let new_cols =
                         ((pane_area.2 - self.margin * 2.0) / self.cell_w).max(1.0) as usize;
                     let new_rows =
                         ((pane_area.3 - self.margin * 2.0) / self.cell_h).max(1.0) as usize;
-                    let new_pane_id = self.tab_bar.next_pane_id();
-                    self.tab_bar.tabs[0].pane_tree = synapse_ui::PaneTree::leaf(new_pane_id);
-                    self.tab_bar.tabs[0].active_pane = new_pane_id;
+                    let new_pane_id = tab_bar.next_pane_id();
+                    tab_bar.tabs[0].pane_tree = synapse_ui::PaneTree::leaf(new_pane_id);
+                    tab_bar.tabs[0].active_pane = new_pane_id;
                     match create_pane(
                         new_pane_id,
                         new_cols,
                         new_rows,
                         self.state.config.scrollback_lines,
                     ) {
-                        Ok(pane) => self.panes.push(pane),
+                        Ok(pane) => panes.push(pane),
                         Err(e) => tracing::warn!("Failed to spawn replacement PTY: {}", e),
                     }
                 } else {
-                    self.tab_bar.close_tab(idx);
+                    tab_bar.close_tab(idx);
                 }
             } else {
-                self.tab_bar.tabs[idx].pane_tree.close(pane_id);
-                if self.tab_bar.tabs[idx].active_pane == pane_id {
-                    let first = self.tab_bar.tabs[idx].pane_tree.all_panes()[0];
-                    self.tab_bar.tabs[idx].active_pane = first;
+                tab_bar.tabs[idx].pane_tree.close(pane_id);
+                if tab_bar.tabs[idx].active_pane == pane_id {
+                    let first = tab_bar.tabs[idx].pane_tree.all_panes()[0];
+                    tab_bar.tabs[idx].active_pane = first;
                 }
             }
         }
 
-        self.panes.retain(|p| p.id != pane_id);
+        panes.retain(|p| p.id != pane_id);
+        cell_caches.remove(&pane_id);
     }
 }
 
