@@ -78,17 +78,17 @@ Single render pass per frame: `draw_frame(cells, ui_rects)` — one `get_current
 
 ## Color palette
 
-Cyberpunk dark theme with steel blue accent. Defined in `Theme::synapse_()` (`crates/SYNAPSE_-config/src/themes.rs`).
+Cyberpunk Blade Runner dark theme with electric red accent. Defined in `Theme::synapse_()` (`crates/SYNAPSE_-config/src/themes.rs`).
 4 built-in themes: `synapse_`, `dracula`, `catppuccin-mocha`, `tokyo-night`.
 
 ```
-#11131a  main background (wgpu clear color)
-#d2d5db  buffer text
-#7098cc  cursor, active pane border (steel blue)
-#181b24  tab bar bg
-#222739  active tab, separators, inactive borders
-#e5e8ee  active UI text
-#737a8c  inactive UI text
+#0A0C14  main background (void blue-black)
+#B0BBC8  default text (cool silver-white)
+#FF003C  cursor, active pane border (electric red accent)
+#070910  tab bar bg
+#13182A  active tab (dark indigo)
+#D0D8E4  active UI text
+#3C4560  inactive UI text (dim blue-gray)
 ```
 
 ## Config

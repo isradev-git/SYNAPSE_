@@ -718,6 +718,7 @@ fn is_space_key(event: &winit::event::KeyEvent) -> bool {
     matches!(event.logical_key, Key::Named(NamedKey::Space))
 }
 
+#[allow(clippy::type_complexity)]
 fn try_restore_session(
     path: &Option<std::path::PathBuf>,
     cols: usize,

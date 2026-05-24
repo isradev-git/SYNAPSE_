@@ -152,7 +152,7 @@ pub struct Config {
         deserialize_with = "deserialize_font_families"
     )]
     pub font_family: Vec<String>,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub font_ligatures: bool,
     #[serde(default = "default_window_width")]
     pub window_width: u32,
@@ -248,7 +248,7 @@ fn default_font_size() -> f32 {
     14.0
 }
 fn default_font_families() -> Vec<String> {
-    vec!["Dogica".to_string(), "JetBrains Mono".to_string()]
+    vec!["JetBrainsMono NF".to_string(), "JetBrains Mono".to_string()]
 }
 fn default_window_width() -> u32 {
     1280
@@ -478,7 +478,7 @@ mod tests {
         assert_eq!(cfg.font_size, 14.0);
         assert_eq!(
             cfg.font_family,
-            vec!["Dogica".to_string(), "JetBrains Mono".to_string()]
+            vec!["JetBrainsMono NF".to_string(), "JetBrains Mono".to_string()]
         );
         assert!(cfg.font_ligatures);
         assert_eq!(cfg.window_width, 1280);
@@ -520,7 +520,7 @@ scrollback_lines = 50000
         // Other fields use defaults
         assert_eq!(
             config.font_family,
-            vec!["Dogica".to_string(), "JetBrains Mono".to_string()]
+            vec!["JetBrainsMono NF".to_string(), "JetBrains Mono".to_string()]
         );
         assert_eq!(config.window_width, 1280);
         assert!(config.cursor_blink);
@@ -624,12 +624,19 @@ sidebar_width = 200
     }
 
     #[test]
-    fn test_font_family_default_is_dogica_with_jetbrains_fallback() {
+    fn test_font_family_default_is_jetbrains_mono_nf() {
         let config = Config::default();
         assert_eq!(
             config.font_family,
-            vec!["Dogica".to_string(), "JetBrains Mono".to_string()]
+            vec!["JetBrainsMono NF".to_string(), "JetBrains Mono".to_string()]
         );
+    }
+
+    #[test]
+    fn test_font_ligatures_default_true_in_toml() {
+        // serde(default) on bool gives false; we use default_true to keep ligatures on
+        let cfg: Config = toml::from_str("").unwrap();
+        assert!(cfg.font_ligatures, "ligatures should default to true when key absent from TOML");
     }
 
     #[test]

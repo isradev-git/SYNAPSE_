@@ -211,6 +211,8 @@ fn build_palette_items(
             Action::WorkspaceDelete
         ),
         action_item!("Toggle Profiler", Some("F12"), Action::ToggleProfiler),
+        action_item!("Show Keybinds", Some("F1"), Action::ToggleKeybinds),
+        action_item!("Settings", Some("F2"), Action::ToggleSettings),
     ];
 
     for (i, plugin) in plugins.iter().enumerate() {

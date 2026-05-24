@@ -19,7 +19,7 @@ use crate::pane_ops::find_pane;
 use crate::search::build_match_set;
 use crate::state::{AppState, UrlSpan};
 
-const TAB_FONT_SIZE: f32 = 12.0;
+const TAB_FONT_SIZE: f32 = 9.0;
 
 #[derive(Clone, Copy)]
 struct CachedGridCell {
@@ -552,6 +552,7 @@ pub fn build_tab_bar_ui_rects(
 }
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub fn build_tab_bar_text(
     layout: &Layout,
     tab_bar: &TabBar,
@@ -559,13 +560,16 @@ pub fn build_tab_bar_text(
     scroll_offset: usize,
     theme: &Theme,
     sidebar_show_process_dot: bool,
+    cell_w: f32,
+    cell_h: f32,
 ) -> Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> {
     let mut result = Vec::new();
     let sw = layout.sidebar_width;
     let header_h = theme::SIDEBAR_HEADER_HEIGHT;
     let tab_h = theme::SIDEBAR_TAB_HEIGHT;
     let tab_font_size = TAB_FONT_SIZE * scale_factor as f32;
-    let char_w = tab_font_size * 0.6;
+    let char_aspect = if cell_h > 0.0 { cell_w / cell_h } else { 0.6 };
+    let char_w = tab_font_size * char_aspect;
     let text_y_offset = (tab_h - tab_font_size) * 0.5;
     let tab_count = tab_bar.tabs.len();
     let (start, end, show_up, show_down) = layout.tab_visible_range(tab_count, scroll_offset);
@@ -573,9 +577,11 @@ pub fn build_tab_bar_text(
     // Logo/title text in header
     let logo_text = "SYNAPSE_";
     let logo_fs = 14.0 * scale_factor as f32;
-    let logo_cw = logo_fs * 0.6;
+    let logo_cw = logo_fs * char_aspect;
     let logo_x = 8.0;
-    let logo_y = 14.0 * scale_factor as f32;
+    // Center logo vertically within the unscaled header rect
+    let logo_line_h = logo_fs * 1.2;
+    let logo_y = ((header_h - logo_line_h) * 0.5).max(2.0);
     let transparent = [0.0f32, 0.0, 0.0, 0.0];
     for (j, c) in logo_text.chars().enumerate() {
         result.push((
@@ -725,10 +731,12 @@ fn build_title_bar(layout: &Layout, theme: &Theme) -> Vec<UIRect> {
     }]
 }
 
+#[allow(clippy::type_complexity)]
 fn build_title_bar_text(
     layout: &Layout,
     font_size: f32,
     theme: &Theme,
+    char_aspect: f32,
 ) -> Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])> {
     if !layout.wayland_decorated {
         return Vec::new();
@@ -740,7 +748,7 @@ fn build_title_bar_text(
     for (i, c) in "SYNAPSE_".chars().enumerate() {
         cells.push((
             c,
-            x + i as f32 * font_size * 0.6,
+            x + i as f32 * font_size * char_aspect,
             y,
             font_size,
             theme.tab_text_inactive,
@@ -756,6 +764,7 @@ pub fn build_status_bar(
     state: &AppState,
     active_cwd: &str,
     workspace_name: &str,
+    char_aspect: f32,
 ) -> (Vec<UIRect>, Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>) {
     let mut rects = Vec::new();
     let mut cells = Vec::new();
@@ -780,8 +789,8 @@ pub fn build_status_bar(
         color: state.theme.tab_separator,
     });
 
-    let fs = 11.0;
-    let char_w = fs * 0.6;
+    let fs = 13.0;
+    let char_w = fs * char_aspect;
     let text_y = bar_y + (bar_h - fs) * 0.5;
     let transparent = [0.0f32, 0.0, 0.0, 0.0];
     let fg = state.theme.tab_text_inactive;
@@ -1080,6 +1089,7 @@ pub fn render_frame(
     time_secs: f32,
 ) -> Vec<PaneId> {
     let font_size = effective_font_size;
+    let char_aspect = if cell_h > 0.0 { cell_w / cell_h } else { 0.6 };
 
     // Drain event channels: pick up exit signals and title updates, then
     // check the dirty flag for PTY output.
@@ -1196,7 +1206,10 @@ pub fn render_frame(
         || label_active
         || resize_active
         || git_branch_updated
-        || status_time_dirty;
+        || status_time_dirty
+        || state.profiler_active
+        || state.keybinds_open
+        || state.settings_open;
     // UI rects (cursor shape) also change on blink.
     let needs_ui_rebuild = needs_cell_rebuild || blink_changed;
 
@@ -1485,8 +1498,7 @@ pub fn render_frame(
                     .replace("{title}", &title)
                     .replace("{user}@{host}", &state.user_host);
                 if !badge_text.is_empty() && !badge_text.ends_with("{}") {
-                    let badge_scale = (content_h * 0.5).min(60.0).max(20.0);
-                    let char_aspect = 0.6;
+                    let badge_scale = (content_h * 0.5).clamp(20.0, 60.0);
                     let char_w = badge_scale * char_aspect;
                     let total_w = badge_text.len() as f32 * char_w;
                     let start_x = content_x + (content_w - total_w) / 2.0;
@@ -1752,7 +1764,7 @@ pub fn render_frame(
                 let lx = rect.x + margin + 4.0;
                 let ly = rect.y + margin + 4.0;
                 let label_fs = 14.0;
-                let label_char_w = label_fs * 0.6;
+                let label_char_w = label_fs * char_aspect;
                 let label = format!("P{}", pos + 1);
                 let transparent = [0.0_f32, 0.0, 0.0, 0.0];
                 for (j, c) in label.chars().enumerate() {
@@ -1779,7 +1791,7 @@ pub fn render_frame(
                 let rows = (content_h / cell_h).max(1.0) as usize;
                 let indicator = format!("{}\u{00D7}{}", cols, rows);
                 let ind_fs = 12.0;
-                let ind_char_w = ind_fs * 0.6;
+                let ind_char_w = ind_fs * char_aspect;
                 let ind_w = indicator.chars().count() as f32 * ind_char_w;
                 let ind_x = rect.x + rect.w * 0.5 - ind_w * 0.5;
                 let ind_y = rect.y + rect.h * 0.5 - ind_fs * 0.5;
@@ -1817,7 +1829,7 @@ pub fn render_frame(
             });
 
             let search_fs = 12.0;
-            let char_w = search_fs * 0.6;
+            let char_w = search_fs * char_aspect;
             let text_y = bar_y + 7.0;
             let text_x = bar_x + 8.0;
             let prefix = "Search: ";
@@ -1921,7 +1933,7 @@ pub fn render_frame(
             });
 
             let search_fs = 12.0;
-            let char_w = search_fs * 0.6;
+            let char_w = search_fs * char_aspect;
             let text_y = bar_y + 7.0;
             let text_x = bar_x + 8.0;
             let transparent = [0.0, 0.0, 0.0, 0.0];
@@ -1973,7 +1985,7 @@ pub fn render_frame(
         // Command palette overlay
         if state.palette.active {
             let p_fs = 13.0;
-            let p_char_w = p_fs * 0.6;
+            let p_char_w = p_fs * char_aspect;
             let p_line_h = p_fs * 1.5;
             let pane_area = layout.pane_area();
             let overlay_w = 600.0_f32.min(pane_area.2 - 40.0);
@@ -2155,7 +2167,7 @@ pub fn render_frame(
         for rect in build_title_bar(layout, &state.theme) {
             cached_bg_rects.push(rect);
         }
-        for cell in build_title_bar_text(layout, font_size, &state.theme) {
+        for cell in build_title_bar_text(layout, font_size, &state.theme, char_aspect) {
             cached_cell_data.push(cell);
         }
 
@@ -2166,6 +2178,8 @@ pub fn render_frame(
             state.tab_scroll_offset,
             &state.theme,
             state.config.sidebar_show_process_dot,
+            cell_w,
+            cell_h,
         ) {
             cached_cell_data.push(tab_cell);
         }
@@ -2176,6 +2190,7 @@ pub fn render_frame(
             state,
             &tab_bar.active_tab().cwd.clone(),
             &state.active_workspace,
+            char_aspect,
         );
         cached_bg_rects.extend(sb_rects);
         for cell in sb_cells {
@@ -2355,6 +2370,16 @@ pub fn render_frame(
         cell_h,
     );
 
+    if state.profiler_active {
+        render_profiler_cells(cached_cell_data, cached_bg_rects, state, layout, cell_w, cell_h);
+    }
+    if state.keybinds_open {
+        render_keybinds_cells(cached_cell_data, cached_bg_rects, state, layout, cell_w, cell_h);
+    }
+    if state.settings_open {
+        render_settings_cells(cached_cell_data, cached_bg_rects, state, layout, cell_w, cell_h);
+    }
+
     renderer.draw_frame_with_options(
         cached_cell_data,
         cached_ui_rects,
@@ -2467,6 +2492,400 @@ fn render_overlay(
                 bg,
             ));
         }
+    }
+}
+
+fn render_profiler_cells(
+    cell_data: &mut CellData,
+    bg_rects: &mut Vec<UIRect>,
+    state: &AppState,
+    layout: &Layout,
+    cell_w: f32,
+    cell_h: f32,
+) {
+    let pane_area = layout.pane_area();
+    let bg = [0.0f32, 0.0, 0.0, 0.6];
+    let fg = state.theme.tab_text;
+
+    let lines = [
+        format!("FPS: {:.1}", state.profiler.fps),
+        format!("Frame: {:.1}ms", state.profiler.frame_time_ms),
+        format!("PTY: {:.1} KB/s", state.profiler.pty_bytes_per_sec / 1024.0),
+        format!("Cells: {}", state.profiler.cell_count),
+        format!("Atlas: {:.0}%", state.profiler.atlas_used_percent),
+    ];
+
+    let max_w = lines.iter().map(|l| l.len()).max().unwrap_or(0) as f32 * cell_w;
+    let bg_w = max_w + 12.0;
+    let bg_h = lines.len() as f32 * cell_h + 8.0;
+    let bg_x = pane_area.0 + pane_area.2 - bg_w - 8.0;
+    let bg_y = pane_area.1 + 4.0;
+
+    bg_rects.push(UIRect {
+        pos: [bg_x, bg_y],
+        size: [bg_w, bg_h],
+        color: bg,
+    });
+
+    for (i, line) in lines.iter().enumerate() {
+        let tx = bg_x + 6.0;
+        let ty = bg_y + 4.0 + i as f32 * cell_h;
+        for (j, c) in line.chars().enumerate() {
+            cell_data.push((c, tx + j as f32 * cell_w, ty, cell_h, fg, bg));
+        }
+    }
+}
+
+fn render_keybinds_cells(
+    cell_data: &mut CellData,
+    bg_rects: &mut Vec<UIRect>,
+    state: &AppState,
+    layout: &Layout,
+    cell_w: f32,
+    cell_h: f32,
+) {
+    let pane_area = layout.pane_area();
+    let screen_w = pane_area.2;
+    let screen_h = pane_area.3;
+
+    let theme = &state.theme;
+    let title_fg = theme.cursor;
+    let header_fg = [1.0f32, 0.647, 0.0, 1.0];
+    let key_fg = [0.0f32, 0.898, 1.0, 1.0];
+    let desc_fg = theme.tab_text;
+    let dim_fg = [
+        theme.tab_text_inactive[0],
+        theme.tab_text_inactive[1],
+        theme.tab_text_inactive[2],
+        1.0,
+    ];
+    let overlay_bg = [0.03f32, 0.04, 0.08, 0.94];
+    let header_bg = [0.06f32, 0.08, 0.16, 1.0];
+
+    enum Row {
+        Section(&'static str),
+        Bind { key: &'static str, desc: &'static str },
+        Spacer,
+    }
+
+    let rows: &[Row] = &[
+        Row::Section("─── GENERAL ───────────────────────────────────────"),
+        Row::Bind { key: "F1",               desc: "Show / hide this keybinds panel" },
+        Row::Bind { key: "F2",               desc: "Open settings overlay" },
+        Row::Bind { key: "Ctrl+,",           desc: "Reload config (hot-reload)" },
+        Row::Bind { key: "F11",              desc: "Fullscreen" },
+        Row::Bind { key: "F12",              desc: "Toggle performance profiler" },
+        Row::Spacer,
+        Row::Section("─── TABS ───────────────────────────────────────────"),
+        Row::Bind { key: "Ctrl+T",           desc: "New tab" },
+        Row::Bind { key: "Ctrl+W",           desc: "Close tab" },
+        Row::Bind { key: "Ctrl+Tab",         desc: "Next tab" },
+        Row::Bind { key: "Ctrl+Shift+Tab",   desc: "Previous tab" },
+        Row::Bind { key: "Ctrl+1..9",        desc: "Jump to tab N" },
+        Row::Spacer,
+        Row::Section("─── PANES ──────────────────────────────────────────"),
+        Row::Bind { key: "Ctrl+Shift+D",     desc: "Split pane vertically" },
+        Row::Bind { key: "Ctrl+Shift+H",     desc: "Split pane horizontally" },
+        Row::Bind { key: "Ctrl+Enter",       desc: "Auto split" },
+        Row::Bind { key: "Ctrl+Shift+W",     desc: "Close pane" },
+        Row::Bind { key: "Ctrl+Shift+Arrows",desc: "Navigate between panes" },
+        Row::Bind { key: "Ctrl+Shift+Alt+Arrows", desc: "Resize pane" },
+        Row::Bind { key: "Ctrl+Shift+Z",     desc: "Zoom / unzoom active pane" },
+        Row::Spacer,
+        Row::Section("─── SEARCH & COPY ──────────────────────────────────"),
+        Row::Bind { key: "Ctrl+Shift+F",     desc: "In-buffer search" },
+        Row::Bind { key: "Ctrl+R",           desc: "History search" },
+        Row::Bind { key: "Ctrl+Shift+Space", desc: "Enter copy mode (vim-style)" },
+        Row::Bind { key: "Ctrl+Shift+C",     desc: "Copy selection" },
+        Row::Bind { key: "Ctrl+Shift+V",     desc: "Paste" },
+        Row::Spacer,
+        Row::Section("─── NAVIGATION ─────────────────────────────────────"),
+        Row::Bind { key: "Ctrl+Up",          desc: "Jump to previous prompt mark" },
+        Row::Bind { key: "Ctrl+Down",        desc: "Jump to next prompt mark" },
+        Row::Spacer,
+        Row::Section("─── FONT ───────────────────────────────────────────"),
+        Row::Bind { key: "Ctrl+=",           desc: "Increase font size" },
+        Row::Bind { key: "Ctrl+-",           desc: "Decrease font size" },
+        Row::Bind { key: "Ctrl+0",           desc: "Reset font size" },
+        Row::Spacer,
+        Row::Section("─── WORKSPACE ──────────────────────────────────────"),
+        Row::Bind { key: "Ctrl+Shift+N",     desc: "New workspace" },
+        Row::Bind { key: "Ctrl+Alt+Tab",     desc: "Switch workspace" },
+        Row::Bind { key: "Ctrl+Shift+Alt+R", desc: "Rename workspace" },
+        Row::Bind { key: "Ctrl+Shift+Alt+D", desc: "Delete workspace" },
+        Row::Spacer,
+        Row::Section("─── MISC ───────────────────────────────────────────"),
+        Row::Bind { key: "Ctrl+L",           desc: "Clear screen" },
+        Row::Bind { key: "Ctrl+Shift+S",     desc: "Toggle status bar" },
+        Row::Bind { key: "Ctrl+Shift+P",     desc: "Command palette" },
+        Row::Bind { key: "Ctrl+Shift+B",     desc: "Broadcast to all panes" },
+        Row::Bind { key: "Ctrl+Shift+R",     desc: "Start / stop asciinema recording" },
+        Row::Bind { key: "Ctrl+Shift+E",     desc: "Toggle GPU effects" },
+        Row::Spacer,
+        Row::Section("─── COPY MODE ──────────────────────────────────────"),
+        Row::Bind { key: "h j k l",          desc: "Move cursor" },
+        Row::Bind { key: "v / V",            desc: "Char / line selection" },
+        Row::Bind { key: "y",                desc: "Yank (copy) selection" },
+        Row::Bind { key: "/ or ?",           desc: "Search forward / backward" },
+        Row::Bind { key: "Esc / q",          desc: "Exit copy mode" },
+    ];
+
+    let key_col_w: usize = 26;
+    let desc_col_w: usize = 48;
+    let total_w_chars = key_col_w + 2 + desc_col_w;
+    let box_w = total_w_chars as f32 * cell_w + 24.0;
+    let title_h = cell_h + 8.0;
+    let footer_h = cell_h + 4.0;
+    let visible_rows = ((screen_h - 80.0 - title_h - footer_h) / cell_h).floor() as usize;
+    let box_h = visible_rows as f32 * cell_h + title_h + footer_h + 16.0;
+    let box_x = pane_area.0 + (screen_w - box_w) * 0.5;
+    let box_y = pane_area.1 + (screen_h - box_h) * 0.5;
+
+    // Full-screen dim
+    bg_rects.push(UIRect {
+        pos: [pane_area.0, pane_area.1],
+        size: [screen_w, screen_h],
+        color: [0.0, 0.0, 0.0, 0.72],
+    });
+
+    // Main box
+    bg_rects.push(UIRect {
+        pos: [box_x, box_y],
+        size: [box_w, box_h],
+        color: overlay_bg,
+    });
+
+    // Title bar
+    bg_rects.push(UIRect {
+        pos: [box_x, box_y],
+        size: [box_w, title_h],
+        color: header_bg,
+    });
+    let title = " SYNAPSE_ KEYBINDS  \u{b7}  \u{2191}\u{2193} scroll  \u{b7}  Esc / F1 close ";
+    for (j, c) in title.chars().enumerate() {
+        cell_data.push((c, box_x + 12.0 + j as f32 * cell_w, box_y + 4.0, cell_h, title_fg, header_bg));
+    }
+
+    // Footer note
+    let ny = box_y + box_h - footer_h;
+    bg_rects.push(UIRect {
+        pos: [box_x, ny],
+        size: [box_w, footer_h],
+        color: header_bg,
+    });
+    let note = " macOS/Linux: Ctrl = ^   Windows: not yet supported ";
+    for (j, c) in note.chars().enumerate() {
+        cell_data.push((c, box_x + 12.0 + j as f32 * cell_w, ny + 2.0, cell_h, dim_fg, header_bg));
+    }
+
+    let content_y_start = box_y + title_h + 4.0;
+    let max_scroll = rows.len().saturating_sub(visible_rows);
+    let scroll = state.keybinds_scroll.min(max_scroll);
+
+    let cx = box_x + 12.0;
+    for (i, row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
+        let ry = content_y_start + (i - scroll) as f32 * cell_h;
+        match row {
+            Row::Section(label) => {
+                bg_rects.push(UIRect {
+                    pos: [box_x + 4.0, ry],
+                    size: [box_w - 8.0, cell_h],
+                    color: [0.05, 0.07, 0.14, 1.0],
+                });
+                for (j, c) in label.chars().enumerate() {
+                    cell_data.push((c, cx + j as f32 * cell_w, ry, cell_h, header_fg, [0.05, 0.07, 0.14, 1.0]));
+                }
+            }
+            Row::Bind { key, desc } => {
+                let padded_key = format!("{:<width$}", key, width = key_col_w);
+                for (j, c) in padded_key.chars().enumerate() {
+                    cell_data.push((c, cx + j as f32 * cell_w, ry, cell_h, key_fg, overlay_bg));
+                }
+                let sep_x = cx + key_col_w as f32 * cell_w;
+                for (j, c) in "  ".chars().enumerate() {
+                    cell_data.push((c, sep_x + j as f32 * cell_w, ry, cell_h, dim_fg, overlay_bg));
+                }
+                let dx = sep_x + 2.0 * cell_w;
+                let truncated: String = desc.chars().take(desc_col_w).collect();
+                for (j, c) in truncated.chars().enumerate() {
+                    cell_data.push((c, dx + j as f32 * cell_w, ry, cell_h, desc_fg, overlay_bg));
+                }
+            }
+            Row::Spacer => {}
+        }
+    }
+}
+
+fn render_settings_cells(
+    cell_data: &mut CellData,
+    bg_rects: &mut Vec<UIRect>,
+    state: &AppState,
+    layout: &Layout,
+    cell_w: f32,
+    cell_h: f32,
+) {
+    use synapse_config::config::CursorStyle;
+
+    let pane_area = layout.pane_area();
+    let screen_w = pane_area.2;
+    let screen_h = pane_area.3;
+
+    let theme = &state.theme;
+    let overlay_bg = [0.03f32, 0.04, 0.08, 0.96];
+    let header_bg = [0.06f32, 0.08, 0.16, 1.0];
+    let title_fg = theme.cursor;
+    let section_fg = [1.0f32, 0.647, 0.0, 1.0];
+    let label_fg = theme.tab_text;
+    let value_fg = [0.0f32, 0.898, 1.0, 1.0];
+    let dim_fg = [
+        theme.tab_text_inactive[0],
+        theme.tab_text_inactive[1],
+        theme.tab_text_inactive[2],
+        1.0,
+    ];
+    let sel_bg = [0.06f32, 0.12, 0.24, 1.0];
+    let sel_fg = [1.0f32, 1.0, 1.0, 1.0];
+
+    struct Item {
+        label: &'static str,
+        value: String,
+        section: Option<&'static str>,
+    }
+
+    let cfg = &state.config;
+    let bool_str = |b: bool| -> String { if b { "ON".into() } else { "OFF".into() } };
+    let cursor_str = |cs: &CursorStyle| -> String {
+        match cs {
+            CursorStyle::Block => "Block".into(),
+            CursorStyle::Beam => "Beam".into(),
+            CursorStyle::Underline => "Underline".into(),
+            CursorStyle::NeonUnderbar => "NeonUnderbar".into(),
+        }
+    };
+
+    let items: &[Item] = &[
+        Item { label: "Font Size",        value: format!("{:.0}", cfg.font_size),  section: Some("FONT") },
+        Item { label: "Font Ligatures",   value: bool_str(cfg.font_ligatures),     section: None },
+        Item { label: "Theme",            value: cfg.theme.clone(),                section: Some("APPEARANCE") },
+        Item { label: "Cursor Style",     value: cursor_str(&cfg.cursor_style),    section: None },
+        Item { label: "Cursor Blink",     value: bool_str(cfg.cursor_blink),       section: None },
+        Item { label: "Status Bar",       value: bool_str(cfg.status_bar),         section: Some("UI") },
+        Item { label: "Scrollbar",        value: bool_str(cfg.scrollbar),          section: None },
+        Item { label: "Show Pane Labels", value: bool_str(cfg.show_pane_labels),   section: None },
+        Item { label: "Pane Badge",       value: bool_str(cfg.pane_badge),         section: None },
+        Item { label: "Effects",          value: bool_str(cfg.effects.enabled),    section: Some("EFFECTS") },
+    ];
+
+    let label_w: usize = 20;
+    let value_w: usize = 14;
+    let hint_w: usize = 8;
+    let total_chars = label_w + 2 + value_w + 2 + hint_w;
+    let box_w = total_chars as f32 * cell_w + 32.0;
+    let title_h = cell_h + 8.0;
+    let footer_h = cell_h + 6.0;
+    let section_rows = items.iter().filter(|it| it.section.is_some()).count();
+    let content_rows = items.len() + section_rows;
+    let box_h = content_rows as f32 * cell_h + title_h + footer_h + 20.0;
+    let box_x = pane_area.0 + (screen_w - box_w) * 0.5;
+    let box_y = pane_area.1 + (screen_h - box_h) * 0.5;
+
+    // Full-screen dim
+    bg_rects.push(UIRect {
+        pos: [pane_area.0, pane_area.1],
+        size: [screen_w, screen_h],
+        color: [0.0, 0.0, 0.0, 0.72],
+    });
+
+    // Main box
+    bg_rects.push(UIRect {
+        pos: [box_x, box_y],
+        size: [box_w, box_h],
+        color: overlay_bg,
+    });
+
+    // Title bar
+    bg_rects.push(UIRect {
+        pos: [box_x, box_y],
+        size: [box_w, title_h],
+        color: header_bg,
+    });
+    let title = " SETTINGS  \u{b7}  F2 close  \u{b7}  S save ";
+    for (j, c) in title.chars().enumerate() {
+        cell_data.push((c, box_x + 12.0 + j as f32 * cell_w, box_y + 4.0, cell_h, title_fg, header_bg));
+    }
+
+    // Footer
+    let fy = box_y + box_h - footer_h;
+    bg_rects.push(UIRect {
+        pos: [box_x, fy],
+        size: [box_w, footer_h],
+        color: header_bg,
+    });
+    let footer = " \u{2191}\u{2193} navigate   \u{2190}\u{2192} change   S save & close   Esc cancel ";
+    for (j, c) in footer.chars().enumerate() {
+        cell_data.push((c, box_x + 8.0 + j as f32 * cell_w, fy + 3.0, cell_h, dim_fg, header_bg));
+    }
+
+    let cx = box_x + 12.0;
+    let mut row_y = box_y + title_h + 6.0;
+
+    for (item_idx, item) in items.iter().enumerate() {
+        // Section header
+        if let Some(sec) = item.section {
+            let sec_label = format!("\u{2500}\u{2500}\u{2500} {} ", sec);
+            bg_rects.push(UIRect {
+                pos: [box_x + 4.0, row_y],
+                size: [box_w - 8.0, cell_h],
+                color: [0.04, 0.06, 0.12, 1.0],
+            });
+            for (j, c) in sec_label.chars().enumerate() {
+                cell_data.push((c, cx + j as f32 * cell_w, row_y, cell_h, section_fg, [0.04, 0.06, 0.12, 1.0]));
+            }
+            row_y += cell_h;
+        }
+
+        let is_selected = item_idx == state.settings_item;
+        let row_bg = if is_selected { sel_bg } else { overlay_bg };
+        let row_label_fg = if is_selected { sel_fg } else { label_fg };
+        let row_value_fg = if is_selected { [0.0f32, 1.0, 0.8, 1.0] } else { value_fg };
+
+        if is_selected {
+            bg_rects.push(UIRect {
+                pos: [box_x + 2.0, row_y],
+                size: [box_w - 4.0, cell_h],
+                color: sel_bg,
+            });
+        }
+
+        // Label
+        let padded_label = format!("{:<width$}", item.label, width = label_w);
+        for (j, c) in padded_label.chars().enumerate() {
+            cell_data.push((c, cx + j as f32 * cell_w, row_y, cell_h, row_label_fg, row_bg));
+        }
+
+        // Separator
+        let sep_x = cx + label_w as f32 * cell_w;
+        for (j, c) in "  ".chars().enumerate() {
+            cell_data.push((c, sep_x + j as f32 * cell_w, row_y, cell_h, dim_fg, row_bg));
+        }
+
+        // Value
+        let vx = sep_x + 2.0 * cell_w;
+        let padded_val = format!("{:<width$}", item.value, width = value_w);
+        for (j, c) in padded_val.chars().enumerate() {
+            cell_data.push((c, vx + j as f32 * cell_w, row_y, cell_h, row_value_fg, row_bg));
+        }
+
+        // Hint arrows (only on selected row)
+        if is_selected {
+            let hx = vx + value_w as f32 * cell_w + cell_w;
+            let hint = "\u{2190} \u{2192}";
+            for (j, c) in hint.chars().enumerate() {
+                cell_data.push((c, hx + j as f32 * cell_w, row_y, cell_h, dim_fg, row_bg));
+            }
+        }
+
+        row_y += cell_h;
     }
 }
 
@@ -2875,9 +3294,6 @@ impl AppCore {
             self.cached_cursor_pixel = None;
         }
 
-        if self.state.profiler_active {
-            self.render_profiler_overlay();
-        }
     }
 
     fn poll_overlay_events(&mut self) {
@@ -2902,6 +3318,7 @@ impl AppCore {
         }
     }
 
+    #[allow(dead_code)]
     fn render_profiler_overlay(&mut self) {
         let pane_area = self.layout.pane_area();
         let line_h = self.cell_h;
@@ -2939,6 +3356,227 @@ impl AppCore {
             for (j, c) in line.chars().enumerate() {
                 self.cached_cell_data
                     .push((c, tx + j as f32 * char_w, ty, self.cell_h, fg, bg));
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    fn render_keybinds_overlay(&mut self) {
+        let line_h = self.cell_h;
+        let char_w = self.cell_w;
+        let pane_area = self.layout.pane_area();
+        let screen_w = pane_area.2;
+        let screen_h = pane_area.3;
+
+        let theme = &self.state.theme;
+        let title_fg = theme.cursor;
+        let header_fg = [1.0f32, 0.647, 0.0, 1.0]; // amber section headers
+        let key_fg = [0.0f32, 0.898, 1.0, 1.0]; // bright cyan for keys
+        let desc_fg = theme.tab_text;
+        let dim_fg = [theme.tab_text_inactive[0], theme.tab_text_inactive[1],
+                      theme.tab_text_inactive[2], 1.0];
+        let overlay_bg = [0.03f32, 0.04, 0.08, 0.94];
+        let header_bg = [0.06f32, 0.08, 0.16, 1.0];
+
+        #[derive(Clone)]
+        enum Row {
+            Section(&'static str),
+            Bind { key: &'static str, desc: &'static str },
+            Spacer,
+        }
+
+        let rows: &[Row] = &[
+            Row::Section("─── GENERAL ───────────────────────────────────────"),
+            Row::Bind { key: "F1",            desc: "Show / hide this keybinds panel" },
+            Row::Bind { key: "Ctrl+,",        desc: "Reload config (hot-reload)" },
+            Row::Bind { key: "F11",           desc: "Fullscreen" },
+            Row::Bind { key: "F12",           desc: "Toggle performance profiler" },
+            Row::Spacer,
+            Row::Section("─── TABS ───────────────────────────────────────────"),
+            Row::Bind { key: "Ctrl+T",        desc: "New tab" },
+            Row::Bind { key: "Ctrl+W",        desc: "Close tab" },
+            Row::Bind { key: "Ctrl+Tab",      desc: "Next tab" },
+            Row::Bind { key: "Ctrl+Shift+Tab",desc: "Previous tab" },
+            Row::Bind { key: "Ctrl+1..9",     desc: "Jump to tab N" },
+            Row::Spacer,
+            Row::Section("─── PANES ──────────────────────────────────────────"),
+            Row::Bind { key: "Ctrl+Shift+D",  desc: "Split pane vertically" },
+            Row::Bind { key: "Ctrl+Shift+H",  desc: "Split pane horizontally" },
+            Row::Bind { key: "Ctrl+Enter",    desc: "Auto split" },
+            Row::Bind { key: "Ctrl+Shift+W",  desc: "Close pane" },
+            Row::Bind { key: "Ctrl+Shift+↑↓←→", desc: "Navigate between panes" },
+            Row::Bind { key: "Ctrl+Shift+Alt+↑↓←→", desc: "Resize pane" },
+            Row::Bind { key: "Ctrl+Shift+Z",  desc: "Zoom / unzoom active pane" },
+            Row::Spacer,
+            Row::Section("─── SEARCH & COPY ──────────────────────────────────"),
+            Row::Bind { key: "Ctrl+Shift+F",  desc: "In-buffer search" },
+            Row::Bind { key: "Ctrl+R",        desc: "History search" },
+            Row::Bind { key: "Ctrl+Shift+Space", desc: "Enter copy mode (vim-style)" },
+            Row::Bind { key: "Ctrl+Shift+C",  desc: "Copy selection" },
+            Row::Bind { key: "Ctrl+Shift+V",  desc: "Paste" },
+            Row::Spacer,
+            Row::Section("─── NAVIGATION ─────────────────────────────────────"),
+            Row::Bind { key: "Ctrl+↑",        desc: "Jump to previous prompt mark" },
+            Row::Bind { key: "Ctrl+↓",        desc: "Jump to next prompt mark" },
+            Row::Spacer,
+            Row::Section("─── FONT ───────────────────────────────────────────"),
+            Row::Bind { key: "Ctrl+=",        desc: "Increase font size" },
+            Row::Bind { key: "Ctrl+-",        desc: "Decrease font size" },
+            Row::Bind { key: "Ctrl+0",        desc: "Reset font size" },
+            Row::Spacer,
+            Row::Section("─── WORKSPACE ──────────────────────────────────────"),
+            Row::Bind { key: "Ctrl+Shift+N",  desc: "New workspace" },
+            Row::Bind { key: "Ctrl+Alt+Tab",  desc: "Switch workspace" },
+            Row::Bind { key: "Ctrl+Shift+Alt+R", desc: "Rename workspace" },
+            Row::Bind { key: "Ctrl+Shift+Alt+D", desc: "Delete workspace" },
+            Row::Spacer,
+            Row::Section("─── MISC ───────────────────────────────────────────"),
+            Row::Bind { key: "Ctrl+L",        desc: "Clear screen" },
+            Row::Bind { key: "Ctrl+Shift+S",  desc: "Toggle status bar" },
+            Row::Bind { key: "Ctrl+Shift+P",  desc: "Command palette" },
+            Row::Bind { key: "Ctrl+Shift+B",  desc: "Toggle broadcast to all panes" },
+            Row::Bind { key: "Ctrl+Shift+R",  desc: "Start / stop asciinema recording" },
+            Row::Bind { key: "Ctrl+Shift+E",  desc: "Toggle GPU effects (scanlines, bloom…)" },
+            Row::Spacer,
+            Row::Section("─── COPY MODE (when active) ────────────────────────"),
+            Row::Bind { key: "h j k l",       desc: "Move cursor" },
+            Row::Bind { key: "v / V",         desc: "Start char / line selection" },
+            Row::Bind { key: "y",             desc: "Yank (copy) selection" },
+            Row::Bind { key: "/ or ?",        desc: "Search forward / backward" },
+            Row::Bind { key: "Esc / q",       desc: "Exit copy mode" },
+        ];
+
+        let key_col_w = 26usize;   // chars for key column
+        let desc_col_w = 52usize;  // chars for desc column
+        let total_w_chars = key_col_w + 2 + desc_col_w;
+        let box_w = total_w_chars as f32 * char_w + 24.0;
+        let visible_rows = ((screen_h - 80.0) / line_h).floor() as usize;
+        let box_h = visible_rows as f32 * line_h + 32.0;
+        let box_x = pane_area.0 + (screen_w - box_w) * 0.5;
+        let box_y = pane_area.1 + (screen_h - box_h) * 0.5;
+
+        // Dim full screen behind overlay
+        self.cached_bg_rects.push(UIRect {
+            pos: [pane_area.0, pane_area.1],
+            size: [screen_w, screen_h],
+            color: [0.0, 0.0, 0.0, 0.72],
+        });
+
+        // Main box
+        self.cached_bg_rects.push(UIRect {
+            pos: [box_x, box_y],
+            size: [box_w, box_h],
+            color: overlay_bg,
+        });
+
+        // Title bar row
+        let title = " SYNAPSE_ KEYBINDS  ·  ↑↓ scroll  ·  Esc or F1 close ";
+        self.cached_bg_rects.push(UIRect {
+            pos: [box_x, box_y],
+            size: [box_w, line_h + 8.0],
+            color: header_bg,
+        });
+        let tx = box_x + 12.0;
+        let ty = box_y + 4.0;
+        for (j, c) in title.chars().enumerate() {
+            self.cached_cell_data.push((
+                c,
+                tx + j as f32 * char_w,
+                ty,
+                self.cell_h,
+                title_fg,
+                header_bg,
+            ));
+        }
+
+        // Platform note
+        let note = " macOS/Linux: Ctrl = ^ | Windows: not yet supported ";
+        let ny = box_y + box_h - line_h - 4.0;
+        self.cached_bg_rects.push(UIRect {
+            pos: [box_x, ny],
+            size: [box_w, line_h + 4.0],
+            color: header_bg,
+        });
+        for (j, c) in note.chars().enumerate() {
+            self.cached_cell_data.push((
+                c,
+                box_x + 12.0 + j as f32 * char_w,
+                ny + 2.0,
+                self.cell_h,
+                dim_fg,
+                header_bg,
+            ));
+        }
+
+        let content_y_start = box_y + line_h + 12.0;
+        let content_y_end = ny - 4.0;
+        let visible_content_h = content_y_end - content_y_start;
+        let max_visible = (visible_content_h / line_h).floor() as usize;
+
+        // Clamp scroll
+        let total_rows = rows.len();
+        let max_scroll = total_rows.saturating_sub(max_visible);
+        let scroll = self.state.keybinds_scroll.min(max_scroll);
+        self.state.keybinds_scroll = scroll;
+
+        let cx = box_x + 12.0;
+        for (i, row) in rows.iter().enumerate().skip(scroll).take(max_visible) {
+            let ry = content_y_start + (i - scroll) as f32 * line_h;
+            match row {
+                Row::Section(label) => {
+                    self.cached_bg_rects.push(UIRect {
+                        pos: [box_x + 4.0, ry],
+                        size: [box_w - 8.0, line_h],
+                        color: [0.05, 0.07, 0.14, 1.0],
+                    });
+                    for (j, c) in label.chars().enumerate() {
+                        self.cached_cell_data.push((
+                            c,
+                            cx + j as f32 * char_w,
+                            ry,
+                            self.cell_h,
+                            header_fg,
+                            [0.05, 0.07, 0.14, 1.0],
+                        ));
+                    }
+                }
+                Row::Bind { key, desc } => {
+                    let padded_key = format!("{:<width$}", key, width = key_col_w);
+                    for (j, c) in padded_key.chars().enumerate() {
+                        self.cached_cell_data.push((
+                            c,
+                            cx + j as f32 * char_w,
+                            ry,
+                            self.cell_h,
+                            key_fg,
+                            overlay_bg,
+                        ));
+                    }
+                    let sep_x = cx + key_col_w as f32 * char_w;
+                    for (j, c) in "  ".chars().enumerate() {
+                        self.cached_cell_data.push((
+                            c,
+                            sep_x + j as f32 * char_w,
+                            ry,
+                            self.cell_h,
+                            dim_fg,
+                            overlay_bg,
+                        ));
+                    }
+                    let dx = sep_x + 2.0 * char_w;
+                    let truncated: String = desc.chars().take(desc_col_w).collect();
+                    for (j, c) in truncated.chars().enumerate() {
+                        self.cached_cell_data.push((
+                            c,
+                            dx + j as f32 * char_w,
+                            ry,
+                            self.cell_h,
+                            desc_fg,
+                            overlay_bg,
+                        ));
+                    }
+                }
+                Row::Spacer => {}
             }
         }
     }

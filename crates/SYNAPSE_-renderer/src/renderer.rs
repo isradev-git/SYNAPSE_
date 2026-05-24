@@ -360,7 +360,7 @@ impl Renderer {
             None => return,
         };
 
-        let emoji_key = (c as u32) ^ ((font_size.to_bits() as u32) << 16);
+        let emoji_key = (c as u32) ^ (font_size.to_bits() << 16);
         if let Some((uv, is_new)) = self.atlas.get_or_insert_emoji(emoji_key, w, h) {
             if is_new {
                 self.atlas.upload_glyph(&self.queue, uv, &rgba, w, h);
@@ -409,6 +409,10 @@ impl Renderer {
             }
 
             let fi = self.text.glyph_font_index(c);
+            // Skip chars not in any font — avoids rendering .notdef boxes for PUA/icon codepoints.
+            if !self.text.has_any_glyph(c) {
+                continue;
+            }
             let key = crate::text::GlyphKey::new_with_index(c, font_size, false, false, fi);
             let bitmap = self.text.rasterize(key);
             self.push_glyph_instance(&mut instances, &bitmap, key, x, y, font_size, fg);
@@ -495,7 +499,7 @@ impl Renderer {
 
             if !ligature_rendered {
                 let (c, x, y, font_size, fg, _) = cells[i];
-                if c != ' ' {
+                if c != ' ' && self.text.has_any_glyph(c) {
                     let fi = self.text.glyph_font_index(c);
                     let key = crate::text::GlyphKey::new_with_index(c, font_size, false, false, fi);
                     let bitmap = self.text.rasterize(key);

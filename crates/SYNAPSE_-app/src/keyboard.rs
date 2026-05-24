@@ -586,6 +586,8 @@ pub fn handle_keyboard(
                             | Action::WorkspaceDelete
                             | Action::ToggleProfiler
                             | Action::ToggleRecording
+                            | Action::ToggleKeybinds
+                            | Action::ToggleSettings
                             | Action::PluginExecute(_) => {
                                 return PostKeyAction::WorkspaceAction(action);
                             }
@@ -1115,6 +1117,8 @@ pub fn handle_keyboard(
                 | Some(Action::WorkspaceDelete)
                 | Some(Action::ToggleProfiler)
                 | Some(Action::ToggleRecording)
+                | Some(Action::ToggleKeybinds)
+                | Some(Action::ToggleSettings)
                 | Some(Action::PluginExecute(_)) => {
                     return PostKeyAction::WorkspaceAction(action_opt.unwrap());
                 }
@@ -1722,6 +1726,106 @@ use crate::app::AppCore;
 
 impl AppCore {
     pub(crate) fn handle_keyboard(&mut self, event: winit::event::KeyEvent) {
+        use winit::keyboard::NamedKey;
+
+        // When keybinds overlay is open, intercept keys for scroll/close.
+        if self.state.keybinds_open
+            && event.state == winit::event::ElementState::Pressed
+        {
+            match &event.logical_key {
+                winit::keyboard::Key::Named(NamedKey::Escape)
+                | winit::keyboard::Key::Named(NamedKey::F1) => {
+                    self.state.keybinds_open = false;
+                    self.state.keybinds_scroll = 0;
+                    return;
+                }
+                winit::keyboard::Key::Named(NamedKey::ArrowUp) => {
+                    self.state.keybinds_scroll =
+                        self.state.keybinds_scroll.saturating_sub(1);
+                    return;
+                }
+                winit::keyboard::Key::Named(NamedKey::ArrowDown) => {
+                    self.state.keybinds_scroll += 1;
+                    return;
+                }
+                winit::keyboard::Key::Named(NamedKey::PageUp) => {
+                    self.state.keybinds_scroll =
+                        self.state.keybinds_scroll.saturating_sub(10);
+                    return;
+                }
+                winit::keyboard::Key::Named(NamedKey::PageDown) => {
+                    self.state.keybinds_scroll += 10;
+                    return;
+                }
+                _ => return,
+            }
+        }
+
+        // Settings overlay intercept — must come before workspace action dispatch.
+        if self.state.settings_open && event.state == winit::event::ElementState::Pressed {
+            use winit::keyboard::NamedKey;
+            const ITEM_COUNT: usize = 10;
+            match &event.logical_key {
+                winit::keyboard::Key::Named(NamedKey::Escape)
+                | winit::keyboard::Key::Named(NamedKey::F2) => {
+                    if let Some(orig) = self.state.settings_original_config.take() {
+                        self.state.config = orig;
+                        self.state.theme = synapse_config::Theme::load(
+                            &self.state.config.theme,
+                            synapse_config::Config::config_dir(),
+                        );
+                        self.state.effects_enabled = self.state.config.effects.enabled;
+                    }
+                    self.state.settings_open = false;
+                    return;
+                }
+                winit::keyboard::Key::Named(NamedKey::ArrowUp) => {
+                    self.state.settings_item = self.state.settings_item.saturating_sub(1);
+                    return;
+                }
+                winit::keyboard::Key::Named(NamedKey::ArrowDown) => {
+                    if self.state.settings_item + 1 < ITEM_COUNT {
+                        self.state.settings_item += 1;
+                    }
+                    return;
+                }
+                winit::keyboard::Key::Named(NamedKey::ArrowLeft) => {
+                    self.settings_change(-1);
+                    return;
+                }
+                winit::keyboard::Key::Named(NamedKey::ArrowRight) => {
+                    self.settings_change(1);
+                    return;
+                }
+                winit::keyboard::Key::Character(c)
+                    if c.as_str().eq_ignore_ascii_case("s") =>
+                {
+                    let new_size = self.state.config.font_size;
+                    let _ = self.state.config.save();
+                    self.state.settings_original_config = None;
+                    self.state.settings_open = false;
+                    self.state.theme = synapse_config::Theme::load(
+                        &self.state.config.theme,
+                        synapse_config::Config::config_dir(),
+                    );
+                    self.renderer.set_clear_color(crate::app::adjusted_bg(
+                        self.state.theme.bg,
+                        self.state.config.window_opacity,
+                    ));
+                    self.renderer
+                        .set_effects_config(self.state.config.effects.clone());
+                    self.state.effects_enabled = self.state.config.effects.enabled;
+                    self.state.status_bar_visible = self.state.config.status_bar;
+                    self.layout.status_bar_visible = self.state.status_bar_visible;
+                    let win_size = self.window.inner_size();
+                    self.handle_resize(win_size);
+                    self.change_font_size(new_size);
+                    return;
+                }
+                _ => return,
+            }
+        }
+
         // Handle workspace/profiler actions before main keyboard handler
         // (these need access to AppCore.workspaces).
         if event.state == winit::event::ElementState::Pressed && !event.repeat {
@@ -1736,6 +1840,8 @@ impl AppCore {
                     | synapse_config::keybinds::Action::WorkspaceSwitch
                     | synapse_config::keybinds::Action::WorkspaceDelete
                     | synapse_config::keybinds::Action::ToggleProfiler
+                    | synapse_config::keybinds::Action::ToggleKeybinds
+                    | synapse_config::keybinds::Action::ToggleSettings
                     | synapse_config::keybinds::Action::PluginExecute(_) => {
                         self.handle_workspace_action(ws_action);
                         return;
@@ -1870,6 +1976,27 @@ impl AppCore {
             synapse_config::keybinds::Action::ToggleProfiler => {
                 self.state.profiler_active = !self.state.profiler_active;
             }
+            synapse_config::keybinds::Action::ToggleKeybinds => {
+                self.state.keybinds_open = !self.state.keybinds_open;
+                self.state.keybinds_scroll = 0;
+            }
+            synapse_config::keybinds::Action::ToggleSettings => {
+                if self.state.settings_open {
+                    if let Some(orig) = self.state.settings_original_config.take() {
+                        self.state.config = orig;
+                        self.state.theme = synapse_config::Theme::load(
+                            &self.state.config.theme,
+                            synapse_config::Config::config_dir(),
+                        );
+                        self.state.effects_enabled = self.state.config.effects.enabled;
+                    }
+                    self.state.settings_open = false;
+                } else {
+                    self.state.settings_original_config = Some(self.state.config.clone());
+                    self.state.settings_item = 0;
+                    self.state.settings_open = true;
+                }
+            }
             synapse_config::keybinds::Action::ToggleRecording => {
                 if let Some(shared) = crate::record::RECORDING.get() {
                     if shared.is_recording() {
@@ -1882,6 +2009,62 @@ impl AppCore {
             }
             synapse_config::keybinds::Action::PluginExecute(n) => {
                 self.execute_plugin(n);
+            }
+            _ => {}
+        }
+    }
+
+    fn settings_change(&mut self, dir: i32) {
+        use synapse_config::config::CursorStyle;
+        const THEMES: &[&str] = &["synapse_", "dracula", "catppuccin-mocha", "tokyo-night"];
+        match self.state.settings_item {
+            0 => {
+                let new = (self.state.config.font_size + dir as f32).clamp(6.0, 32.0);
+                self.state.config.font_size = new;
+            }
+            1 => self.state.config.font_ligatures = !self.state.config.font_ligatures,
+            2 => {
+                let cur = THEMES
+                    .iter()
+                    .position(|&t| t == self.state.config.theme.as_str())
+                    .unwrap_or(0);
+                let next = (cur as i32 + dir).rem_euclid(THEMES.len() as i32) as usize;
+                self.state.config.theme = THEMES[next].to_string();
+                self.state.theme = synapse_config::Theme::load(
+                    &self.state.config.theme,
+                    synapse_config::Config::config_dir(),
+                );
+                self.renderer.set_clear_color(crate::app::adjusted_bg(
+                    self.state.theme.bg,
+                    self.state.config.window_opacity,
+                ));
+            }
+            3 => {
+                self.state.config.cursor_style = match &self.state.config.cursor_style {
+                    CursorStyle::Block => {
+                        if dir > 0 { CursorStyle::Beam } else { CursorStyle::NeonUnderbar }
+                    }
+                    CursorStyle::Beam => {
+                        if dir > 0 { CursorStyle::Underline } else { CursorStyle::Block }
+                    }
+                    CursorStyle::Underline => {
+                        if dir > 0 { CursorStyle::NeonUnderbar } else { CursorStyle::Beam }
+                    }
+                    CursorStyle::NeonUnderbar => {
+                        if dir > 0 { CursorStyle::Block } else { CursorStyle::Underline }
+                    }
+                };
+            }
+            4 => self.state.config.cursor_blink = !self.state.config.cursor_blink,
+            5 => self.state.config.status_bar = !self.state.config.status_bar,
+            6 => self.state.config.scrollbar = !self.state.config.scrollbar,
+            7 => self.state.config.show_pane_labels = !self.state.config.show_pane_labels,
+            8 => self.state.config.pane_badge = !self.state.config.pane_badge,
+            9 => {
+                self.state.config.effects.enabled = !self.state.config.effects.enabled;
+                self.state.effects_enabled = self.state.config.effects.enabled;
+                self.renderer
+                    .set_effects_enabled(self.state.effects_enabled);
             }
             _ => {}
         }

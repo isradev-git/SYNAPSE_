@@ -60,48 +60,47 @@ impl Default for Theme {
 impl Theme {
     pub fn synapse_() -> Self {
         Self {
-            bg: hex("080808"),
-            fg: hex("B81C2E"),
+            bg: hex("0A0C14"),
+            fg: hex("B0BBC8"),
             cursor: hex("FF003C"),
-            selection: hex("FF003C30"),
-            tab_bar_bg: hex("0D0D0D"),
-            tab_active_bg: hex("1A0005"),
-            tab_inactive_bg: hex("0D0D0D"),
+            selection: hex("FF003C28"),
+            tab_bar_bg: hex("070910"),
+            tab_active_bg: hex("13182A"),
+            tab_inactive_bg: hex("070910"),
             tab_hover_bg: hex("FF003C18"),
-            tab_text: hex("E8E8E8"),
-            tab_text_inactive: hex("444444"),
+            tab_text: hex("D0D8E4"),
+            tab_text_inactive: hex("3C4560"),
             tab_button_text: hex("FF003C"),
-            tab_separator: hex("FF003C22"),
+            tab_separator: hex("FF003C1A"),
             panel_active_border: hex("FF003C"),
-            panel_inactive_border: hex("1A1A1A"),
-            panel_divider: hex("FF003C33"),
-            search_bar_bg: hex("0D0D0DEE"),
-            search_highlight: hex("FF003C35"),
+            panel_inactive_border: hex("181E30"),
+            panel_divider: hex("FF003C22"),
+            search_bar_bg: hex("0A0D1AEE"),
+            search_highlight: hex("FF003C30"),
             search_current: hex("FF003C70"),
-            search_text: hex("E8E8E8"),
-            search_text_dim: hex("444444"),
-            ghost_text: hex("405060"),
+            search_text: hex("D0D8E4"),
+            search_text_dim: hex("3C4560"),
+            ghost_text: hex("263048"),
             hyperlink: hex("4499FF"),
-            scrollbar_track: [0.06, 0.00, 0.12, 0.4],
-            scrollbar_thumb: [1.0, 0.0, 0.235, 0.6],
-            // Cyberpunk ANSI palette: negro puro + rojos/neons
+            scrollbar_track: [0.04, 0.05, 0.10, 0.4],
+            scrollbar_thumb: [1.0, 0.0, 0.235, 0.55],
             ansi_colors: [
-                hex("0A0A0A"), // 0  Black
-                hex("FF003C"), // 1  Red       → cyber rojo
-                hex("00CC44"), // 2  Green     → neon verde
-                hex("FF9900"), // 3  Yellow    → ámbar
-                hex("2266BB"), // 4  Blue      → azul neón
-                hex("CC00AA"), // 5  Magenta   → magenta neón
-                hex("00BBCC"), // 6  Cyan      → cian neón
-                hex("B81C2E"), // 7  White     → rojo tema (texto por defecto = rojo)
-                hex("2A2A2A"), // 8  BrightBlack / Dark Gray
-                hex("FF3355"), // 9  BrightRed
-                hex("00FF55"), // 10 BrightGreen
-                hex("FFD000"), // 11 BrightYellow
-                hex("4499FF"), // 12 BrightBlue
-                hex("FF44CC"), // 13 BrightMagenta
-                hex("00EEFF"), // 14 BrightCyan
-                hex("FF003C"), // 15 BrightWhite → rojo brillante
+                hex("0F1220"), // 0  Black        — deep midnight
+                hex("FF2040"), // 1  Red           — electric crimson
+                hex("00CC44"), // 2  Green         — matrix neon
+                hex("FFAA00"), // 3  Yellow        — amber glow
+                hex("3388FF"), // 4  Blue          — electric cobalt
+                hex("CC00BB"), // 5  Magenta       — neon violet
+                hex("00C8D8"), // 6  Cyan          — blade runner teal
+                hex("8A98A8"), // 7  White         — muted silver
+                hex("252C40"), // 8  BrightBlack   — dark blue-gray
+                hex("FF4466"), // 9  BrightRed     — bright crimson
+                hex("00FF55"), // 10 BrightGreen   — terminal green
+                hex("FFD000"), // 11 BrightYellow  — bright amber
+                hex("55AAFF"), // 12 BrightBlue    — electric blue
+                hex("FF44DD"), // 13 BrightMagenta — hot pink
+                hex("00EEFF"), // 14 BrightCyan    — ice blue
+                hex("D4DCE8"), // 15 BrightWhite   — clean white
             ],
         }
     }

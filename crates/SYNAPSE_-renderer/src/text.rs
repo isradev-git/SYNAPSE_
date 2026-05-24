@@ -4,8 +4,6 @@ const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../../../assets/fonts/JetBrai
 const JETBRAINS_MONO_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf");
 
-const DOGICA_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/dogica.ttf");
-const DOGICA_BOLD: &[u8] = include_bytes!("../../../assets/fonts/dogicabold.ttf");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlyphKey {
@@ -246,7 +244,7 @@ impl FontFamily {
         match face {
             Ok(face) => {
                 let gid = face.glyph_index(ch);
-                gid.map_or(false, |gid| face.glyph_raster_image(gid, u16::MAX).is_some())
+                gid.is_some_and(|gid| face.glyph_raster_image(gid, u16::MAX).is_some())
             }
             Err(_) => false,
         }
@@ -292,17 +290,13 @@ impl TextShaping {
 
         for (idx, family) in families.iter().enumerate() {
             let key = normalize_family(family);
-            if key == "dogica" || key == "dogicapixel" {
-                loaded.push(Self::embedded_dogica_family());
-                continue;
-            }
             if key == "jetbrainsmono" || key == "jetbrains" {
                 loaded.push(Self::embedded_family());
                 continue;
             }
             if idx == 0 && (key.is_empty() || key == "monospace") {
-                tracing::info!("'{family}' → default Dogica");
-                loaded.push(Self::embedded_dogica_family());
+                tracing::info!("'{family}' → default JetBrains Mono");
+                loaded.push(Self::embedded_family());
                 continue;
             }
             match find_font_bytes(&key) {
@@ -313,9 +307,9 @@ impl TextShaping {
                 None => {
                     if idx == 0 {
                         tracing::warn!(
-                            "Font family '{family}' not found — using embedded Dogica"
+                            "Font family '{family}' not found — using embedded JetBrains Mono"
                         );
-                        loaded.push(Self::embedded_dogica_family());
+                        loaded.push(Self::embedded_family());
                     } else {
                         tracing::warn!("Fallback font family '{family}' not found — skipping");
                     }
@@ -346,25 +340,6 @@ impl TextShaping {
             rb_italic: rustybuzz::Face::from_slice(JETBRAINS_MONO_ITALIC, 0)
                 .expect("rustybuzz: font Italic invalid"),
             font_data: JETBRAINS_MONO_REGULAR,
-        }
-    }
-
-    fn embedded_dogica_family() -> FontFamily {
-        let settings = fontdue::FontSettings::default();
-        FontFamily {
-            regular: fontdue::Font::from_bytes(DOGICA_REGULAR, settings)
-                .expect("Dogica Regular font bytes invalid"),
-            bold: fontdue::Font::from_bytes(DOGICA_BOLD, settings)
-                .expect("Dogica Bold font bytes invalid"),
-            italic: fontdue::Font::from_bytes(DOGICA_REGULAR, settings)
-                .expect("Dogica Italic(regular) font bytes invalid"),
-            rb_regular: rustybuzz::Face::from_slice(DOGICA_REGULAR, 0)
-                .expect("rustybuzz: Dogica Regular invalid"),
-            rb_bold: rustybuzz::Face::from_slice(DOGICA_BOLD, 0)
-                .expect("rustybuzz: Dogica Bold invalid"),
-            rb_italic: rustybuzz::Face::from_slice(DOGICA_REGULAR, 0)
-                .expect("rustybuzz: Dogica Italic(regular) invalid"),
-            font_data: DOGICA_REGULAR,
         }
     }
 
@@ -407,6 +382,12 @@ impl TextShaping {
         0
     }
 
+    /// Returns false when no loaded font has a glyph for `ch`.
+    /// Used to skip rendering .notdef boxes for unsupported codepoints (e.g. Nerd Font icons).
+    pub fn has_any_glyph(&self, ch: char) -> bool {
+        self.families.iter().any(|f| f.has_glyph(ch))
+    }
+
     pub fn rasterize(&self, key: GlyphKey) -> GlyphBitmap {
         let font_size = f32::from_bits(key.font_size_bits);
         let family_idx = key.font_index as usize;
@@ -446,7 +427,7 @@ impl TextShaping {
     pub fn has_color_emoji_in_family(&self, family_idx: usize, ch: char) -> bool {
         self.families
             .get(family_idx)
-            .map_or(false, |f| f.has_color_emoji(ch))
+            .is_some_and(|f| f.has_color_emoji(ch))
     }
 
     pub fn extract_emoji_bitmap(

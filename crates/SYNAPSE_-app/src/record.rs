@@ -30,6 +30,7 @@ impl RecordingShared {
         });
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn stop(&self) -> Option<(f64, Vec<(f64, Vec<u8>)>)> {
         let mut guard = self.inner.lock().unwrap();
         let state = guard.take()?;

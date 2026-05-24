@@ -84,7 +84,7 @@ fn scrollbar_click(
     tab_bar: &TabBar,
     layout: &Layout,
     margin: f32,
-    panes: &mut Vec<Pane>,
+    panes: &mut [Pane],
 ) -> bool {
     let pane_area = layout.pane_area();
     let pane_rect = PaneRect {

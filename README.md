@@ -1,236 +1,385 @@
 # SYNAPSE_
 
-> GPU-accelerated terminal emulator · Rust · wgpu · Cross-platform
+> **The terminal that feels like Blade Runner.**
+> GPU-accelerated · Cyberpunk aesthetics · Zero compromises on speed.
 
 [![CI](https://github.com/isradev-git/synapse_/actions/workflows/ci.yml/badge.svg)](https://github.com/isradev-git/synapse_/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/isradev-git/synapse_)](https://github.com/isradev-git/synapse_/releases/latest)
 [![Tests](https://img.shields.io/badge/tests-303%20passed-brightgreen)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)]()
 [![Rust](https://img.shields.io/badge/rust-stable%202021-orange)]()
 
-SYNAPSE_ is a modern terminal emulator with GPU rendering (Vulkan/Metal/DirectX 12), full VT100/xterm-256color support, split panes, tabs, 30 built-in features, and everything configurable via TOML.
+---
 
-## Status
+SYNAPSE_ is a GPU-rendered terminal emulator built in Rust. It renders every frame through a wgpu pipeline with real GPU post-processing shaders — CRT scanlines, neon bloom, chromatic aberration, matrix rain — all toggleable with a single key, all at 60fps.
 
-**v0.2.0** — Feature-complete. All 28 planned improvements implemented. 303 tests passing. 0 warnings.
+It is fast enough for `cat 1GB-log.txt`. Visual enough to look like a hacking scene. Configurable enough to disappear and just be your terminal.
 
-## Stack
+**v0.2.0 — 303 tests · 0 warnings · macOS + Linux**
 
-| Component    | Technology                        |
-|--------------|-----------------------------------|
-| Language     | Rust (stable, edition 2021)       |
-| Windowing    | winit 0.30                        |
-| GPU Rendering| wgpu 22 (Vulkan/Metal/DX12)       |
-| Text Shaping | fontdue 0.9 + rustybuzz 0.14      |
-| PTY          | portable-pty 0.8 + native_pty_system |
-| VT Parser    | alacritty_terminal 0.24           |
-| Async I/O    | tokio 1                           |
-| Config       | serde + TOML                      |
-| Image Decode | image 0.25                        |
+---
+
+## Why SYNAPSE_
+
+Every other terminal is either fast or beautiful. None ships with a built-in GPU post-processing pipeline.
+
+| | SYNAPSE_ | Kitty | WezTerm | Alacritty | Ghostty | Warp |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **GPU postproc shaders** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **CRT / bloom / matrix rain** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Font ligatures** | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **Color emoji (CBDT/CBLC)** | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **Sixel images** | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **Kitty graphics protocol** | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **iTerm2 inline images** | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| **Split panes** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **Named workspaces** | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| **Broadcast input** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Session save/restore** | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ |
+| **Recording (.cast)** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **OSC 133 semantic prompts** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **OSC 52 remote clipboard** | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **Command palette** | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| **Quake dropdown mode** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Word occurrence highlight** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Plugin system (TOML)** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Background image per pane** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Per-pane scrollbar** | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **High contrast a11y theme** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **reduce_motion config** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Open source** | MIT | GPLv3 | MIT | Apache 2 | MIT | ❌ |
+| **Telemetry** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+---
+
+## Performance
+
+Targets are hard numbers, not aspirational marketing.
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Input → render latency | **< 5ms** | Measured wgpu submit → present |
+| Frame rate | **60fps stable** | Instanced draw, one submit/frame |
+| Startup (cold) | **< 200ms** | Time to first interactive prompt |
+| RAM (idle, 1 pane) | **< 50MB** | No resident JVM, no Electron |
+| Scrollback | **100,000 lines** | Circular buffer, no disk paging |
+
+---
+
+## GPU Post-Processing Shaders
+
+SYNAPSE_ has a second render pass that transforms every frame through configurable GPU effects. All effects are **off by default** — zero overhead when disabled.
+
+Toggle everything with `Ctrl+Shift+E`. Configure in TOML:
+
+```toml
+[effects]
+enabled = true
+
+[effects.scanlines]
+intensity = 0.3      # CRT scanline darkness (0.0–1.0)
+freq = 2.0           # Lines per pixel-row
+
+[effects.bloom]
+threshold = 0.7      # Brightness cutoff for glow
+sigma = 4.0          # Blur radius
+tint = "#FF003C"     # Neon red glow (cyberpunk default)
+
+[effects.chroma]
+strength = 0.002     # RGB channel split at edges
+
+[effects.matrix_bg]
+enabled = false      # Katakana/ASCII rain behind cells
+color = "#00FF55"    # Rain color
+density = 0.3        # Character density
+
+hex_grid = false     # Animated hexagonal mesh background
+pane_pulse = false   # Neon border pulse (sin wave, 2s period)
+cursor_trail = 0     # Frames of alpha-decaying cursor history
+```
+
+**Effects implemented:**
+- **CRT scanlines** — horizontal scan lines + vignette
+- **Bloom / neon glow** — 2-pass gaussian blur, threshold-masked, color-tinted
+- **Chromatic aberration** — RGB channel split radially from center
+- **Glitch / datamosh** — random horizontal shifts, triggered on pane focus or manually
+- **Matrix rain** — katakana + ASCII characters falling behind the cell layer
+- **Hex grid** — animated hexagonal mesh pulse
+- **Pane border pulse** — active pane border oscillates opacity with sine wave
+- **Cursor trail** — N ghost frames with alpha decay
+
+---
 
 ## Features
 
 ### Core Terminal
 
-- **GPU Rendering** — 60fps stable, <5ms input→render latency, instanced rendering (one draw call per frame)
-- **Full VT100/xterm** — C0, CSI, SGR (16M true color), OSC, ESC, DECSCUSR cursor styles
-- **Scrollback** — 100,000 lines configurable, circular buffer
-- **Frame Cache** — GPU instance cache avoids rebuilding cells when nothing changes, dirty tracking per grid
-- **Damage Tracking** — Real per-cell dirty tracking via `alacritty_terminal::Term::damage()`, >90% frame time reduction on massive output
-- **Atlas LRU Eviction** — Glyph atlas auto-evicts least-recently-used entries, dual-atlas for zero-pause resize
+- **Instanced GPU rendering** — one draw call per frame, 64-byte cell instances
+- **Full VT100/xterm-256color** — C0, CSI, SGR true color (16M), OSC full set, DECSCUSR, mouse reporting
+- **Copy mode** — vim-style navigation: `hjkl`, `v`/`V`, `y`, `/` search, `Ctrl+Shift+Space` to enter
+- **Scrollback** — 100,000 lines, circular buffer
+- **Frame cache** — GPU instance cache, dirty tracking per grid row via `alacritty_terminal::Term::damage()`
+- **Atlas LRU eviction** — glyph atlas auto-evicts on overflow, dual-atlas for zero-pause resize
 
-### UI / Layout
+### Splits, Tabs, Workspaces
 
-- **Vertical Sidebar** — Tab bar moved to left sidebar (180px default), configurable width per TOML
-- **Split Panes** — Binary tree of splits, horizontal/vertical, drag-to-resize dividers
-- **Pane Zoom** — Maximize any pane to full window (Ctrl+Shift+Z), auto-exit on tab switch
-- **Pane Badge** — Semi-transparent watermark with CWD, title, or `user@host` in pane background
-- **Background Image** — Per-pane wallpaper with cover/contain/stretch/tile modes and configurable opacity
-- **Status Bar** — Clock, git branch, K8s context, broadcast indicator, recording indicator, CWD
-- **Window Transparency** — True window transparency (`with_transparent(true)`) on Wayland + compositors, configurable opacity
-- **Wayland CSD** — Client-side decorations on Wayland with custom title bar + drag support
+- **Split panes** — binary tree of splits (horizontal/vertical), drag-to-resize dividers
+- **Pane zoom** — maximize any pane to full window (Ctrl+Shift+Z), layout preserved
+- **Named workspaces** — Ctrl+Shift+N creates workspace, switch instantly between "dev", "ssh", "logs"
+- **Pane badge** — semi-transparent CWD / title / `user@host` watermark per pane
+- **Background image** — per-pane wallpaper with `cover`/`contain`/`stretch`/`tile` + opacity
+- **Scrollbar** — per-pane thin track (6px), click-to-jump, drag
 
 ### Text & Typography
 
-- **Font Ligatures** — rustybuzz + HarfBuzz, calt/liga/clig ON by default
-- **Font Fallback Chain** — Multi-font chain (e.g. `["Dogica", "JetBrains Mono", "Noto Color Emoji"]`), per-codepoint glyph routing
-- **Dynamic Font Size** — Ctrl+=/-/0 at runtime, no restart needed
-- **Color Emoji** — CBDT/CBLC bitmap emoji via `ttf-parser`, rendered as actual RGBA in the atlas with separate shader path
+- **Font ligatures** — rustybuzz/HarfBuzz shaping, `calt/liga/clig` on by default
+- **Font fallback chain** — `["JetBrains Mono", "Symbols Nerd Font", "Noto Color Emoji"]`, per-codepoint routing
+- **Dynamic font size** — Ctrl+=/-/0 at runtime, no restart
+- **Color emoji** — CBDT/CBLC bitmap emoji via ttf-parser, real RGBA in atlas with dedicated shader path
+- **Bold/italic** — separate font style lookup for SGR 1/3
 
 ### Search & Selection
 
-- **Regex Search** — Ctrl+Shift+F with regex toggle (Alt+R), case-insensitive by default
-- **History Search** — Ctrl+R fuzzy-search persistent command history
-- **Word Occurrence Highlight** — Select a word to highlight all occurrences in the visible viewport (like VS Code)
-- **Selection v2** — Double-click selects word, triple-click selects line, Shift+click extends, Alt+click block selection
-- **URL/Path Detection** — Auto-detect URLs + file paths (e.g. `src/main.rs:42`), Ctrl+click to open (VS Code, $EDITOR, xdg-open)
+- **Regex search** — Ctrl+Shift+F, Alt+R toggles regex mode, match highlighting
+- **History search** — Ctrl+R fuzzy-search across persistent cross-session history
+- **Word occurrence highlight** — select a word, all visible occurrences highlight (VS Code-style)
+- **Smart selection** — double-click word, triple-click line, Shift+click extend, Alt+click block
+- **URL/path detection** — auto-detect URLs + `file:line` paths, Ctrl+click opens in `$EDITOR`/browser
 
 ### Images & Graphics
 
-- **Sixel Decoder** — Native Rust decoder, no external libs, supports color registers and patterns
-- **iTerm2 Inline Images** — OSC 1337 (`File=inline=1`) with base64 PNG/JPEG/GIF/BMP, auto-scroll on overflow
-- **APC Kitty Images** — Full Kitty terminal graphics protocol with image placement, delete, and z-order
+- **Sixel decoder** — native Rust, no external deps, full color register support
+- **iTerm2 inline images** — OSC 1337 `File=inline=1` with base64 PNG/JPEG/GIF, auto-scroll
+- **Kitty graphics protocol** — APC transmission, placement with z-order, delete commands
 
 ### Productivity
 
-- **Broadcast Input** — Ctrl+Shift+B sends input to all panes in the active tab (SSH multi-server ops)
-- **Command Palette** — Ctrl+Shift+P quick actions: tabs, themes, plugins, keybinds
-- **Workspaces** — Named workspaces (Ctrl+Shift+N), switch rapidly between "dev", "ssh", "logs"
-- **Drag & Drop** — Drop files from file manager to paste absolute paths
-- **CLI Args** — `-e cmd`, `-d path`, `--new-tab`, `--hold`, `--restore`, `--quake`, `--setup`
-- **Quake Mode** — Dropdown terminal overlay (Ctrl+Space), slide animation, auto-hide on focus loss
+- **Broadcast input** — Ctrl+Shift+B sends keystrokes to all panes in the tab (SSH multi-server)
+- **Command palette** — Ctrl+Shift+P: fuzzy search actions, tabs, themes, keybinds, plugins
+- **Quake dropdown** — Ctrl+Space slides SYNAPSE_ down from screen top with ease-out animation, auto-hides on focus loss
+- **Session save/restore** — tabs, panes, CWDs saved to `~/.cache/SYNAPSE_/session.json` on exit
+- **Recording (.cast)** — Ctrl+Shift+R starts/stops asciinema-compatible session export
+- **Persistent history** — cross-session MRU command history with deduplication, OSC 133-aware
+- **Drag & drop** — drop files to paste their absolute path
 
-### Sessions & Persistence
+### Shell Integration & Extensibility
 
-- **Session Save/Restore** — Tabs, panes, and CWDs saved to `~/.cache/SYNAPSE_/session.json`, autosave on exit
-- **Persistent History** — Cross-session command history with MRU ordering, deduplication, OSC 133 aware
-- **Recording (.cast)** — Export sessions to asciinema-compatible `.cast` format (Ctrl+Shift+R)
+- **Shell integration** — official zsh/bash/fish scripts with OSC 133 (prompt marks), OSC 7 (CWD), `--setup` CLI installer
+- **Plugin system** — TOML-defined keybind → shell command with `$CURRENT_PANE_CWD`, `$SELECTED_TEXT`, `$CLIPBOARD`
+- **Suggestion engine** — built-in frequency trie (`crates/SYNAPSE_-suggest`) for ghost-text autocomplete
+- **OSC 9/777 notifications** — desktop notifications from PTY, forwarded via `notify-rust`
+- **OSC 52** — remote clipboard read/write (SSH + Neovim workflow)
+- **OSC 133** — semantic prompt/output marks + `Ctrl+Up/Down` to jump between prompts
 
-### Extensibility
+### UI & Status
 
-- **Plugin System** — TOML-defined plugins: keybind → shell command, `$CURRENT_PANE_CWD`, `$SELECTED_TEXT`, `$CLIPBOARD`, split modes
-- **Shell Integration** — Official zsh/bash/fish scripts with OSC 133 (prompt markers), OSC 7 (CWD tracking), `--setup` auto-installer
-- **Suggestion Engine** — Built-in `crates/SYNAPSE_-suggest` with frequency trie for autocomplete
+- **Status bar** — clock, git branch, K8s context, CWD, broadcast indicator, recording indicator (Ctrl+Shift+S toggle)
+- **Window transparency** — `window_opacity` config, Wayland compositor alpha
+- **Wayland CSD** — client-side decorations with custom title bar and drag support
+- **Profiler overlay** — F12 shows FPS, frame time, PTY bytes/s, cell count, atlas utilization %
 
 ### Accessibility
 
-- **High Contrast Theme** — Built-in `high-contrast-dark` theme (black background, white text, yellow accent)
-- **Reduce Motion** — `reduce_motion = true` disables all animations (splash, cursor blink, pane pulse, resize indicators)
+- **High contrast theme** — built-in `high-contrast-dark`: black background, white text, yellow accent
+- **`reduce_motion = true`** — disables all animations (splash, cursor blink, pane pulse, resize indicators)
 
-### Performance
+### Performance Features
 
-- **Background Tab Freeze** — Pause PTY reads on non-visible tabs, save CPU and battery
-- **Profiler Overlay** — F12 toggles FPS, frame time, PTY bandwidth, cell count, atlas utilization
-- **Scrollbar** — Per-pane thin scrollbar (6px track + 12px min thumb), click-to-jump + drag
+- **Background tab freeze** — pause PTY reads on non-visible tabs, save CPU/battery
+- **Frame cache** — skip GPU upload when grid is unchanged
 
-## Competitive Comparison
-
-| Feature | SYNAPSE_ | Kitty | WezTerm | Alacritty | Warp | iTerm2 |
-|---------|----------|-------|---------|-----------|------|--------|
-| **GPU Rendering** | wgpu (Vulkan/Metal/DX12) | OpenGL | wgpu | OpenGL/Metal | Metal | Metal |
-| **Ligatures** | rustybuzz, ON by default | harfbuzz | harfbuzz | ❌ | ❌ | harfbuzz |
-| **Color Emoji** | CBDT/CBLC native | ✅ | ✅ | ❌ | ❌ | ✅ |
-| **Font Fallback** | Multi-chain per codepoint | ✅ | ✅ | ❌ | ❌ | ✅ |
-| **Sixel** | Native Rust decoder | ✅ | ✅ | ❌ | ❌ | ✅ |
-| **iTerm2 Images** | OSC 1337 inline | ❌ | ✅ | ❌ | ❌ | ✅ |
-| **Kitty Graphics** | APC protocol | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **Split Panes** | Binary tree + zoom | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **Workspaces** | Named workspaces | ❌ | ✅ | ❌ | ❌ | ❌ |
-| **Broadcast Input** | Ctrl+Shift+B | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Session Save/Restore** | JSON autosave | ❌ | ✅ | ❌ | ✅ | ✅ |
-| **Recording (.cast)** | Native asciinema export | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Persistent History** | MRU dedup, OSC 133 | ❌ | ❌ | ❌ | ✅ | ❌ |
-| **Plugin System** | TOML keybind→shell | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Shell Integration** | zsh/bash/fish + OSC 7/133 | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **Command Palette** | Ctrl+Shift+P | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **Background Image** | Per-pane, 4 modes | ❌ | ✅ | ❌ | ❌ | ✅ |
-| **Window Transparency** | Native wgpu alpha | ✅ | ✅ | ❌ | ❌ | ✅ |
-| **Wayland CSD** | Custom title bar | ❌ | ✅ | ❌ | ❌ | N/A |
-| **Quake Mode** | Dropdown overlay | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Word Highlight** | Selection occurrences | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **High Contrast Theme** | Built-in a11y theme | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Reduce Motion** | All animations off | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Background Tab Freeze** | PTY pause on hidden | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Profiler Overlay** | F12 debug HUD | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Scrollbar** | Per-pane thin + drag | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Pane Badge/Watermark** | CWD/title watermark | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Open Source** | MIT | GPLv3 | MIT | Apache 2 | Proprietary | GPLv2 |
-| **Telemetry** | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-
-## Quick Install
-
-```sh
-# Linux / macOS
-curl -fsSL https://github.com/isradev-git/synapse_/releases/latest/download/SYNAPSE_-app-installer.sh | sh
-
-# Windows (PowerShell)
-irm https://github.com/isradev-git/synapse_/releases/latest/download/SYNAPSE_-app-installer.ps1 | iex
-```
-
-Also available as `.msi` (Windows) and tarballs on the [releases page](https://github.com/isradev-git/synapse_/releases/latest).
-
-See [INSTALL.md](INSTALL.md) for platform-specific instructions, building from source, and initial configuration.
+---
 
 ## Quick Start
 
 ```sh
-# Build and run
+# Build from source
 cargo build --release -p SYNAPSE_-app
 ./target/release/synapse_
 
-# Install shell integration (zsh/bash/fish)
+# Install shell integration (sets up OSC 133/7, adds to your shell rc)
 ./target/release/synapse_ --setup
 
-# Run with custom command
-./target/release/synapse_ -e "vim ~/.config/SYNAPSE_/config.toml"
+# Launch with a command
+./target/release/synapse_ -e "nvim ~/.config/SYNAPSE_/config.toml"
+
+# Quake mode (fullscreen dropdown)
+./target/release/synapse_ --quake
+
+# Restore last session
+./target/release/synapse_ --restore
 ```
+
+### System dependencies (Linux)
+
+```sh
+# Ubuntu/Debian
+sudo apt install libx11-dev libxkbcommon-dev libwayland-dev libxrandr-dev libxi-dev
+
+# Fedora
+sudo dnf install libX11-devel libxkbcommon-devel wayland-devel
+```
+
+---
 
 ## Configuration
 
-`~/.config/SYNAPSE_/config.toml` (Linux) or `~/Library/Application Support/SYNAPSE_/config.toml` (macOS):
+Config auto-created at first launch:
+- **Linux:** `~/.config/SYNAPSE_/config.toml`
+- **macOS:** `~/Library/Application Support/SYNAPSE_/config.toml`
+
+Hot-reload: `Ctrl+,`
 
 ```toml
+# Typography
 font_size = 14
-font_family = ["Dogica", "JetBrains Mono", "Noto Color Emoji"]
+font_family = ["JetBrains Mono", "Symbols Nerd Font", "Noto Color Emoji"]
+font_ligatures = true
+
+# Theme (synapse_ | dracula | catppuccin-mocha | tokyo-night | high-contrast-dark)
 theme = "synapse_"
 scrollback_lines = 100000
 
+# Shell integration + history
 shell_integration = true
 persistent_history = true
+
+# Pane UI
 scrollbar = true
 pane_badge = true
-pane_badge_format = "{cwd}"
+pane_badge_format = "{cwd}"   # {cwd} | {title} | {user@host}
 
-background_image = "/home/user/wallpaper.png"
+# Background image (per-pane wallpaper)
+background_image = "/path/to/wallpaper.png"
 background_opacity = 0.3
-background_mode = "cover"
+background_mode = "cover"     # cover | contain | stretch | tile
 
+# Window
 window_opacity = 0.95
-window_blur = true
+
+# Visual effects (GPU postproc — zero cost when disabled)
+[effects]
+enabled = false
+pane_pulse = false
+cursor_trail = 0
+
+[effects.scanlines]
+intensity = 0.3
+
+[effects.bloom]
+tint = "#FF003C"
 ```
 
-See [CONFIGURATION.md](CONFIGURATION.md) for all options.
+---
 
 ## Keybinds
 
 | Shortcut | Action |
 |----------|--------|
-| Ctrl+Shift+Z | Pane zoom |
-| Ctrl+Shift+B | Broadcast input |
-| Ctrl+Shift+F | Search buffer (regex with Alt+R) |
-| Ctrl+R | Search command history |
-| Ctrl+Shift+P | Command palette |
-| Ctrl+Shift+N | New workspace |
-| Ctrl+Space | Quake mode toggle |
-| Ctrl+Shift+R | Start/stop .cast recording |
-| Ctrl+=/-/0 | Font size +/-/reset |
-| F12 | Profiler overlay |
+| `Ctrl+T` | New tab |
+| `Ctrl+W` | Close tab |
+| `Ctrl+Shift+D` | Split vertical |
+| `Ctrl+Shift+H` | Split horizontal |
+| `Ctrl+Shift+Z` | Pane zoom (toggle maximize) |
+| `Ctrl+Shift+W` | Close pane |
+| `Ctrl+Shift+↑↓←→` | Navigate panes |
+| `Ctrl+Shift+Alt+↑↓←→` | Resize pane (±5%) |
+| `Ctrl+Shift+Space` | Copy mode (vim navigation) |
+| `Ctrl+Shift+F` | Search buffer (Alt+R = regex) |
+| `Ctrl+R` | History search |
+| `Ctrl+Up / Ctrl+Down` | Jump to prev/next prompt mark |
+| `Ctrl+Shift+P` | Command palette |
+| `Ctrl+Shift+N` | New workspace |
+| `Ctrl+Space` | Quake mode toggle |
+| `Ctrl+Shift+B` | Broadcast input (all panes) |
+| `Ctrl+Shift+R` | Start/stop `.cast` recording |
+| `Ctrl+Shift+E` | Toggle GPU effects |
+| `Ctrl+Shift+S` | Toggle status bar |
+| `Ctrl+=/-/0` | Font size +/−/reset |
+| `Ctrl+,` | Reload config + open in editor |
+| `F11` | Fullscreen |
+| `F12` | Profiler overlay |
 
-See [KEYBINDS.md](KEYBINDS.md) for the complete table.
+See [KEYBINDS.md](KEYBINDS.md) for the complete reference.
+
+---
+
+## Architecture
+
+Cargo workspace — 5 crates, ~21k LOC, zero unsafe except FFI boundaries.
+
+```
+SYNAPSE_-app        binary, winit event loop, render orchestration   ~6,200 LOC
+  ├─ render.rs      main render loop, PTY→VT→GPU pipeline            ~3,100 LOC
+  ├─ palette.rs     command palette state + fuzzy search
+  ├─ quake.rs       dropdown animation (ease-out, configurable ms)
+  ├─ session.rs     save/restore layout to JSON
+  ├─ record.rs      asciinema .cast export
+  └─ sixel.rs       sixel decoder (native Rust)
+
+SYNAPSE_-renderer   wgpu pipelines, texture atlas, text shaping      ~2,000 LOC
+  ├─ renderer.rs    surface, device, draw_frame, offscreen pass
+  ├─ postproc.rs    PostProcRenderer — effects uniform, bloom pass
+  ├─ text.rs        rustybuzz shaping + fontdue raster
+  └─ atlas.rs       2048² RGBA glyph atlas with LRU eviction
+
+SYNAPSE_-ui         layout, pane tree, tab bar, theme                ~1,300 LOC
+SYNAPSE_-config     TOML config, keybinds, effects, themes           ~1,340 LOC
+SYNAPSE_-suggest    frequency trie, builtins, ghost text              ~740 LOC
+```
+
+### Render pipeline
+
+```
+Frame N:
+  Pass 0  →  offscreen texture (cells + UI + underlines + images + cursor)
+  Pass 1a →  bloom: threshold + downsample 4× + gaussian H  (bloom_h.wgsl)
+  Pass 1b →  bloom: gaussian V + upsample additive
+  Pass 2  →  postproc.wgsl: scanlines + bloom composite + chroma + glitch + matrix → surface
+```
+
+### Data flow
+
+```
+PTY (portable-pty) → reader thread → mpsc channel
+  → alacritty_terminal VTE processor → Term grid
+  → render.rs reads damage() → CellInstance vec → draw_frame()
+  → CellRenderer (cell.wgsl) + UIRenderer (ui.wgsl) → wgpu surface
+```
+
+---
 
 ## Development
 
 ```sh
-cargo build -p SYNAPSE_-app              # Build
-cargo run -p SYNAPSE_-app                # Run
-cargo test --workspace                   # Tests (303)
-cargo build --release -p SYNAPSE_-app    # Release build
-cargo fmt --all -- --check               # Format
-cargo clippy --workspace                 # Lint
+cargo build -p SYNAPSE_-app              # debug build
+cargo run -p SYNAPSE_-app                # run
+cargo build --release -p SYNAPSE_-app    # release (thin LTO)
+cargo test --workspace                   # all 303 tests
+cargo fmt --all -- --check               # format check
+cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings = errors)
 ```
 
-## Documentation
+See [CONTRIBUTING.md](CONTRIBUTING.md) for platform setup, code conventions, and PR guidelines.
 
-| Document | Content |
-|----------|---------|
-| [CONFIGURATION.md](CONFIGURATION.md) | TOML options and custom keybinds |
-| [KEYBINDS.md](KEYBINDS.md) | Complete keyboard shortcuts |
-| [COMPATIBILITY.md](COMPATIBILITY.md) | OS compatibility and VT conformance |
-| [BENCHMARKS.md](BENCHMARKS.md) | Performance metrics |
-| [INSTALL.md](INSTALL.md) | Platform-specific install |
-| [CHANGELOG.md](CHANGELOG.md) | Release history |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributing guide |
-| [docs/desarrollo/](docs/desarrollo/) | Technical docs per phase |
+---
+
+## Roadmap
+
+Active development. Next milestones:
+
+- **`window_blur`** — OS-native window blur (macOS `NSVisualEffectView` / Linux `_NET_WM_BLUR_BEHIND`)
+- **IPC daemon socket** — `synapse_ --new-tab`, `synapse_ list`, Neovim/script integration
+- **SSH profiles** — `[[ssh_profile]]` in TOML: host, user, identity file, port
+- **App icons** — `.icns` (macOS), 512px PNG (Linux/freedesktop)
+- **BiDi/RTL** — `unicode-bidi` for Hebrew/Arabic support
+
+See [docs/PENDIENTES.md](docs/PENDIENTES.md) for the full gap analysis.
+
+---
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+Built with [wgpu](https://wgpu.rs), [winit](https://github.com/rust-windowing/winit), [alacritty_terminal](https://github.com/alacritty/alacritty), [rustybuzz](https://github.com/harfbuzz/rustybuzz), [fontdue](https://github.com/mooman219/fontdue), [portable-pty](https://github.com/wezterm/wezterm/tree/main/pty).

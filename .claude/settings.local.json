@@ -63,7 +63,16 @@
       "Bash(/home/glitchbane-server/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin/cargo check *)",
       "Bash(grep -E --line-buffered \"Finished|error\\\\[|FAILED|test result|ok$|^error\")",
       "Bash($CARGO clippy *)",
-      "Bash(PATH=\"/home/glitchbane-server/.cargo/bin:/home/glitchbane-server/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin:$PATH\" cargo check *)"
+      "Bash(PATH=\"/home/glitchbane-server/.cargo/bin:/home/glitchbane-server/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin:$PATH\" cargo check *)",
+      "Bash(cp /Users/glitchbane/.claude/plugins/cache/awesome-claude-plugins/awesome-statusline/2.1.0/scripts/awesome-statusline-2.1.1-full.sh ~/.claude/awesome-statusline.sh)",
+      "Bash(chmod +x ~/.claude/awesome-statusline.sh)",
+      "Bash(grep -v \":0$\")",
+      "Bash(sort -t: -k2 -rn)",
+      "Bash(xargs ls -la)",
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\" && grep -n \"allow\\(dead_code\\)\" {}')",
+      "Bash(brew list *)",
+      "Bash(brew search *)",
+      "Bash(brew install *)"
     ]
   }
 }

@@ -64,6 +64,8 @@ pub enum Action {
     ToggleProfiler,
     PluginExecute(usize),
     ToggleRecording,
+    ToggleKeybinds,
+    ToggleSettings,
 }
 
 impl Action {
@@ -120,6 +122,8 @@ impl Action {
             "workspace_rename" => Some(Action::WorkspaceRename),
             "workspace_delete" => Some(Action::WorkspaceDelete),
             "toggle_profiler" => Some(Action::ToggleProfiler),
+            "toggle_keybinds" => Some(Action::ToggleKeybinds),
+            "toggle_settings" => Some(Action::ToggleSettings),
             _ => {
                 if let Some(n) = s.strip_prefix("plugin_") {
                     n.parse::<usize>().ok().map(Action::PluginExecute)
@@ -632,6 +636,20 @@ fn default_entries() -> Vec<KeyBindEntry> {
             shift: false,
             alt: false,
             action: "toggle_profiler".into(),
+        },
+        KeyBindEntry {
+            key: "F1".into(),
+            ctrl: false,
+            shift: false,
+            alt: false,
+            action: "toggle_keybinds".into(),
+        },
+        KeyBindEntry {
+            key: "F2".into(),
+            ctrl: false,
+            shift: false,
+            alt: false,
+            action: "toggle_settings".into(),
         },
         KeyBindEntry {
             key: "r".into(),
