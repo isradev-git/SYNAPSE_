@@ -1150,6 +1150,7 @@ pub fn render_frame(
     let ui_active = state.selecting
         || state.search.active
         || state.history_search.active
+        || state.ws_rename.active
         || state.suggest.ghost.is_some()
         || state.palette.active
         || state.overlay.active;
@@ -1980,6 +1981,64 @@ pub fn render_frame(
                     ));
                 }
             }
+        }
+
+        // Workspace rename bar — covers the status bar while active
+        if state.ws_rename.active {
+            let bar_h = theme::STATUS_BAR_HEIGHT;
+            let bar_y = layout.window_height - bar_h;
+            let bar_w = layout.window_width - layout.sidebar_width;
+            let bar_x = layout.sidebar_width;
+            let transparent = [0.0f32, 0.0, 0.0, 0.0];
+
+            cached_ui_rects.push(UIRect {
+                pos: [bar_x, bar_y],
+                size: [bar_w, bar_h],
+                color: state.theme.search_bar_bg,
+            });
+            cached_ui_rects.push(UIRect {
+                pos: [bar_x, bar_y],
+                size: [bar_w, 1.5],
+                color: state.theme.panel_active_border,
+            });
+
+            let fs = 13.0;
+            let char_w = fs * char_aspect;
+            let text_y = bar_y + (bar_h - fs) * 0.5;
+            let text_x = bar_x + 8.0;
+            let prefix = "Rename workspace: ";
+            let accent = state.theme.panel_active_border;
+
+            for (j, c) in prefix.chars().enumerate() {
+                cached_cell_data.push((
+                    c,
+                    text_x + j as f32 * char_w,
+                    text_y,
+                    fs,
+                    accent,
+                    transparent,
+                ));
+            }
+            let prefix_len = prefix.chars().count();
+            for (j, c) in state.ws_rename.term.chars().enumerate() {
+                cached_cell_data.push((
+                    c,
+                    text_x + (prefix_len + j) as f32 * char_w,
+                    text_y,
+                    fs,
+                    state.theme.search_text,
+                    transparent,
+                ));
+            }
+            let cursor_col = prefix_len + state.ws_rename.cursor_pos;
+            cached_cell_data.push((
+                '|',
+                text_x + cursor_col as f32 * char_w,
+                text_y,
+                fs,
+                accent,
+                transparent,
+            ));
         }
 
         // Command palette overlay

@@ -101,6 +101,69 @@ pub struct SearchMatch {
     pub row: i32,
 }
 
+pub struct WsRenameState {
+    pub active: bool,
+    pub term: String,
+    pub cursor_pos: usize,
+}
+
+impl WsRenameState {
+    pub fn new() -> Self {
+        Self { active: false, term: String::new(), cursor_pos: 0 }
+    }
+
+    pub fn activate(&mut self, current: &str) {
+        self.active = true;
+        self.term = current.to_string();
+        self.cursor_pos = current.len();
+    }
+
+    pub fn deactivate(&mut self) {
+        self.active = false;
+        self.term.clear();
+        self.cursor_pos = 0;
+    }
+
+    pub fn insert_char(&mut self, c: char) {
+        let pos = self.cursor_pos.min(self.term.len());
+        self.term.insert(pos, c);
+        self.cursor_pos = pos + 1;
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor_pos > 0 {
+            self.cursor_pos -= 1;
+            self.term.remove(self.cursor_pos);
+        }
+    }
+
+    pub fn delete_forward(&mut self) {
+        if self.cursor_pos < self.term.len() {
+            self.term.remove(self.cursor_pos);
+        }
+    }
+
+    pub fn move_left(&mut self) {
+        if self.cursor_pos > 0 {
+            self.cursor_pos -= 1;
+        }
+    }
+
+    pub fn move_right(&mut self) {
+        if self.cursor_pos < self.term.len() {
+            self.cursor_pos += 1;
+        }
+    }
+
+    pub fn move_home(&mut self) {
+        self.cursor_pos = 0;
+    }
+
+    pub fn move_end(&mut self) {
+        self.cursor_pos = self.term.len();
+    }
+}
+
 pub struct SearchState {
     pub active: bool,
     pub term: String,
@@ -390,6 +453,7 @@ pub struct AppState {
     pub settings_item: usize,
     pub settings_original_config: Option<Config>,
     pub active_workspace: String,
+    pub ws_rename: WsRenameState,
     pub command_history: CommandHistory,
     pub overlay: OverlayState,
     /// Word occurrence highlights (the word under selection)
@@ -469,6 +533,7 @@ impl AppState {
             settings_item: 0,
             settings_original_config: None,
             active_workspace: String::from("default"),
+            ws_rename: WsRenameState::new(),
             command_history,
             overlay: OverlayState::new(),
             word_highlight_word: None,

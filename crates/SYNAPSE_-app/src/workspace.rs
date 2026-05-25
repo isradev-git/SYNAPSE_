@@ -139,7 +139,6 @@ impl WorkspaceManager {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn rename(&mut self, new_name: &str) -> Result<(), String> {
         if new_name.is_empty() {
             return Err("workspace name cannot be empty".into());

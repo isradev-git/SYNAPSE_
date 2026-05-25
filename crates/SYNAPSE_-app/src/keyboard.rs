@@ -1826,6 +1826,49 @@ impl AppCore {
             }
         }
 
+        // Workspace rename input intercept — consumes all keys while active.
+        if self.state.ws_rename.active && event.state == winit::event::ElementState::Pressed {
+            use winit::keyboard::{Key, NamedKey};
+            match &event.logical_key {
+                Key::Named(NamedKey::Escape) => {
+                    self.state.ws_rename.deactivate();
+                }
+                Key::Named(NamedKey::Enter) => {
+                    let new_name = self.state.ws_rename.term.clone();
+                    self.state.ws_rename.deactivate();
+                    if !new_name.is_empty() {
+                        match self.workspaces.rename(&new_name) {
+                            Ok(()) => {
+                                self.state.active_workspace = self.workspaces.active.clone();
+                                self.cached_cell_data.clear();
+                                self.cached_ui_rects.clear();
+                                self.cached_bg_rects.clear();
+                                self.cached_underline_instances.clear();
+                                self.workspaces.active_cell_caches_mut().clear();
+                            }
+                            Err(e) => tracing::warn!("Workspace rename failed: {e}"),
+                        }
+                    }
+                }
+                Key::Named(NamedKey::Backspace) => self.state.ws_rename.backspace(),
+                Key::Named(NamedKey::Delete) => self.state.ws_rename.delete_forward(),
+                Key::Named(NamedKey::ArrowLeft) => self.state.ws_rename.move_left(),
+                Key::Named(NamedKey::ArrowRight) => self.state.ws_rename.move_right(),
+                Key::Named(NamedKey::Home) => self.state.ws_rename.move_home(),
+                Key::Named(NamedKey::End) => self.state.ws_rename.move_end(),
+                _ => {
+                    if let Some(text) = &event.text {
+                        for c in text.chars() {
+                            if !c.is_control() {
+                                self.state.ws_rename.insert_char(c);
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
         // Handle workspace/profiler actions before main keyboard handler
         // (these need access to AppCore.workspaces).
         if event.state == winit::event::ElementState::Pressed && !event.repeat {
@@ -1847,11 +1890,8 @@ impl AppCore {
                         return;
                     }
                     synapse_config::keybinds::Action::WorkspaceRename => {
-                        if self.state.palette.active {
-                            self.state.palette.active = false;
-                        } else {
-                            self.state.palette.toggle(self.workspaces.active_tab_bar());
-                        }
+                        let current = self.workspaces.active.clone();
+                        self.state.ws_rename.activate(&current);
                         return;
                     }
                     _ => {}
