@@ -74,7 +74,8 @@ impl Renderer {
                     }
                     None => {
                         let msg = "No compatible GPU found.\n\
-                         SYNAPSE_ requires Vulkan (Linux), or Metal (macOS).\n\
+                         SYNAPSE_ requires Vulkan or OpenGL ES 3.1 (Linux), or Metal (macOS).\n\
+                         On Raspberry Pi, ensure the V3D driver is active (Pi 4+ only).\n\
                          On VMs, enable 3D acceleration or GPU passthrough."
                             .to_string();
                         return Err(msg);
@@ -83,18 +84,33 @@ impl Renderer {
             };
 
         let adapter_info = adapter.get_info();
+        let downlevel = adapter.get_downlevel_capabilities();
+        let is_downlevel = !downlevel
+            .flags
+            .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS);
         tracing::info!(
-            "GPU adapter: {} ({:?} backend), driver: {}",
+            "GPU adapter: {} ({:?} backend), driver: {}, downlevel: {}",
             adapter_info.name,
             adapter_info.backend,
-            adapter_info.driver_info
+            adapter_info.driver_info,
+            is_downlevel,
         );
+
+        // GLES adapters (e.g. Raspberry Pi VideoCore VI) can't satisfy the
+        // default Vulkan-level limits (max_texture_dimension_2d=8192). Use
+        // downlevel defaults which match GLES 3.1 / D3D11, then upgrade the
+        // resolution-related limits to whatever this adapter actually supports.
+        let required_limits = if is_downlevel {
+            wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits())
+        } else {
+            wgpu::Limits::default()
+        };
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: Some("SYNAPSE_ GPU Device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
+                required_limits,
                 memory_hints: wgpu::MemoryHints::default(),
             },
             None,
@@ -130,7 +146,8 @@ impl Renderer {
 
         surface.configure(&device, &config);
 
-        let atlas = TextureAtlas::new(&device);
+        let max_tex = device.limits().max_texture_dimension_2d;
+        let atlas = TextureAtlas::new(&device, max_tex);
         let cell_renderer =
             CellRenderer::new(Arc::clone(&device), &atlas.bind_group_layout, config.format);
         let ui_renderer_bg = UIRenderer::new(Arc::clone(&device), config.format);

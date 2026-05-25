@@ -109,10 +109,13 @@ Hot-reload: `Ctrl+,`
 
 ## Platform scope
 
-**Active targets:** macOS (Metal) + Linux (X11/Wayland).
+**Active targets:** macOS (Metal) + Linux (X11/Wayland) + Raspberry Pi 4/5 (OpenGL ES 3.1 via Mesa V3D).
 **Windows:** deferred — not tested, not a priority right now.
+**Raspberry Pi 3 and older:** not supported — VideoCore IV has GLES 2.0 only, wgpu requires GLES 3.1.
 
 When writing platform-specific code, implement macOS + Linux paths fully. Add a `#[cfg(target_os = "windows")]` stub only if needed to keep compilation clean, but don't invest in Windows behavior.
+
+**GPU backend selection:** `renderer.rs` detects downlevel adapters (GLES/Pi) via `DownlevelFlags::COMPUTE_SHADERS` and switches to `Limits::downlevel_defaults()` automatically. Atlas size is clamped to the device's `max_texture_dimension_2d`. Disable cyberpunk effects on Pi — they're off by default, keep them off.
 
 ## No network, no database
 

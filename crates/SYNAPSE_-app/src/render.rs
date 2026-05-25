@@ -19,7 +19,7 @@ use crate::pane_ops::find_pane;
 use crate::search::build_match_set;
 use crate::state::{AppState, UrlSpan};
 
-const TAB_FONT_SIZE: f32 = 9.0;
+const TAB_FONT_SIZE: f32 = 12.0;
 
 #[derive(Clone, Copy)]
 struct CachedGridCell {
@@ -909,7 +909,7 @@ pub fn build_status_bar(
 fn push_cursor_rect(
     ui_rects: &mut Vec<UIRect>,
     cursor_pixel: Option<(f32, f32)>,
-    cursor_blink_on: bool,
+    cursor_alpha: f32,
     cell_w: f32,
     cell_h: f32,
     state: &mut AppState,
@@ -917,7 +917,7 @@ fn push_cursor_rect(
     if state.in_copy_mode {
         return;
     }
-    if !cursor_blink_on {
+    if cursor_alpha < 0.01 {
         return;
     }
     let (cx, cy) = match cursor_pixel {
@@ -933,7 +933,7 @@ fn push_cursor_rect(
         for (i, &(tx, ty)) in state.cursor_trail.iter().enumerate().skip(1) {
             let alpha = 1.0 - (i as f32 / trail_len as f32);
             let c = state.theme.cursor;
-            let faded = [c[0], c[1], c[2], c[3] * alpha * 0.6];
+            let faded = [c[0], c[1], c[2], c[3] * alpha * 0.6 * cursor_alpha];
             ui_rects.push(UIRect {
                 pos: [tx, ty],
                 size: [cell_w, cell_h],
@@ -942,7 +942,8 @@ fn push_cursor_rect(
         }
     }
 
-    let color = state.theme.cursor;
+    let base = state.theme.cursor;
+    let color = [base[0], base[1], base[2], base[3] * cursor_alpha];
     let term_shape = state.term_cursor_style.map(|(s, _)| s);
     match term_shape {
         Some(CursorShape::Beam) => {
@@ -1072,12 +1073,12 @@ pub fn render_frame(
     state: &mut AppState,
     cell_w: f32,
     cell_h: f32,
-    cursor_blink_on: bool,
+    cursor_alpha: f32,
     cached_cell_data: &mut CellData,
     cached_ui_rects: &mut Vec<UIRect>,
     cached_bg_rects: &mut Vec<UIRect>,
     cached_underline_instances: &mut Vec<UnderlineInstance>,
-    cached_blink: &mut bool,
+    cached_blink: &mut f32,
     cached_font_size: &mut f32,
     cached_active_tab: &mut usize,
     cached_cursor_rects_start: &mut usize,
@@ -1145,7 +1146,7 @@ pub fn render_frame(
     }
 
     let font_changed = (*cached_font_size - font_size).abs() > 0.01;
-    let blink_changed = *cached_blink != cursor_blink_on;
+    let blink_changed = (*cached_blink * 64.0) as u8 != (cursor_alpha * 64.0) as u8;
     let tab_changed = tab_bar.active != *cached_active_tab;
     let ui_active = state.selecting
         || state.search.active
@@ -2277,28 +2278,28 @@ pub fn render_frame(
         push_cursor_rect(
             cached_ui_rects,
             cursor_pixel_for_frame,
-            cursor_blink_on,
+            cursor_alpha,
             cell_w,
             cell_h,
             state,
         );
 
         *cached_font_size = font_size;
-        *cached_blink = cursor_blink_on;
+        *cached_blink = cursor_alpha;
         *cached_active_tab = tab_bar.active;
     } else if blink_changed {
-        // Blink-only: truncate cursor rects and re-push with new blink state.
+        // Pulse-only: truncate cursor rects and re-push with updated alpha.
         // Cell instances and bg rects are untouched — skips atlas lookups + GPU upload.
         cached_ui_rects.truncate(*cached_cursor_rects_start);
         push_cursor_rect(
             cached_ui_rects,
             *cached_cursor_pixel,
-            cursor_blink_on,
+            cursor_alpha,
             cell_w,
             cell_h,
             state,
         );
-        *cached_blink = cursor_blink_on;
+        *cached_blink = cursor_alpha;
     }
 
     // Build image draw list from placements in the active tab's panes.
@@ -3316,15 +3317,14 @@ impl AppCore {
             self.state.profiler.add_frame_time(dt);
         }
 
-        if self.state.config.cursor_blink && !self.state.config.reduce_motion {
-            let blink_ms = self.state.config.cursor_blink_ms;
-            if self.last_blink.elapsed() >= std::time::Duration::from_millis(blink_ms) {
-                self.cursor_blink_on = !self.cursor_blink_on;
-                self.last_blink = std::time::Instant::now();
-            }
+        let time_secs = self.start_time.elapsed().as_secs_f32();
+        let cursor_alpha = if self.state.config.cursor_blink && !self.state.config.reduce_motion {
+            let period = self.state.config.cursor_blink_ms as f32 / 500.0;
+            // Smooth cosine pulse: starts fully bright, fades to 0, returns.
+            (std::f32::consts::PI * time_secs / period).cos() * 0.5 + 0.5
         } else {
-            self.cursor_blink_on = true;
-        }
+            1.0
+        };
 
         self.poll_overlay_events();
 
@@ -3339,7 +3339,7 @@ impl AppCore {
             &mut self.state,
             self.cell_w,
             self.cell_h,
-            self.cursor_blink_on,
+            cursor_alpha,
             &mut self.cached_cell_data,
             &mut self.cached_ui_rects,
             &mut self.cached_bg_rects,
@@ -3353,7 +3353,7 @@ impl AppCore {
             cell_caches,
             effective_fs,
             self.scale_factor,
-            self.start_time.elapsed().as_secs_f32(),
+            time_secs,
         );
 
         for pane_id in exited {
@@ -3771,7 +3771,7 @@ mod tests {
         let mut state = AppState::new(Config::default(), Keybinds::default(), 14.0);
         state.in_copy_mode = true;
         let mut rects: Vec<UIRect> = Vec::new();
-        push_cursor_rect(&mut rects, Some((0.0, 0.0)), true, 8.0, 16.0, &mut state);
+        push_cursor_rect(&mut rects, Some((0.0, 0.0)), 1.0, 8.0, 16.0, &mut state);
         assert!(
             rects.is_empty(),
             "copy mode must suppress normal cursor rect"
@@ -3785,7 +3785,7 @@ mod tests {
         let mut state = AppState::new(Config::default(), Keybinds::default(), 14.0);
         state.in_copy_mode = false;
         let mut rects: Vec<UIRect> = Vec::new();
-        push_cursor_rect(&mut rects, Some((10.0, 20.0)), true, 8.0, 16.0, &mut state);
+        push_cursor_rect(&mut rects, Some((10.0, 20.0)), 1.0, 8.0, 16.0, &mut state);
         assert!(!rects.is_empty(), "normal mode must emit cursor rect");
         let last = rects.last().unwrap();
         assert_eq!(last.pos, [10.0, 20.0]);
@@ -3804,7 +3804,7 @@ mod tests {
         state.in_copy_mode = false;
         state.term_cursor_style = None;
         let mut rects: Vec<UIRect> = Vec::new();
-        push_cursor_rect(&mut rects, Some((10.0, 20.0)), true, 8.0, 16.0, &mut state);
+        push_cursor_rect(&mut rects, Some((10.0, 20.0)), 1.0, 8.0, 16.0, &mut state);
         assert_eq!(
             rects.len(),
             3,

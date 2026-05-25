@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::text::{GlyphKey, ShapedGlyphKey};
 
+/// Default atlas size when the GPU has no stricter limit.
 pub const ATLAS_SIZE: u32 = 2048;
 
 /// Entries not touched in this many frames are candidates for eviction.
@@ -36,6 +37,7 @@ pub struct TextureAtlas {
     frame: u64,
     needs_reset: bool,
     warned_90: bool,
+    atlas_size: u32,
 }
 
 #[derive(Debug)]
@@ -46,10 +48,11 @@ pub struct EvictionMetrics {
 }
 
 impl TextureAtlas {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, max_texture_size: u32) -> Self {
+        let atlas_size = max_texture_size.clamp(512, ATLAS_SIZE);
         let size = wgpu::Extent3d {
-            width: ATLAS_SIZE,
-            height: ATLAS_SIZE,
+            width: atlas_size,
+            height: atlas_size,
             depth_or_array_layers: 1,
         };
 
@@ -127,6 +130,7 @@ impl TextureAtlas {
             frame: 0,
             needs_reset: false,
             warned_90: false,
+            atlas_size,
         }
     }
 
@@ -152,7 +156,7 @@ impl TextureAtlas {
     }
 
     pub fn utilization(&self) -> f32 {
-        (self.y_offset + self.row_height) as f32 / ATLAS_SIZE as f32
+        (self.y_offset + self.row_height) as f32 / self.atlas_size as f32
     }
 
     pub fn get_or_insert(
@@ -230,13 +234,15 @@ impl TextureAtlas {
             return None;
         }
 
-        if self.x_offset + width > ATLAS_SIZE {
+        let sz = self.atlas_size;
+
+        if self.x_offset + width > sz {
             self.x_offset = 0;
             self.y_offset += self.row_height;
             self.row_height = 0;
         }
 
-        if self.y_offset + height > ATLAS_SIZE {
+        if self.y_offset + height > sz {
             match self.try_evict_and_compact() {
                 Some(metrics) => {
                     tracing::info!(
@@ -259,21 +265,21 @@ impl TextureAtlas {
             }
 
             // Retry after eviction+compact
-            if self.x_offset + width > ATLAS_SIZE {
+            if self.x_offset + width > sz {
                 self.x_offset = 0;
                 self.y_offset += self.row_height;
                 self.row_height = 0;
             }
-            if self.y_offset + height > ATLAS_SIZE {
+            if self.y_offset + height > sz {
                 self.needs_reset = true;
                 return None;
             }
         }
 
-        let u0 = self.x_offset as f32 / ATLAS_SIZE as f32;
-        let v0 = self.y_offset as f32 / ATLAS_SIZE as f32;
-        let u1 = (self.x_offset + width) as f32 / ATLAS_SIZE as f32;
-        let v1 = (self.y_offset + height) as f32 / ATLAS_SIZE as f32;
+        let u0 = self.x_offset as f32 / sz as f32;
+        let v0 = self.y_offset as f32 / sz as f32;
+        let u1 = (self.x_offset + width) as f32 / sz as f32;
+        let v1 = (self.y_offset + height) as f32 / sz as f32;
 
         self.x_offset += width;
         self.row_height = self.row_height.max(height);
@@ -340,18 +346,19 @@ impl TextureAtlas {
         if width == 0 || height == 0 {
             return None;
         }
-        if self.x_offset + width > ATLAS_SIZE {
+        let sz = self.atlas_size;
+        if self.x_offset + width > sz {
             self.x_offset = 0;
             self.y_offset += self.row_height;
             self.row_height = 0;
         }
-        if self.y_offset + height > ATLAS_SIZE {
+        if self.y_offset + height > sz {
             return None;
         }
-        let u0 = self.x_offset as f32 / ATLAS_SIZE as f32;
-        let v0 = self.y_offset as f32 / ATLAS_SIZE as f32;
-        let u1 = (self.x_offset + width) as f32 / ATLAS_SIZE as f32;
-        let v1 = (self.y_offset + height) as f32 / ATLAS_SIZE as f32;
+        let u0 = self.x_offset as f32 / sz as f32;
+        let v0 = self.y_offset as f32 / sz as f32;
+        let u1 = (self.x_offset + width) as f32 / sz as f32;
+        let v1 = (self.y_offset + height) as f32 / sz as f32;
         self.x_offset += width;
         self.row_height = self.row_height.max(height);
         Some(UvRect { u0, v0, u1, v1 })
@@ -382,8 +389,8 @@ impl TextureAtlas {
         bitmap_width: u32,
         bitmap_height: u32,
     ) {
-        let x = (rect.u0 * ATLAS_SIZE as f32) as u32;
-        let y = (rect.v0 * ATLAS_SIZE as f32) as u32;
+        let x = (rect.u0 * self.atlas_size as f32) as u32;
+        let y = (rect.v0 * self.atlas_size as f32) as u32;
 
         let raw_bytes_per_row = 4 * bitmap_width;
         let aligned_bytes_per_row = raw_bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
@@ -621,6 +628,7 @@ mod tests {
                 frame: 0,
                 needs_reset: false,
                 warned_90: false,
+                atlas_size: ATLAS_SIZE,
             }
         }
     }

@@ -151,8 +151,8 @@ mod tests {
     fn test_sidebar_visible_height() {
         let layout = layout_1280x800();
         let vh = layout.sidebar_visible_height();
-        // 800 - 48 (header) - 36 (bottom btn) = 716
-        assert!((vh - 716.0).abs() < 0.01);
+        // 800 - 48 (header) - 44 (bottom btn) = 708
+        assert!((vh - 708.0).abs() < 0.01);
     }
 
     #[test]
@@ -212,7 +212,7 @@ mod tests {
         let y = layout.tab_y(0, false);
         assert_eq!(y, 48.0);
         let y1 = layout.tab_y(1, false);
-        assert_eq!(y1, 84.0); // 48 + 36
+        assert_eq!(y1, 92.0); // 48 + 44
     }
 
     #[test]
@@ -221,7 +221,7 @@ mod tests {
         let y0 = layout.tab_y(0, true);
         assert_eq!(y0, 68.0); // 48 + 20 (scroll btn)
         let y1 = layout.tab_y(1, true);
-        assert_eq!(y1, 104.0);
+        assert_eq!(y1, 112.0);
     }
 
     #[test]
