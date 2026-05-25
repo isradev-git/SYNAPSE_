@@ -479,6 +479,7 @@ impl AppCore {
             }
         }
         state.palette.set_plugins(state.config.plugins.clone());
+        state.palette.set_ssh_profiles(state.config.ssh_profiles.clone());
 
         // When blur is on but opacity is fully opaque, default to 0.85 so vibrancy shows through.
         let effective_opacity = if state.config.window_blur && state.config.window_opacity >= 1.0 {

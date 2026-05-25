@@ -588,7 +588,8 @@ pub fn handle_keyboard(
                             | Action::ToggleRecording
                             | Action::ToggleKeybinds
                             | Action::ToggleSettings
-                            | Action::PluginExecute(_) => {
+                            | Action::PluginExecute(_)
+                            | Action::OpenSshProfile(_) => {
                                 return PostKeyAction::WorkspaceAction(action);
                             }
                             _ => {
@@ -1119,7 +1120,8 @@ pub fn handle_keyboard(
                 | Some(Action::ToggleRecording)
                 | Some(Action::ToggleKeybinds)
                 | Some(Action::ToggleSettings)
-                | Some(Action::PluginExecute(_)) => {
+                | Some(Action::PluginExecute(_))
+                | Some(Action::OpenSshProfile(_)) => {
                     return PostKeyAction::WorkspaceAction(action_opt.unwrap());
                 }
                 None => {
@@ -2050,7 +2052,51 @@ impl AppCore {
             synapse_config::keybinds::Action::PluginExecute(n) => {
                 self.execute_plugin(n);
             }
+            synapse_config::keybinds::Action::OpenSshProfile(idx) => {
+                self.open_ssh_profile(idx);
+            }
             _ => {}
+        }
+    }
+
+    fn open_ssh_profile(&mut self, idx: usize) {
+        let profile = match self.state.config.ssh_profiles.get(idx) {
+            Some(p) => p.clone(),
+            None => {
+                tracing::warn!("SSH profile index {idx} out of range");
+                return;
+            }
+        };
+        let argv = profile.to_argv();
+        let (shell_prog, shell_args) = match argv.split_first() {
+            Some((prog, rest)) => (prog.clone(), rest.to_vec()),
+            None => return,
+        };
+        let (cols, rows) = {
+            let ws = self.workspaces.active_ws();
+            let pane_id = ws.tab_bar.active_tab().active_pane;
+            ws.panes
+                .iter()
+                .find(|p| p.id == pane_id)
+                .map_or((80, 24), |p| (p.cols, p.rows))
+        };
+        let scrollback = self.state.config.scrollback_lines;
+        let ws = self.workspaces.active_ws_mut();
+        let (_tab_id, pane_id) = ws.tab_bar.new_tab();
+        match crate::pane_ops::create_pane_full(
+            pane_id,
+            cols,
+            rows,
+            None,
+            Some(&shell_prog),
+            &shell_args,
+            scrollback,
+        ) {
+            Ok(pane) => {
+                ws.panes.push(pane);
+                tracing::info!("Opened SSH tab for profile '{}'", profile.name);
+            }
+            Err(e) => tracing::error!("Failed to open SSH profile '{}': {e}", profile.name),
         }
     }
 

@@ -107,6 +107,60 @@ pub struct PluginCommand {
     pub replace_selection: bool,
 }
 
+/// SSH connection profile for command-palette quick-connect.
+///
+/// Example TOML:
+/// ```toml
+/// [[ssh_profile]]
+/// name = "prod"
+/// host = "user@example.com"
+/// port = 22
+/// identity_file = "~/.ssh/id_rsa"
+/// forward_agent = false
+/// extra_args = ["-o", "StrictHostKeyChecking=no"]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SshProfile {
+    pub name: String,
+    pub host: String,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub identity_file: Option<String>,
+    #[serde(default)]
+    pub forward_agent: bool,
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+}
+
+impl SshProfile {
+    /// Build the argv for spawning this SSH session.
+    pub fn to_argv(&self) -> Vec<String> {
+        let mut args = vec!["ssh".to_string()];
+        if let Some(port) = self.port {
+            args.push("-p".to_string());
+            args.push(port.to_string());
+        }
+        if let Some(ref key) = self.identity_file {
+            args.push("-i".to_string());
+            // Expand leading `~`
+            let expanded = if let Some(rest) = key.strip_prefix('~') {
+                let home = std::env::var("HOME").unwrap_or_default();
+                format!("{}{}", home, rest)
+            } else {
+                key.clone()
+            };
+            args.push(expanded);
+        }
+        if self.forward_agent {
+            args.push("-A".to_string());
+        }
+        args.extend(self.extra_args.clone());
+        args.push(self.host.clone());
+        args
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum CursorStyle {
@@ -234,6 +288,8 @@ pub struct Config {
     pub window_blur: bool,
     #[serde(default)]
     pub shell_integration: bool,
+    #[serde(default)]
+    pub ssh_profiles: Vec<SshProfile>,
 }
 
 fn default_window_opacity() -> f32 {
@@ -321,6 +377,7 @@ impl Default for Config {
             window_opacity: 1.0,
             window_blur: false,
             shell_integration: false,
+            ssh_profiles: Vec::new(),
         }
     }
 }

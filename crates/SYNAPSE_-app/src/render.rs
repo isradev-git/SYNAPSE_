@@ -2139,6 +2139,9 @@ pub fn render_frame(
                     crate::palette::PaletteItem::Theme { name } => {
                         (format!("Theme: {}", name), None, false)
                     }
+                    crate::palette::PaletteItem::Ssh { label, .. } => {
+                        (label.clone(), None, false)
+                    }
                 };
 
                 // Highlight selected row

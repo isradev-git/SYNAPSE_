@@ -63,6 +63,7 @@ pub enum Action {
     WorkspaceDelete,
     ToggleProfiler,
     PluginExecute(usize),
+    OpenSshProfile(usize),
     ToggleRecording,
     ToggleKeybinds,
     ToggleSettings,
