@@ -9,6 +9,7 @@ mod mouse;
 mod overlay;
 mod palette;
 mod pane_ops;
+mod update;
 #[cfg(target_os = "macos")]
 mod platform_macos;
 mod quake;
@@ -58,8 +59,16 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     let config = synapse_config::config::Config::load();
     setup::maybe_install_integration(&cli, &config);
 
+    if cli.check_update {
+        return update::run_check();
+    }
+
     if let Some(cli::IpcSubcmd::Ipc { command }) = &cli.subcommand {
         return run_ipc_client(command);
+    }
+
+    if config.check_updates_on_startup {
+        update::spawn_background_check();
     }
 
     let (app, event_loop) = app::App::new(cli)?;

@@ -28,6 +28,10 @@ pub struct Cli {
     #[arg(long)]
     pub setup: bool,
 
+    /// Check for a newer SYNAPSE_ release on GitHub and exit
+    #[arg(long = "check-update")]
+    pub check_update: bool,
+
     #[command(subcommand)]
     pub subcommand: Option<IpcSubcmd>,
 }

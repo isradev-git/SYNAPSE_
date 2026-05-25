@@ -290,6 +290,8 @@ pub struct Config {
     pub shell_integration: bool,
     #[serde(default)]
     pub ssh_profiles: Vec<SshProfile>,
+    #[serde(default)]
+    pub check_updates_on_startup: bool,
 }
 
 fn default_window_opacity() -> f32 {
@@ -378,6 +380,7 @@ impl Default for Config {
             window_blur: false,
             shell_integration: false,
             ssh_profiles: Vec::new(),
+            check_updates_on_startup: false,
         }
     }
 }
