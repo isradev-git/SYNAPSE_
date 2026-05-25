@@ -78,6 +78,7 @@ pub struct AppCore {
     pub session_save_interval: u64,
     pub quake: Option<QuakeMode>,
     pub overlay_rx: Option<std::sync::mpsc::Receiver<OverlayEvent>>,
+    pub ipc_rx: Option<std::sync::mpsc::Receiver<crate::ipc::IpcRequest>>,
 }
 
 pub struct App {
@@ -189,6 +190,7 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         self.core_mut().maybe_autosave_session();
         self.core_mut().quake_animate();
+        self.core_mut().poll_ipc();
         self.core().window.request_redraw();
     }
 }
@@ -553,6 +555,15 @@ impl AppCore {
             session_save_interval,
             quake,
             overlay_rx: None,
+            ipc_rx: {
+                let (tx, rx) = std::sync::mpsc::channel();
+                if let Err(e) = crate::ipc::start_ipc_server(tx) {
+                    tracing::warn!("IPC server failed to start: {e}");
+                    None
+                } else {
+                    Some(rx)
+                }
+            },
         }
     }
 
@@ -672,6 +683,132 @@ impl AppCore {
         if let Some(ref mut quake) = self.quake {
             quake.animate(self.state.config.reduce_motion);
             quake.apply_position(&self.window);
+        }
+    }
+
+    pub fn poll_ipc(&mut self) {
+        if self.ipc_rx.is_none() {
+            return;
+        }
+        let mut requests = Vec::new();
+        if let Some(rx) = &self.ipc_rx {
+            while let Ok(req) = rx.try_recv() {
+                requests.push(req);
+            }
+        }
+        for req in requests {
+            let resp = self.handle_ipc_request(req.command);
+            let _ = req.response_tx.send(resp);
+        }
+    }
+
+    fn handle_ipc_request(&mut self, cmd: crate::ipc::IpcCommandKind) -> crate::ipc::IpcResponse {
+        use crate::ipc::{IpcCommandKind, IpcResponse, PaneInfo};
+
+        match cmd {
+            IpcCommandKind::List => {
+                let ws = self.workspaces.active_ws();
+                let active_tab = ws.tab_bar.active_tab();
+                let active_pane_id = active_tab.active_pane;
+                let panes: Vec<PaneInfo> = ws
+                    .panes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| {
+                        let tab_index = ws
+                            .tab_bar
+                            .tabs
+                            .iter()
+                            .position(|t| t.pane_tree.all_panes().contains(&p.id))
+                            .unwrap_or(i);
+                        PaneInfo {
+                            id: p.id.0 as u32,
+                            title: p.title(),
+                            cwd: p.cwd(),
+                            active: p.id == active_pane_id,
+                            tab_index,
+                        }
+                    })
+                    .collect();
+                IpcResponse::Panes { ok: true, panes }
+            }
+
+            IpcCommandKind::Send { text } => {
+                let ws = self.workspaces.active_ws();
+                let active_pane_id = ws.tab_bar.active_tab().active_pane;
+                if let Some(pane) = ws.panes.iter().find(|p| p.id == active_pane_id) {
+                    match pane.pty_writer.lock() {
+                        Ok(mut w) => {
+                            use std::io::Write as _;
+                            if w.write_all(text.as_bytes()).is_err() {
+                                return IpcResponse::err("write to PTY failed");
+                            }
+                        }
+                        Err(_) => return IpcResponse::err("PTY writer lock poisoned"),
+                    }
+                    IpcResponse::ok()
+                } else {
+                    IpcResponse::err("no active pane")
+                }
+            }
+
+            IpcCommandKind::NewTab { command, cwd } => {
+                let cols = {
+                    let ws = self.workspaces.active_ws();
+                    let tab = ws.tab_bar.active_tab();
+                    ws.panes
+                        .iter()
+                        .find(|p| p.id == tab.active_pane)
+                        .map_or(80, |p| p.cols)
+                };
+                let rows = {
+                    let ws = self.workspaces.active_ws();
+                    let tab = ws.tab_bar.active_tab();
+                    ws.panes
+                        .iter()
+                        .find(|p| p.id == tab.active_pane)
+                        .map_or(24, |p| p.rows)
+                };
+                let scrollback = self.state.config.scrollback_lines;
+                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+                let (shell_path, shell_args): (String, Vec<String>) = match command {
+                    Some(cmd) => (shell.clone(), vec!["-c".to_string(), cmd]),
+                    None => (shell, vec![]),
+                };
+                let ws = self.workspaces.active_ws_mut();
+                let (_tab_id, pane_id) = ws.tab_bar.new_tab();
+                match create_pane_full(
+                    pane_id,
+                    cols,
+                    rows,
+                    cwd,
+                    Some(&shell_path),
+                    &shell_args,
+                    scrollback,
+                ) {
+                    Ok(pane) => {
+                        ws.panes.push(pane);
+                        self.window.request_redraw();
+                        IpcResponse::ok()
+                    }
+                    Err(e) => IpcResponse::err(format!("pane creation: {e}")),
+                }
+            }
+
+            IpcCommandKind::Kill { pane_id } => {
+                let (tab_bar, panes, _caches) = self.workspaces.active_split_mut();
+                let target_id = match pane_id {
+                    Some(id) => synapse_ui::pane::PaneId(id as u64),
+                    None => tab_bar.active_tab().active_pane,
+                };
+                if let Some(removed) = tab_bar.active_tab_mut().pane_tree.close(target_id) {
+                    panes.retain(|p| p.id != removed);
+                    self.window.request_redraw();
+                    IpcResponse::ok()
+                } else {
+                    IpcResponse::err(format!("pane {} not found", target_id.0))
+                }
+            }
         }
     }
 

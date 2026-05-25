@@ -1,15 +1,16 @@
 mod app;
 mod cli;
-#[cfg(target_os = "macos")]
-mod platform_macos;
 mod history;
 mod image_protocol;
 mod input;
+mod ipc;
 mod keyboard;
 mod mouse;
 mod overlay;
 mod palette;
 mod pane_ops;
+#[cfg(target_os = "macos")]
+mod platform_macos;
 mod quake;
 mod record;
 mod render;
@@ -56,6 +57,55 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = cli::Cli::parse();
     let config = synapse_config::config::Config::load();
     setup::maybe_install_integration(&cli, &config);
+
+    if let Some(cli::IpcSubcmd::Ipc { command }) = &cli.subcommand {
+        return run_ipc_client(command);
+    }
+
     let (app, event_loop) = app::App::new(cli)?;
     app.run(event_loop)
+}
+
+fn run_ipc_client(command: &cli::IpcCommand) -> Result<(), Box<dyn std::error::Error>> {
+    use ipc::{IpcCommandKind, IpcResponse};
+
+    let kind = match command {
+        cli::IpcCommand::List => IpcCommandKind::List,
+        cli::IpcCommand::Send { text } => IpcCommandKind::Send { text: text.clone() },
+        cli::IpcCommand::NewTab { cmd, cwd } => IpcCommandKind::NewTab {
+            command: cmd.clone(),
+            cwd: cwd.clone(),
+        },
+        cli::IpcCommand::Kill { pane_id } => IpcCommandKind::Kill {
+            pane_id: *pane_id,
+        },
+    };
+
+    let response = ipc::client_send(&kind).map_err(|e| e.as_str().to_owned())?;
+
+    match &response {
+        IpcResponse::Panes { panes, .. } => {
+            if panes.is_empty() {
+                println!("No panes");
+            } else {
+                println!("{:<6} {:<8} {:<40} TITLE", "ID", "TAB", "CWD");
+                println!("{}", "-".repeat(64));
+                for p in panes {
+                    let active_marker = if p.active { "*" } else { " " };
+                    println!(
+                        "{:<6} {:<8} {:<40} {}{}",
+                        p.id, p.tab_index, p.cwd, active_marker, p.title
+                    );
+                }
+            }
+        }
+        IpcResponse::Ok { .. } => println!("ok"),
+        IpcResponse::Text { output, .. } => print!("{output}"),
+        IpcResponse::Err { error, .. } => {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+    }
+
+    Ok(())
 }

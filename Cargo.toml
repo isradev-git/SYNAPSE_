@@ -20,7 +20,7 @@ description = "A cyberpunk GPU-accelerated terminal emulator"
 [workspace.dependencies]
 # Forzar rustix 0.38 con std para que OwnedFd == std::os::fd::OwnedFd.
 # Esto unifica el tipo con rustix-openpty y arregla el build de alacritty_terminal.
-rustix = { version = "=0.38.44", features = ["std"] }
+rustix = { version = "=0.38.44", features = ["std", "process"] }
 winit = "0.30"
 wgpu = "22"
 fontdue = "0.9"
