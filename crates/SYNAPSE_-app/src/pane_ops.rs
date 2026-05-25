@@ -4,7 +4,7 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use alacritty_terminal::event::Event;
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::term::{Config as TermConfig, Term};
+use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Processor, StdSyncHandler};
 use synapse_ui::pane::{EventProxy, KkpCommand, Pane, PaneId};
 
@@ -16,6 +16,27 @@ use synapse_ui::{
 };
 
 const CLOSE_BTN_W: f32 = 16.0;
+
+/// Map DEC private mode number to DECRPM `Pm` response code:
+/// 0 = not recognized, 1 = set, 2 = reset.
+fn decrqm_pm(mode: u16, flags: &TermMode) -> u8 {
+    let flag = match mode {
+        1 => TermMode::APP_CURSOR,
+        7 => TermMode::LINE_WRAP,
+        20 => TermMode::LINE_FEED_NEW_LINE,
+        25 => TermMode::SHOW_CURSOR,
+        1000 => TermMode::MOUSE_REPORT_CLICK,
+        1002 => TermMode::MOUSE_DRAG,
+        1003 => TermMode::MOUSE_MOTION,
+        1004 => TermMode::FOCUS_IN_OUT,
+        1005 => TermMode::UTF8_MOUSE,
+        1006 => TermMode::SGR_MOUSE,
+        1049 => TermMode::ALT_SCREEN,
+        2004 => TermMode::BRACKETED_PASTE,
+        _ => return 0,
+    };
+    if flags.contains(flag) { 1 } else { 2 }
+}
 
 /// Scan `bytes` for OSC 7 sequences (`ESC ] 7 ; <uri> BEL/ST`) and return
 /// the decoded filesystem paths. Strips the `file://hostname` prefix so only
@@ -385,6 +406,18 @@ pub fn create_pane_full(
                                 image_protocol::KkpScan::Pop => {
                                     let _ = kkp_tx.try_send(KkpCommand::Pop);
                                 }
+                            }
+                        }
+                        // DECRQM: respond to CSI ? Ps $ p mode queries.
+                        for mode_num in image_protocol::scan_decrqm(&staging) {
+                            let pm = if let Ok(term) = term_reader.try_lock() {
+                                decrqm_pm(mode_num, term.mode())
+                            } else {
+                                0
+                            };
+                            if let Ok(mut w) = pty_writer_kkp.lock() {
+                                let response = format!("\x1b[?{};{}$y", mode_num, pm);
+                                let _ = std::io::Write::write_all(&mut *w, response.as_bytes());
                             }
                         }
                         for apc_seq in image_protocol::extract_apc_sequences(&staging) {
@@ -862,5 +895,37 @@ mod tests {
             notifs.is_empty(),
             "empty message should not produce notification"
         );
+    }
+
+    // ─── decrqm_pm tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn decrqm_pm_unknown_mode_returns_0() {
+        let flags = TermMode::empty();
+        assert_eq!(decrqm_pm(999, &flags), 0);
+    }
+
+    #[test]
+    fn decrqm_pm_show_cursor_set() {
+        let flags = TermMode::SHOW_CURSOR;
+        assert_eq!(decrqm_pm(25, &flags), 1);
+    }
+
+    #[test]
+    fn decrqm_pm_show_cursor_reset() {
+        let flags = TermMode::empty();
+        assert_eq!(decrqm_pm(25, &flags), 2);
+    }
+
+    #[test]
+    fn decrqm_pm_bracketed_paste_set() {
+        let flags = TermMode::BRACKETED_PASTE;
+        assert_eq!(decrqm_pm(2004, &flags), 1);
+    }
+
+    #[test]
+    fn decrqm_pm_alt_screen_reset() {
+        let flags = TermMode::SHOW_CURSOR | TermMode::LINE_WRAP;
+        assert_eq!(decrqm_pm(1049, &flags), 2);
     }
 }

@@ -424,6 +424,35 @@ pub fn scan_kkp(bytes: &[u8]) -> Vec<KkpScan> {
     results
 }
 
+// ─── DECRQM scanner ──────────────────────────────────────────────────────────
+
+/// Scan raw PTY bytes for DEC private mode requests (`CSI ? Ps $ p`).
+/// Returns a vec of mode numbers to respond to.
+pub fn scan_decrqm(bytes: &[u8]) -> Vec<u16> {
+    let mut results = Vec::new();
+    let mut i = 0;
+    while i + 3 < bytes.len() {
+        if bytes[i] == 0x1b && bytes[i + 1] == b'[' && bytes[i + 2] == b'?' {
+            let rest = &bytes[i + 3..];
+            let mut j = 0;
+            while j < rest.len() && rest[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > 0 && j + 1 < rest.len() && rest[j] == b'$' && rest[j + 1] == b'p' {
+                if let Ok(s) = std::str::from_utf8(&rest[..j]) {
+                    if let Ok(mode_num) = s.parse::<u16>() {
+                        results.push(mode_num);
+                    }
+                }
+                i += 3 + j + 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    results
+}
+
 // ─── Sixel sequence detection ────────────────────────────────────────────────
 
 /// Extract complete Sixel DCS sequences from a byte buffer.
@@ -997,6 +1026,39 @@ mod tests {
         assert_eq!(store.placements[0].image_id, 42);
         assert_eq!(store.placements[0].col, 10);
         assert_eq!(store.placements[0].row, 5);
+    }
+
+    // ─── scan_decrqm tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn scan_decrqm_single_mode() {
+        // CSI ? 25 $ p → mode 25 (DECTCEM)
+        let data = b"\x1b[?25$p";
+        let modes = scan_decrqm(data);
+        assert_eq!(modes, vec![25]);
+    }
+
+    #[test]
+    fn scan_decrqm_multiple() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"\x1b[?1$p");
+        data.extend_from_slice(b"\x1b[?2004$p");
+        let modes = scan_decrqm(&data);
+        assert_eq!(modes, vec![1, 2004]);
+    }
+
+    #[test]
+    fn scan_decrqm_no_match_kkp_query() {
+        // KKP query ESC [ ? u — should NOT match DECRQM (no $ p suffix)
+        let data = b"\x1b[?u";
+        let modes = scan_decrqm(data);
+        assert!(modes.is_empty());
+    }
+
+    #[test]
+    fn scan_decrqm_no_match_plain_text() {
+        let modes = scan_decrqm(b"hello world");
+        assert!(modes.is_empty());
     }
 
     #[test]
