@@ -3128,12 +3128,20 @@ impl AppCore {
 
         // Drain APC image sequences from all panes into the image store.
         for pane in self.workspaces.active_panes_mut().iter_mut() {
+            // Snapshot cursor position once per pane; used as the image origin for
+            // placements that rely on cursor-based positioning (the Kitty spec default).
+            let (cursor_col, cursor_row) = if let Ok(term) = pane.term.try_lock() {
+                let pt = term.grid().cursor.point;
+                (pt.column.0, pt.line.0.max(0) as usize)
+            } else {
+                (0, 0)
+            };
             while let Ok(raw) = pane.apc_rx.try_recv() {
                 if let Some(cmd) = parse_apc(&raw) {
                     if matches!(cmd.action, KittyAction::Delete) && cmd.image_id != 0 {
                         self.renderer.remove_image(cmd.image_id);
                     }
-                    self.image_store.process(cmd, Some(pane.id));
+                    self.image_store.process(cmd, cursor_col, cursor_row, Some(pane.id));
                 }
             }
         }

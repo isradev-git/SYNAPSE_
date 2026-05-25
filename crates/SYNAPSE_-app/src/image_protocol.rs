@@ -40,11 +40,13 @@ pub struct StoredImage {
 
 /// A placement of an image in the terminal grid.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ImagePlacement {
     pub image_id: u32,
-    /// Terminal column where the image starts.
+    pub placement_id: u32,
+    /// Terminal column where the image starts (from cursor position at display time).
     pub col: usize,
-    /// Terminal row where the image starts.
+    /// Terminal row where the image starts (from cursor position at display time).
     pub row: usize,
     /// How many columns the image spans (0 = auto from image width).
     pub columns: u32,
@@ -56,16 +58,29 @@ pub struct ImagePlacement {
 
 /// A command parsed from an APC sequence, as sent from the render thread.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ApcCommand {
     pub action: KittyAction,
     pub format: KittyFormat,
     pub image_id: u32,
+    pub placement_id: u32,
+    /// Pixel dimensions of the source image (s= and v= keys).
     pub width: u32,
     pub height: u32,
+    /// Number of terminal columns/rows to occupy (c= and r= keys).
     pub columns: u32,
     pub rows: u32,
-    pub col: usize,
-    pub row: usize,
+    /// Source rectangle within the image (x= y= w= h= keys, pixels).
+    pub src_x: u32,
+    pub src_y: u32,
+    pub src_w: u32,
+    pub src_h: u32,
+    /// C=1 → do not move cursor after display; C=0 (default) → cursor moves.
+    pub do_not_move_cursor: bool,
+    /// q=0 respond always (default), q=1 only errors, q=2 never respond.
+    pub quiet: u8,
+    /// U=1 → unicode placeholder mode (parsed but rendering not yet implemented).
+    pub unicode_placeholder: bool,
     /// Base64-encoded image data (may span multiple chunks with m=1).
     pub data: String,
     /// Whether more data chunks follow (m=1).
@@ -125,6 +140,7 @@ impl ImageStore {
         );
         self.placements.push(ImagePlacement {
             image_id: id,
+            placement_id: 0,
             col,
             row,
             columns: 0,
@@ -156,6 +172,7 @@ impl ImageStore {
         );
         self.placements.push(ImagePlacement {
             image_id: id,
+            placement_id: 0,
             col,
             row,
             columns: 0,
@@ -165,7 +182,15 @@ impl ImageStore {
     }
 
     /// Process a parsed APC command with optional pane context.
-    pub fn process(&mut self, cmd: ApcCommand, pane_id: Option<synapse_ui::PaneId>) {
+    /// `cursor_col` and `cursor_row` are the terminal cursor position at display time,
+    /// used as the image origin when the app relies on cursor-based positioning.
+    pub fn process(
+        &mut self,
+        cmd: ApcCommand,
+        cursor_col: usize,
+        cursor_row: usize,
+        pane_id: Option<synapse_ui::PaneId>,
+    ) {
         match cmd.action {
             KittyAction::Delete => {
                 if cmd.image_id == 0 {
@@ -237,8 +262,9 @@ impl ImageStore {
         if matches!(cmd.action, KittyAction::TransmitAndPut | KittyAction::Put) {
             self.placements.push(ImagePlacement {
                 image_id: id,
-                col: cmd.col,
-                row: cmd.row,
+                placement_id: cmd.placement_id,
+                col: cursor_col,
+                row: cursor_row,
                 columns: cmd.columns,
                 rows: cmd.rows,
                 pane_id,
@@ -302,12 +328,18 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
     let mut action = KittyAction::Transmit;
     let mut format = KittyFormat::Rgba;
     let mut image_id: u32 = 0;
+    let mut placement_id: u32 = 0;
     let mut width: u32 = 0;
     let mut height: u32 = 0;
     let mut columns: u32 = 0;
     let mut rows: u32 = 0;
-    let mut col: usize = 0;
-    let mut row: usize = 0;
+    let mut src_x: u32 = 0;
+    let mut src_y: u32 = 0;
+    let mut src_w: u32 = 0;
+    let mut src_h: u32 = 0;
+    let mut do_not_move_cursor = false;
+    let mut quiet: u8 = 0;
+    let mut unicode_placeholder = false;
     let mut more = false;
 
     for kv in params_str.split(',') {
@@ -334,12 +366,19 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
                 }
             }
             "i" => image_id = val.parse().unwrap_or(0),
+            "p" => placement_id = val.parse().unwrap_or(0),
             "s" => width = val.parse().unwrap_or(0),
             "v" => height = val.parse().unwrap_or(0),
             "c" => columns = val.parse().unwrap_or(0),
             "r" => rows = val.parse().unwrap_or(0),
-            "C" => col = val.parse().unwrap_or(0),
-            "R" => row = val.parse().unwrap_or(0),
+            "x" => src_x = val.parse().unwrap_or(0),
+            "y" => src_y = val.parse().unwrap_or(0),
+            "w" => src_w = val.parse().unwrap_or(0),
+            "h" => src_h = val.parse().unwrap_or(0),
+            // C=1 means do not move cursor after display (not column position).
+            "C" => do_not_move_cursor = val == "1",
+            "q" => quiet = val.parse().unwrap_or(0),
+            "U" => unicode_placeholder = val == "1",
             "m" => more = val == "1",
             _ => {}
         }
@@ -349,15 +388,47 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
         action,
         format,
         image_id,
+        placement_id,
         width,
         height,
         columns,
         rows,
-        col,
-        row,
+        src_x,
+        src_y,
+        src_w,
+        src_h,
+        do_not_move_cursor,
+        quiet,
+        unicode_placeholder,
         data,
         more,
     })
+}
+
+/// Build the Kitty graphics protocol response string for a command.
+/// Returns `None` when quiet=2 (never respond) or quiet=1 and there's no error.
+///
+/// Format: `ESC_G[i=<id>,][p=<placement_id>,]<message>ESC\`
+pub fn kitty_response(cmd: &ApcCommand, error: Option<&str>) -> Option<Vec<u8>> {
+    if cmd.quiet == 2 {
+        return None;
+    }
+    if cmd.quiet == 1 && error.is_none() {
+        return None;
+    }
+    let msg = error.unwrap_or("OK");
+    let mut kv = String::new();
+    if cmd.image_id > 0 {
+        kv.push_str(&format!("i={}", cmd.image_id));
+    }
+    if cmd.placement_id > 0 {
+        if !kv.is_empty() {
+            kv.push(',');
+        }
+        kv.push_str(&format!("p={}", cmd.placement_id));
+    }
+    let resp = format!("\x1b_G{};{}\x1b\\", kv, msg);
+    Some(resp.into_bytes())
 }
 
 // ─── KKP CSI scanner ─────────────────────────────────────────────────────────
@@ -831,14 +902,37 @@ mod tests {
     }
 
     #[test]
-    fn parse_apc_with_placement_coords() {
+    fn parse_apc_with_placement_cols_rows() {
+        // c= and r= set display cell dimensions; C=1 is do_not_move_cursor, not column.
         let cmd =
-            parse_apc("Ga=T,f=32,i=1,s=2,v=2,c=4,r=3,C=10,R=5;AAAAAAAA").expect("parse failed");
+            parse_apc("Ga=T,f=32,i=1,s=2,v=2,c=4,r=3,C=1;AAAAAAAA").expect("parse failed");
         assert_eq!(cmd.action, KittyAction::Transmit);
         assert_eq!(cmd.columns, 4);
         assert_eq!(cmd.rows, 3);
-        assert_eq!(cmd.col, 10);
-        assert_eq!(cmd.row, 5);
+        assert!(cmd.do_not_move_cursor);
+    }
+
+    #[test]
+    fn parse_apc_quiet_and_placement_id() {
+        let cmd = parse_apc("Ga=T,f=100,i=7,p=3,q=1;AAAA").expect("parse failed");
+        assert_eq!(cmd.image_id, 7);
+        assert_eq!(cmd.placement_id, 3);
+        assert_eq!(cmd.quiet, 1);
+    }
+
+    #[test]
+    fn parse_apc_unicode_placeholder() {
+        let cmd = parse_apc("Ga=T,f=100,i=9,U=1;AAAA").expect("parse failed");
+        assert!(cmd.unicode_placeholder);
+    }
+
+    #[test]
+    fn parse_apc_src_rect() {
+        let cmd = parse_apc("Ga=p,i=5,x=10,y=20,w=100,h=50;").expect("parse failed");
+        assert_eq!(cmd.src_x, 10);
+        assert_eq!(cmd.src_y, 20);
+        assert_eq!(cmd.src_w, 100);
+        assert_eq!(cmd.src_h, 50);
     }
 
     #[test]
@@ -876,6 +970,7 @@ mod tests {
         );
         store.placements.push(ImagePlacement {
             image_id: 1,
+            placement_id: 0,
             col: 0,
             row: 0,
             columns: 1,
@@ -887,15 +982,23 @@ mod tests {
                 action: KittyAction::Delete,
                 format: KittyFormat::Rgba,
                 image_id: 0,
+                placement_id: 0,
                 width: 0,
                 height: 0,
                 columns: 0,
                 rows: 0,
-                col: 0,
-                row: 0,
+                src_x: 0,
+                src_y: 0,
+                src_w: 0,
+                src_h: 0,
+                do_not_move_cursor: false,
+                quiet: 0,
+                unicode_placeholder: false,
                 data: String::new(),
                 more: false,
             },
+            0,
+            0,
             None,
         );
         assert!(store.placements.is_empty());
@@ -915,6 +1018,7 @@ mod tests {
         );
         store.placements.push(ImagePlacement {
             image_id: 2,
+            placement_id: 0,
             col: 0,
             row: 0,
             columns: 1,
@@ -926,15 +1030,23 @@ mod tests {
                 action: KittyAction::Delete,
                 format: KittyFormat::Rgba,
                 image_id: 2,
+                placement_id: 0,
                 width: 0,
                 height: 0,
                 columns: 0,
                 rows: 0,
-                col: 0,
-                row: 0,
+                src_x: 0,
+                src_y: 0,
+                src_w: 0,
+                src_h: 0,
+                do_not_move_cursor: false,
+                quiet: 0,
+                unicode_placeholder: false,
                 data: String::new(),
                 more: false,
             },
+            0,
+            0,
             None,
         );
         assert!(!store.images.contains_key(&2));
@@ -1078,5 +1190,67 @@ mod tests {
         assert_eq!(h, 1);
         assert_eq!(rgba.len(), 4);
         assert_eq!(rgba, vec![255, 0, 0, 255]);
+    }
+
+    // ─── kitty_response tests ─────────────────────────────────────────────────
+
+    fn make_query_cmd(image_id: u32, quiet: u8) -> ApcCommand {
+        ApcCommand {
+            action: KittyAction::Query,
+            format: KittyFormat::Rgba,
+            image_id,
+            placement_id: 0,
+            width: 1,
+            height: 1,
+            columns: 0,
+            rows: 0,
+            src_x: 0,
+            src_y: 0,
+            src_w: 0,
+            src_h: 0,
+            do_not_move_cursor: false,
+            quiet,
+            unicode_placeholder: false,
+            data: "AAAA".into(),
+            more: false,
+        }
+    }
+
+    #[test]
+    fn kitty_response_ok_quiet0() {
+        let cmd = make_query_cmd(3, 0);
+        let resp = kitty_response(&cmd, None).expect("should produce response");
+        let s = String::from_utf8(resp).unwrap();
+        assert!(s.starts_with("\x1b_Gi=3;OK\x1b\\"), "got: {s:?}");
+    }
+
+    #[test]
+    fn kitty_response_quiet1_suppresses_ok() {
+        let cmd = make_query_cmd(1, 1);
+        assert!(kitty_response(&cmd, None).is_none());
+    }
+
+    #[test]
+    fn kitty_response_quiet1_passes_error() {
+        let cmd = make_query_cmd(1, 1);
+        let resp = kitty_response(&cmd, Some("ENOENT")).expect("should produce error response");
+        let s = String::from_utf8(resp).unwrap();
+        assert!(s.contains("ENOENT"), "got: {s:?}");
+    }
+
+    #[test]
+    fn kitty_response_quiet2_suppresses_all() {
+        let cmd = make_query_cmd(5, 2);
+        assert!(kitty_response(&cmd, None).is_none());
+        assert!(kitty_response(&cmd, Some("error")).is_none());
+    }
+
+    #[test]
+    fn kitty_response_with_placement_id() {
+        let mut cmd = make_query_cmd(7, 0);
+        cmd.placement_id = 2;
+        let resp = kitty_response(&cmd, None).expect("should produce response");
+        let s = String::from_utf8(resp).unwrap();
+        assert!(s.contains("i=7") && s.contains("p=2"), "got: {s:?}");
     }
 }

@@ -421,6 +421,18 @@ pub fn create_pane_full(
                             }
                         }
                         for apc_seq in image_protocol::extract_apc_sequences(&staging) {
+                            // Respond to a=q (query) commands immediately in the reader
+                            // thread so the app learns we support the Kitty graphics protocol
+                            // before any image data is sent.
+                            if let Some(cmd) = image_protocol::parse_apc(&apc_seq) {
+                                if cmd.action == image_protocol::KittyAction::Query {
+                                    if let Some(resp) = image_protocol::kitty_response(&cmd, None) {
+                                        if let Ok(mut w) = pty_writer_kkp.lock() {
+                                            let _ = std::io::Write::write_all(&mut *w, &resp);
+                                        }
+                                    }
+                                }
+                            }
                             let _ = apc_tx.try_send(apc_seq);
                         }
                         for path in extract_osc7_paths(&staging) {
