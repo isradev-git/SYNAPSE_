@@ -1,5 +1,7 @@
 mod app;
 mod cli;
+#[cfg(target_os = "macos")]
+mod platform_macos;
 mod history;
 mod image_protocol;
 mod input;

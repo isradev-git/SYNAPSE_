@@ -250,7 +250,7 @@ impl AppCore {
                 .with_resizable(false)
                 .with_decorations(false)
                 .with_window_level(WindowLevel::AlwaysOnTop);
-            if config.window_opacity < 1.0 {
+            if config.window_opacity < 1.0 || config.window_blur {
                 attrs = attrs.with_transparent(true);
             }
             let window = Arc::new(
@@ -273,7 +273,7 @@ impl AppCore {
             if is_wayland {
                 attrs = attrs.with_decorations(false);
             }
-            if config.window_opacity < 1.0 {
+            if config.window_opacity < 1.0 || config.window_blur {
                 attrs = attrs.with_transparent(true);
             }
             let window = Arc::new(
@@ -478,7 +478,18 @@ impl AppCore {
         }
         state.palette.set_plugins(state.config.plugins.clone());
 
-        renderer.set_clear_color(adjusted_bg(state.theme.bg, state.config.window_opacity));
+        // When blur is on but opacity is fully opaque, default to 0.85 so vibrancy shows through.
+        let effective_opacity = if state.config.window_blur && state.config.window_opacity >= 1.0 {
+            0.85_f32
+        } else {
+            state.config.window_opacity
+        };
+        renderer.set_clear_color(adjusted_bg(state.theme.bg, effective_opacity));
+
+        #[cfg(target_os = "macos")]
+        if state.config.window_blur {
+            crate::platform_macos::apply_window_blur(&window);
+        }
         renderer.set_effects_config(state.config.effects.clone());
         renderer.set_effects_enabled(state.config.effects.enabled);
 
