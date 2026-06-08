@@ -180,9 +180,22 @@ pub fn handle_search_input(
     tab_bar: &TabBar,
     panes: &[Pane],
 ) {
-    if state.modifiers.alt_key() {
+    let ctrl = state.modifiers.control_key();
+    let alt = state.modifiers.alt_key();
+
+    if alt {
         if let Key::Character(c) = key {
             if c == "r" || c == "R" {
+                state.search.toggle_regex();
+                update_search_matches(state, tab_bar, panes);
+                return;
+            }
+        }
+    }
+
+    if ctrl {
+        if let Key::Character(c) = key {
+            if c == "/" {
                 state.search.toggle_regex();
                 update_search_matches(state, tab_bar, panes);
                 return;

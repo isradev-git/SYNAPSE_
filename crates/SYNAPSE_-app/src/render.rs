@@ -1878,30 +1878,7 @@ pub fn render_frame(
                     transparent,
                 ));
             }
-            let mut x_offset = prefix_chars.len();
-
-            if state.search.regex_mode {
-                let tag = if state.search.invalid_regex {
-                    " [invalid] "
-                } else {
-                    " [regex] "
-                };
-                for (j, c) in tag.chars().enumerate() {
-                    cached_cell_data.push((
-                        c,
-                        text_x + (x_offset + j) as f32 * char_w,
-                        text_y,
-                        search_fs,
-                        if state.search.invalid_regex {
-                            state.theme.search_highlight
-                        } else {
-                            state.theme.search_text_dim
-                        },
-                        transparent,
-                    ));
-                }
-                x_offset += tag.len();
-            }
+            let x_offset = prefix_chars.len();
 
             for (j, &c) in term_chars.iter().enumerate() {
                 cached_cell_data.push((
@@ -1923,6 +1900,7 @@ pub fn render_frame(
                 transparent,
             ));
 
+            // Right side: regex indicator + match counter
             let counter = if state.search.term.is_empty() {
                 String::new()
             } else if state.search.matches.is_empty() {
@@ -1934,18 +1912,36 @@ pub fn render_frame(
                     state.search.matches.len()
                 )
             };
-            if !counter.is_empty() {
-                let counter_x = bar_x + bar_w - counter.len() as f32 * char_w - 8.0;
-                for (j, c) in counter.chars().enumerate() {
-                    cached_cell_data.push((
-                        c,
-                        counter_x + j as f32 * char_w,
-                        text_y,
-                        search_fs,
-                        state.theme.search_text_dim,
-                        transparent,
-                    ));
+            let (regex_tag, regex_color) = if state.search.regex_mode {
+                if state.search.invalid_regex {
+                    ("[!re] ", state.theme.search_highlight)
+                } else {
+                    ("[re] ", state.theme.search_current)
                 }
+            } else {
+                ("[re] ", state.theme.search_text_dim)
+            };
+            let right_text = if counter.is_empty() {
+                regex_tag.to_string()
+            } else {
+                format!("{}{}", regex_tag, counter)
+            };
+            let right_x = bar_x + bar_w - right_text.len() as f32 * char_w - 8.0;
+            let regex_end = regex_tag.len();
+            for (j, c) in right_text.chars().enumerate() {
+                let color = if j < regex_end {
+                    regex_color
+                } else {
+                    state.theme.search_text_dim
+                };
+                cached_cell_data.push((
+                    c,
+                    right_x + j as f32 * char_w,
+                    text_y,
+                    search_fs,
+                    color,
+                    transparent,
+                ));
             }
         }
 
