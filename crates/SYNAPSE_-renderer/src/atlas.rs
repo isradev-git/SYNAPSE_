@@ -19,8 +19,6 @@ pub struct UvRect {
 #[derive(Debug, Clone)]
 struct AtlasEntry {
     uv: UvRect,
-    width: u32,
-    height: u32,
     last_frame: u64,
 }
 
@@ -171,15 +169,7 @@ impl TextureAtlas {
         }
 
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.cache.insert(
-            key,
-            AtlasEntry {
-                uv: rect,
-                width: bitmap_width,
-                height: bitmap_height,
-                last_frame: self.frame,
-            },
-        );
+        self.cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
         Some((rect, true))
     }
 
@@ -194,15 +184,7 @@ impl TextureAtlas {
             return Some((entry.uv, false));
         }
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.shaped_cache.insert(
-            key,
-            AtlasEntry {
-                uv: rect,
-                width: bitmap_width,
-                height: bitmap_height,
-                last_frame: self.frame,
-            },
-        );
+        self.shaped_cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
         Some((rect, true))
     }
 
@@ -217,15 +199,7 @@ impl TextureAtlas {
             return Some((entry.uv, false));
         }
         let rect = self.allocate(width, height)?;
-        self.emoji_cache.insert(
-            emoji_key,
-            AtlasEntry {
-                uv: rect,
-                width,
-                height,
-                last_frame: self.frame,
-            },
-        );
+        self.emoji_cache.insert(emoji_key, AtlasEntry { uv: rect, last_frame: self.frame });
         Some((rect, true))
     }
 
@@ -284,84 +258,45 @@ impl TextureAtlas {
         self.x_offset += width;
         self.row_height = self.row_height.max(height);
 
+        if !self.warned_90 && self.utilization() >= 0.9 {
+            self.warned_90 = true;
+            tracing::warn!(
+                "glyph atlas at {:.0}% utilization — LRU eviction will trigger soon (frame {})",
+                self.utilization() * 100.0,
+                self.frame,
+            );
+        }
+
         Some(UvRect { u0, v0, u1, v1 })
     }
 
     fn try_evict_and_compact(&mut self) -> Option<EvictionMetrics> {
-        let before = self.cache.len() + self.shaped_cache.len() + self.emoji_cache.len();
-        let evicted = self.evict_lru();
-        if before == 0 {
+        let total_before = self.cache.len() + self.shaped_cache.len() + self.emoji_cache.len();
+        if total_before == 0 {
             return None;
         }
 
-        let mut items: Vec<(u32, u32)> =
-            Vec::with_capacity(self.cache.len() + self.shaped_cache.len() + self.emoji_cache.len());
-        for entry in self.cache.values() {
-            items.push((entry.width, entry.height));
-        }
-        for entry in self.shaped_cache.values() {
-            items.push((entry.width, entry.height));
-        }
-        for entry in self.emoji_cache.values() {
-            items.push((entry.width, entry.height));
-        }
+        // Evict stale entries, then clear ALL remaining entries and reset the cursor.
+        // Without GPU-side texture copies we cannot compact in-place: resetting the
+        // cursor invalidates every stored UV position, so surviving entries must
+        // re-rasterize and re-upload on their next use.  This costs one heavier frame
+        // but avoids a one-frame rendering glitch (unlike the deferred needs_reset path).
+        let evicted = self.evict_lru();
+        let kept = total_before - evicted;
 
+        self.cache.clear();
+        self.shaped_cache.clear();
+        self.emoji_cache.clear();
         self.x_offset = 0;
         self.y_offset = 0;
         self.row_height = 0;
-
-        let mut new_rects: Vec<Option<UvRect>> = Vec::with_capacity(items.len());
-        for (w, h) in &items {
-            new_rects.push(self.raw_allocate(*w, *h));
-        }
-
-        let mut idx = 0;
-        for entry in self.cache.values_mut() {
-            if let Some(Some(rect)) = new_rects.get(idx) {
-                entry.uv = *rect;
-            }
-            idx += 1;
-        }
-        for entry in self.shaped_cache.values_mut() {
-            if let Some(Some(rect)) = new_rects.get(idx) {
-                entry.uv = *rect;
-            }
-            idx += 1;
-        }
-        for entry in self.emoji_cache.values_mut() {
-            if let Some(Some(rect)) = new_rects.get(idx) {
-                entry.uv = *rect;
-            }
-            idx += 1;
-        }
+        self.warned_90 = false;
 
         Some(EvictionMetrics {
             evicted,
-            kept: self.cache.len() + self.shaped_cache.len() + self.emoji_cache.len(),
-            utilization: self.utilization(),
+            kept,
+            utilization: 0.0,
         })
-    }
-
-    fn raw_allocate(&mut self, width: u32, height: u32) -> Option<UvRect> {
-        if width == 0 || height == 0 {
-            return None;
-        }
-        let sz = self.atlas_size;
-        if self.x_offset + width > sz {
-            self.x_offset = 0;
-            self.y_offset += self.row_height;
-            self.row_height = 0;
-        }
-        if self.y_offset + height > sz {
-            return None;
-        }
-        let u0 = self.x_offset as f32 / sz as f32;
-        let v0 = self.y_offset as f32 / sz as f32;
-        let u1 = (self.x_offset + width) as f32 / sz as f32;
-        let v1 = (self.y_offset + height) as f32 / sz as f32;
-        self.x_offset += width;
-        self.row_height = self.row_height.max(height);
-        Some(UvRect { u0, v0, u1, v1 })
     }
 
     fn evict_lru(&mut self) -> usize {
@@ -531,6 +466,68 @@ mod tests {
         atlas.frame = 1;
         let result = atlas.try_evict_and_compact();
         assert!(result.is_none(), "empty atlas should return None");
+    }
+
+    #[test]
+    fn test_compact_clears_all_entries_and_resets_cursor() {
+        let mut atlas = TextureAtlas::dummy();
+        atlas.frame = 1;
+
+        // Insert two glyphs
+        let key_a = make_key('A');
+        let key_b = make_key('B');
+        assert!(atlas.get_or_insert(key_a, 32, 32).unwrap().1);
+        assert!(atlas.get_or_insert(key_b, 32, 32).unwrap().1);
+        assert!(atlas.x_offset > 0 || atlas.y_offset > 0 || atlas.row_height > 0);
+
+        // Age both past eviction threshold then compact
+        atlas.frame = EVICTION_AGE + 10;
+        let metrics = atlas.try_evict_and_compact().expect("should compact non-empty atlas");
+
+        // Cursor reset
+        assert_eq!(atlas.x_offset, 0);
+        assert_eq!(atlas.y_offset, 0);
+        assert_eq!(atlas.row_height, 0);
+
+        // All entries cleared (surviving entries must re-upload; corrupted UVs avoided)
+        assert_eq!(atlas.cache.len(), 0);
+        assert_eq!(atlas.shaped_cache.len(), 0);
+        assert_eq!(atlas.emoji_cache.len(), 0);
+
+        // Both were evicted (stale)
+        assert_eq!(metrics.evicted, 2);
+
+        // After compact, both keys are treated as new on next access
+        let (_, is_new_a) = atlas.get_or_insert(key_a, 32, 32).unwrap();
+        assert!(is_new_a, "key_a must re-upload after compact");
+        let (_, is_new_b) = atlas.get_or_insert(key_b, 32, 32).unwrap();
+        assert!(is_new_b, "key_b must re-upload after compact");
+    }
+
+    #[test]
+    fn test_compact_recent_entries_still_cleared() {
+        // Even entries that were freshly used must be cleared after compact
+        // (their GPU pixels would be at old positions after cursor reset).
+        let mut atlas = TextureAtlas::dummy();
+        atlas.frame = 1;
+
+        let key_a = make_key('A');
+        assert!(atlas.get_or_insert(key_a, 32, 32).unwrap().1);
+
+        // Touch key_a to keep it "recent" relative to EVICTION_AGE
+        atlas.frame = 5;
+        let (_, is_new) = atlas.get_or_insert(key_a, 32, 32).unwrap();
+        assert!(!is_new);
+
+        // Compact while entry is still recent
+        let metrics = atlas.try_evict_and_compact().unwrap();
+        assert_eq!(metrics.evicted, 0, "nothing stale enough to evict");
+        assert_eq!(metrics.kept, 1, "one entry was alive before compact");
+
+        // Cache must still be cleared to prevent UV corruption
+        assert_eq!(atlas.cache.len(), 0);
+        let (_, is_new_after) = atlas.get_or_insert(key_a, 32, 32).unwrap();
+        assert!(is_new_after, "key_a needs re-upload even though it was recent");
     }
 
     #[test]
