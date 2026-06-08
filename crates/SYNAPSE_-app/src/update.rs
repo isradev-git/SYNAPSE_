@@ -1,8 +1,7 @@
 //! Auto-update check via GitHub Releases API.
 //! No auto-install; only notifies the user when a newer version exists.
 
-const RELEASES_URL: &str =
-    "https://api.github.com/repos/isradev-git/synapse_/releases/latest";
+const RELEASES_URL: &str = "https://api.github.com/repos/isradev-git/synapse_/releases/latest";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
 /// Fetch latest GitHub release and compare to the running version.
@@ -39,9 +38,7 @@ pub fn run_check() -> Result<(), Box<dyn std::error::Error>> {
     match check_update() {
         Ok(Some(latest)) => {
             println!("Update available: v{latest}  (current: v{CURRENT})");
-            println!(
-                "Download: https://github.com/isradev-git/synapse_/releases/latest"
-            );
+            println!("Download: https://github.com/isradev-git/synapse_/releases/latest");
         }
         Ok(None) => {
             println!("SYNAPSE_ v{CURRENT} is up to date.");
@@ -61,9 +58,7 @@ pub fn spawn_background_check() {
         .name("synapse-update-check".into())
         .spawn(|| {
             if let Ok(Some(latest)) = check_update() {
-                let msg = format!(
-                    "SYNAPSE_ v{latest} is available (current: v{CURRENT})"
-                );
+                let msg = format!("SYNAPSE_ v{latest} is available (current: v{CURRENT})");
                 tracing::info!("{msg}");
                 let _ = notify_rust::Notification::new()
                     .summary("SYNAPSE_ update available")
@@ -92,7 +87,11 @@ mod tests {
     fn same_version_returns_none() {
         // Simulate tag equal to current → no update.
         let tag = CURRENT.trim_start_matches('v');
-        let result = if tag != CURRENT { Some(tag.to_string()) } else { None };
+        let result = if tag != CURRENT {
+            Some(tag.to_string())
+        } else {
+            None
+        };
         assert!(result.is_none());
     }
 

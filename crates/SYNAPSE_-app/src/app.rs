@@ -5,7 +5,7 @@ use winit::{
     application::ApplicationHandler,
     dpi::{LogicalPosition, PhysicalSize},
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{Window, WindowAttributes, WindowId, WindowLevel},
 };
 
@@ -32,6 +32,16 @@ use crate::{
 };
 
 pub type CellData = Vec<(char, f32, f32, f32, [f32; 4], [f32; 4])>;
+
+/// Cross-thread events sent to the winit event loop (e.g. from the IPC thread).
+#[derive(Debug)]
+pub enum AppEvent {
+    /// Open a new OS window, optionally running a command in a given directory.
+    NewWindow {
+        command: Option<String>,
+        cwd: Option<String>,
+    },
+}
 
 fn is_wayland_backend() -> bool {
     if let Ok(backend) = std::env::var("WINIT_UNIX_BACKEND") {
@@ -76,32 +86,64 @@ pub struct AppCore {
     pub session_save_interval: u64,
     pub quake: Option<QuakeMode>,
     pub overlay_rx: Option<std::sync::mpsc::Receiver<OverlayEvent>>,
-    pub ipc_rx: Option<std::sync::mpsc::Receiver<crate::ipc::IpcRequest>>,
 }
 
 pub struct App {
-    pub core: Option<AppCore>,
+    /// One AppCore per OS window, keyed by WindowId.
+    pub cores: HashMap<WindowId, AppCore>,
     cli: Cli,
+    proxy: EventLoopProxy<AppEvent>,
+    /// IPC receiver owned at App level so it outlives individual windows.
+    ipc_rx: Option<std::sync::mpsc::Receiver<crate::ipc::IpcRequest>>,
+    /// Tracks which window currently has OS focus (for IPC routing).
+    focused_window: Option<WindowId>,
 }
 
 impl App {
-    pub fn new(cli: Cli) -> Result<(Self, EventLoop<()>), Box<dyn std::error::Error>> {
-        let event_loop = EventLoop::new()?;
-        Ok((App { core: None, cli }, event_loop))
+    pub fn new(cli: Cli) -> Result<(Self, EventLoop<AppEvent>), Box<dyn std::error::Error>> {
+        let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
+        let proxy = event_loop.create_proxy();
+
+        // Start the IPC server once per process.
+        let ipc_rx = {
+            let (tx, rx) = std::sync::mpsc::channel();
+            match crate::ipc::start_ipc_server(tx) {
+                Ok(()) => Some(rx),
+                Err(e) => {
+                    tracing::warn!("IPC server failed to start: {e}");
+                    None
+                }
+            }
+        };
+
+        Ok((
+            App {
+                cores: HashMap::new(),
+                cli,
+                proxy,
+                ipc_rx,
+                focused_window: None,
+            },
+            event_loop,
+        ))
     }
 
-    pub fn run(mut self, event_loop: EventLoop<()>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run(
+        mut self,
+        event_loop: EventLoop<AppEvent>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         event_loop.run_app(&mut self)?;
         Ok(())
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<AppEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.core.is_none() {
+        if self.cores.is_empty() {
             let cli = std::mem::take(&mut self.cli);
             let core = AppCore::initialize(event_loop, cli);
-            self.core = Some(core);
+            let id = core.window.id();
+            self.cores.insert(id, core);
         }
         event_loop.set_control_flow(ControlFlow::Poll);
     }
@@ -109,101 +151,143 @@ impl ApplicationHandler for App {
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
+        window_id: WindowId,
         event: WindowEvent,
     ) {
         match event {
             WindowEvent::CloseRequested => {
-                self.core_mut().save_current_session();
-                // Auto-stop recording if active
-                self.core_mut().stop_recording_if_active();
-                event_loop.exit();
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.save_current_session();
+                    core.stop_recording_if_active();
+                }
+                self.cores.remove(&window_id);
+                if self.focused_window == Some(window_id) {
+                    self.focused_window = None;
+                }
+                if self.cores.is_empty() {
+                    event_loop.exit();
+                }
             }
-            WindowEvent::Resized(size) => self.core_mut().handle_resize(size),
+            WindowEvent::Resized(size) => {
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.handle_resize(size);
+                }
+            }
             WindowEvent::ModifiersChanged(m) => {
-                self.core_mut().state.modifiers = m.state();
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.state.modifiers = m.state();
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                self.core_mut().handle_scroll(delta);
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.handle_scroll(delta);
+                }
             }
             WindowEvent::MouseInput {
                 state: button_state,
                 button,
                 ..
             } => {
-                self.core_mut().handle_mouse_button(button_state, button);
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.handle_mouse_button(button_state, button);
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.core_mut().handle_cursor_moved(position);
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.handle_cursor_moved(position);
+                }
             }
             WindowEvent::RedrawRequested => {
-                self.core_mut().render();
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.render();
+                }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if self.handle_quake_key(&event) {
+                if self.handle_quake_key(window_id, &event) {
                     return;
                 }
-                self.core_mut().handle_keyboard(event);
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.handle_keyboard(event);
+                }
             }
             WindowEvent::Focused(focused) => {
-                self.core_mut().handle_focus(focused);
-                if !focused {
-                    self.core_mut().quake_focus_lost();
+                if focused {
+                    self.focused_window = Some(window_id);
+                } else if self.focused_window == Some(window_id) {
+                    self.focused_window = None;
+                }
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    core.handle_focus(focused);
+                    if !focused {
+                        core.quake_focus_lost();
+                    }
                 }
             }
             WindowEvent::ScaleFactorChanged {
                 scale_factor,
                 mut inner_size_writer,
             } => {
-                {
-                    let core = self.core_mut();
+                if let Some(core) = self.cores.get_mut(&window_id) {
                     core.scale_factor = scale_factor as f32;
                     let size = core.window.inner_size();
                     if let Err(e) = inner_size_writer.request_inner_size(size) {
                         tracing::warn!("ScaleFactorChanged size request failed: {:?}", e);
                     }
+                    core.handle_scale_factor_change();
                 }
-                self.core_mut().handle_scale_factor_change();
             }
-            WindowEvent::DroppedFile(path) => match std::fs::canonicalize(&path) {
-                Ok(abs) => {
-                    let mut s = abs.to_string_lossy().into_owned();
-                    s.push(' ');
-                    let core = self.core_mut();
-                    write_to_panes(
-                        core.workspaces.active_panes(),
-                        core.workspaces.active_tab_bar(),
-                        core.state.broadcasting,
-                        s.as_bytes(),
-                    );
+            WindowEvent::DroppedFile(path) => {
+                if let Some(core) = self.cores.get_mut(&window_id) {
+                    match std::fs::canonicalize(&path) {
+                        Ok(abs) => {
+                            let mut s = abs.to_string_lossy().into_owned();
+                            s.push(' ');
+                            write_to_panes(
+                                core.workspaces.active_panes(),
+                                core.workspaces.active_tab_bar(),
+                                core.state.broadcasting,
+                                s.as_bytes(),
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!("DroppedFile canonicalize failed for {:?}: {}", path, e);
+                        }
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!("DroppedFile canonicalize failed for {:?}: {}", path, e);
-                }
-            },
+            }
             _ => {}
         }
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        self.core_mut().maybe_autosave_session();
-        self.core_mut().quake_animate();
-        self.core_mut().poll_ipc();
-        self.core().window.request_redraw();
+        self.poll_ipc();
+        for core in self.cores.values_mut() {
+            core.maybe_autosave_session();
+            core.quake_animate();
+            core.window.request_redraw();
+        }
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
+        match event {
+            AppEvent::NewWindow { command, cwd } => {
+                let new_cli = Cli {
+                    command,
+                    working_directory: cwd,
+                    ..Default::default()
+                };
+                let core = AppCore::initialize(event_loop, new_cli);
+                let id = core.window.id();
+                self.cores.insert(id, core);
+                tracing::info!("Opened new window {id:?} via IPC");
+            }
+        }
     }
 }
 
 impl App {
-    fn core(&self) -> &AppCore {
-        self.core.as_ref().expect("App not initialized")
-    }
-
-    fn core_mut(&mut self) -> &mut AppCore {
-        self.core.as_mut().expect("App not initialized")
-    }
-
-    fn handle_quake_key(&mut self, event: &winit::event::KeyEvent) -> bool {
-        let core = match self.core.as_mut() {
+    fn handle_quake_key(&mut self, window_id: WindowId, event: &winit::event::KeyEvent) -> bool {
+        let core = match self.cores.get_mut(&window_id) {
             Some(c) => c,
             None => return false,
         };
@@ -221,6 +305,47 @@ impl App {
             return true;
         }
         false
+    }
+
+    /// Returns the focused window's core, or the first available one.
+    fn active_core_mut(&mut self) -> Option<&mut AppCore> {
+        if let Some(id) = self.focused_window {
+            if self.cores.contains_key(&id) {
+                return self.cores.get_mut(&id);
+            }
+        }
+        self.cores.values_mut().next()
+    }
+
+    fn poll_ipc(&mut self) {
+        let mut requests = Vec::new();
+        if let Some(rx) = &self.ipc_rx {
+            while let Ok(req) = rx.try_recv() {
+                requests.push(req);
+            }
+        }
+        for req in requests {
+            let resp = self.handle_ipc_request(req.command);
+            let _ = req.response_tx.send(resp);
+        }
+    }
+
+    fn handle_ipc_request(&mut self, cmd: crate::ipc::IpcCommandKind) -> crate::ipc::IpcResponse {
+        use crate::ipc::{IpcCommandKind, IpcResponse};
+
+        match cmd {
+            IpcCommandKind::NewWindow { command, cwd } => {
+                let _ = self.proxy.send_event(AppEvent::NewWindow { command, cwd });
+                IpcResponse::ok()
+            }
+            other => {
+                if let Some(core) = self.active_core_mut() {
+                    core.handle_ipc_command(other)
+                } else {
+                    IpcResponse::err("no window available")
+                }
+            }
+        }
     }
 }
 
@@ -477,7 +602,9 @@ impl AppCore {
             }
         }
         state.palette.set_plugins(state.config.plugins.clone());
-        state.palette.set_ssh_profiles(state.config.ssh_profiles.clone());
+        state
+            .palette
+            .set_ssh_profiles(state.config.ssh_profiles.clone());
 
         // When blur is on but opacity is fully opaque, default to 0.85 so vibrancy shows through.
         let effective_opacity = if state.config.window_blur && state.config.window_opacity >= 1.0 {
@@ -511,12 +638,7 @@ impl AppCore {
                 bg_path,
                 state.config.background_opacity,
             ) {
-                image_store.store_bg_image(
-                    crate::image_protocol::BG_IMAGE_ID,
-                    w,
-                    h,
-                    rgba,
-                );
+                image_store.store_bg_image(crate::image_protocol::BG_IMAGE_ID, w, h, rgba);
             }
         }
 
@@ -546,21 +668,16 @@ impl AppCore {
             start_time: std::time::Instant::now(),
             scale_factor: scale,
             image_store,
-            splash_start: if reduce_motion { None } else { Some(std::time::Instant::now()) },
+            splash_start: if reduce_motion {
+                None
+            } else {
+                Some(std::time::Instant::now())
+            },
             cached_url_spans: Vec::new(),
             last_session_save: std::time::Instant::now(),
             session_save_interval,
             quake,
             overlay_rx: None,
-            ipc_rx: {
-                let (tx, rx) = std::sync::mpsc::channel();
-                if let Err(e) = crate::ipc::start_ipc_server(tx) {
-                    tracing::warn!("IPC server failed to start: {e}");
-                    None
-                } else {
-                    Some(rx)
-                }
-            },
         }
     }
 
@@ -683,23 +800,12 @@ impl AppCore {
         }
     }
 
-    pub fn poll_ipc(&mut self) {
-        if self.ipc_rx.is_none() {
-            return;
-        }
-        let mut requests = Vec::new();
-        if let Some(rx) = &self.ipc_rx {
-            while let Ok(req) = rx.try_recv() {
-                requests.push(req);
-            }
-        }
-        for req in requests {
-            let resp = self.handle_ipc_request(req.command);
-            let _ = req.response_tx.send(resp);
-        }
-    }
-
-    fn handle_ipc_request(&mut self, cmd: crate::ipc::IpcCommandKind) -> crate::ipc::IpcResponse {
+    /// Handle window-specific IPC commands (List, Send, NewTab, Kill).
+    /// NewWindow is handled at the App level before reaching here.
+    pub fn handle_ipc_command(
+        &mut self,
+        cmd: crate::ipc::IpcCommandKind,
+    ) -> crate::ipc::IpcResponse {
         use crate::ipc::{IpcCommandKind, IpcResponse, PaneInfo};
 
         match cmd {
@@ -806,6 +912,9 @@ impl AppCore {
                     IpcResponse::err(format!("pane {} not found", target_id.0))
                 }
             }
+
+            // Handled at App level via EventLoopProxy; should not reach here.
+            IpcCommandKind::NewWindow { .. } => IpcResponse::err("internal routing error"),
         }
     }
 

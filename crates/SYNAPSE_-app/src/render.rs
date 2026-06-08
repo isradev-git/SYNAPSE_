@@ -718,17 +718,19 @@ fn build_title_bar(layout: &Layout, theme: &Theme) -> Vec<UIRect> {
         return Vec::new();
     }
     let h = layout.title_bar_height();
-    vec![UIRect {
-        pos: [0.0, 0.0],
-        size: [layout.window_width, h],
-        color: theme.tab_bar_bg,
-    },
-    // Thin separator line below title bar
-    UIRect {
-        pos: [0.0, h - 1.0],
-        size: [layout.window_width, 1.0],
-        color: theme.tab_separator,
-    }]
+    vec![
+        UIRect {
+            pos: [0.0, 0.0],
+            size: [layout.window_width, h],
+            color: theme.tab_bar_bg,
+        },
+        // Thin separator line below title bar
+        UIRect {
+            pos: [0.0, h - 1.0],
+            size: [layout.window_width, 1.0],
+            color: theme.tab_separator,
+        },
+    ]
 }
 
 #[allow(clippy::type_complexity)]
@@ -1330,7 +1332,8 @@ pub fn render_frame(
                                             for col in 0..cols.saturating_sub(word_len.max(1) - 1) {
                                                 let mut matches_ok = true;
                                                 for (i, &wc) in word_chars.iter().enumerate() {
-                                                    let cell = &grid[Line(raw_row)][Column(col + i)];
+                                                    let cell =
+                                                        &grid[Line(raw_row)][Column(col + i)];
                                                     if cell.c != wc {
                                                         matches_ok = false;
                                                         break;
@@ -1338,7 +1341,9 @@ pub fn render_frame(
                                                 }
                                                 if matches_ok {
                                                     for i in 0..word_len {
-                                                        state.word_highlight_positions.insert((col + i, raw_row));
+                                                        state
+                                                            .word_highlight_positions
+                                                            .insert((col + i, raw_row));
                                                     }
                                                 }
                                             }
@@ -1514,7 +1519,14 @@ pub fn render_frame(
                     let transparent = [0.0, 0.0, 0.0, 0.0];
                     for (i, ch) in badge_text.chars().enumerate() {
                         let cx = start_x + i as f32 * char_w;
-                        cached_cell_data.push((ch, cx, start_y, badge_scale, badge_fg, transparent));
+                        cached_cell_data.push((
+                            ch,
+                            cx,
+                            start_y,
+                            badge_scale,
+                            badge_fg,
+                            transparent,
+                        ));
                     }
                 }
             }
@@ -1710,7 +1722,10 @@ pub fn render_frame(
                         .unwrap_or(false);
                     if bell_active {
                         [1.0_f32, 0.0, 0.047, 1.0] // #FF000C cyberpunk red
-                    } else if state.effects_enabled && state.config.effects.pane_pulse && !state.config.reduce_motion {
+                    } else if state.effects_enabled
+                        && state.config.effects.pane_pulse
+                        && !state.config.reduce_motion
+                    {
                         let pulse = (time_secs * std::f32::consts::PI).sin() * 0.5 + 0.5;
                         let alpha = 0.6 + pulse * 0.4;
                         let c = state.theme.panel_active_border;
@@ -2140,9 +2155,7 @@ pub fn render_frame(
                     crate::palette::PaletteItem::Theme { name } => {
                         (format!("Theme: {}", name), None, false)
                     }
-                    crate::palette::PaletteItem::Ssh { label, .. } => {
-                        (label.clone(), None, false)
-                    }
+                    crate::palette::PaletteItem::Ssh { label, .. } => (label.clone(), None, false),
                 };
 
                 // Highlight selected row
@@ -2334,10 +2347,18 @@ pub fn render_frame(
 
                 let clip = [content_x as u32, content_y as u32, cw as u32, ch as u32];
                 for (x, y, w, h) in compute_bg_quads(
-                    content_x, content_y, cw, ch, img_w, img_h,
+                    content_x,
+                    content_y,
+                    cw,
+                    ch,
+                    img_w,
+                    img_h,
                     &state.config.background_mode,
                 ) {
-                    image_draws.push(ImageInstance { pos: [x, y], size: [w, h] });
+                    image_draws.push(ImageInstance {
+                        pos: [x, y],
+                        size: [w, h],
+                    });
                     image_draw_ids.push(bg_id);
                     image_clips.push(clip);
                 }
@@ -2434,13 +2455,34 @@ pub fn render_frame(
     );
 
     if state.profiler_active {
-        render_profiler_cells(cached_cell_data, cached_bg_rects, state, layout, cell_w, cell_h);
+        render_profiler_cells(
+            cached_cell_data,
+            cached_bg_rects,
+            state,
+            layout,
+            cell_w,
+            cell_h,
+        );
     }
     if state.keybinds_open {
-        render_keybinds_cells(cached_cell_data, cached_bg_rects, state, layout, cell_w, cell_h);
+        render_keybinds_cells(
+            cached_cell_data,
+            cached_bg_rects,
+            state,
+            layout,
+            cell_w,
+            cell_h,
+        );
     }
     if state.settings_open {
-        render_settings_cells(cached_cell_data, cached_bg_rects, state, layout, cell_w, cell_h);
+        render_settings_cells(
+            cached_cell_data,
+            cached_bg_rects,
+            state,
+            layout,
+            cell_w,
+            cell_h,
+        );
     }
 
     renderer.draw_frame_with_options(
@@ -2627,70 +2669,199 @@ fn render_keybinds_cells(
 
     enum Row {
         Section(&'static str),
-        Bind { key: &'static str, desc: &'static str },
+        Bind {
+            key: &'static str,
+            desc: &'static str,
+        },
         Spacer,
     }
 
     let rows: &[Row] = &[
         Row::Section("─── GENERAL ───────────────────────────────────────"),
-        Row::Bind { key: "F1",               desc: "Show / hide this keybinds panel" },
-        Row::Bind { key: "F2",               desc: "Open settings overlay" },
-        Row::Bind { key: "Ctrl+,",           desc: "Reload config (hot-reload)" },
-        Row::Bind { key: "F11",              desc: "Fullscreen" },
-        Row::Bind { key: "F12",              desc: "Toggle performance profiler" },
+        Row::Bind {
+            key: "F1",
+            desc: "Show / hide this keybinds panel",
+        },
+        Row::Bind {
+            key: "F2",
+            desc: "Open settings overlay",
+        },
+        Row::Bind {
+            key: "Ctrl+,",
+            desc: "Reload config (hot-reload)",
+        },
+        Row::Bind {
+            key: "F11",
+            desc: "Fullscreen",
+        },
+        Row::Bind {
+            key: "F12",
+            desc: "Toggle performance profiler",
+        },
         Row::Spacer,
         Row::Section("─── TABS ───────────────────────────────────────────"),
-        Row::Bind { key: "Ctrl+T",           desc: "New tab" },
-        Row::Bind { key: "Ctrl+W",           desc: "Close tab" },
-        Row::Bind { key: "Ctrl+Tab",         desc: "Next tab" },
-        Row::Bind { key: "Ctrl+Shift+Tab",   desc: "Previous tab" },
-        Row::Bind { key: "Ctrl+1..9",        desc: "Jump to tab N" },
+        Row::Bind {
+            key: "Ctrl+T",
+            desc: "New tab",
+        },
+        Row::Bind {
+            key: "Ctrl+W",
+            desc: "Close tab",
+        },
+        Row::Bind {
+            key: "Ctrl+Tab",
+            desc: "Next tab",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+Tab",
+            desc: "Previous tab",
+        },
+        Row::Bind {
+            key: "Ctrl+1..9",
+            desc: "Jump to tab N",
+        },
         Row::Spacer,
         Row::Section("─── PANES ──────────────────────────────────────────"),
-        Row::Bind { key: "Ctrl+Shift+D",     desc: "Split pane vertically" },
-        Row::Bind { key: "Ctrl+Shift+H",     desc: "Split pane horizontally" },
-        Row::Bind { key: "Ctrl+Enter",       desc: "Auto split" },
-        Row::Bind { key: "Ctrl+Shift+W",     desc: "Close pane" },
-        Row::Bind { key: "Ctrl+Shift+Arrows",desc: "Navigate between panes" },
-        Row::Bind { key: "Ctrl+Shift+Alt+Arrows", desc: "Resize pane" },
-        Row::Bind { key: "Ctrl+Shift+Z",     desc: "Zoom / unzoom active pane" },
+        Row::Bind {
+            key: "Ctrl+Shift+D",
+            desc: "Split pane vertically",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+H",
+            desc: "Split pane horizontally",
+        },
+        Row::Bind {
+            key: "Ctrl+Enter",
+            desc: "Auto split",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+W",
+            desc: "Close pane",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+Arrows",
+            desc: "Navigate between panes",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+Alt+Arrows",
+            desc: "Resize pane",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+Z",
+            desc: "Zoom / unzoom active pane",
+        },
         Row::Spacer,
         Row::Section("─── SEARCH & COPY ──────────────────────────────────"),
-        Row::Bind { key: "Ctrl+Shift+F",     desc: "In-buffer search" },
-        Row::Bind { key: "Ctrl+R",           desc: "History search" },
-        Row::Bind { key: "Ctrl+Shift+Space", desc: "Enter copy mode (vim-style)" },
-        Row::Bind { key: "Ctrl+Shift+C",     desc: "Copy selection" },
-        Row::Bind { key: "Ctrl+Shift+V",     desc: "Paste" },
+        Row::Bind {
+            key: "Ctrl+Shift+F",
+            desc: "In-buffer search",
+        },
+        Row::Bind {
+            key: "Ctrl+R",
+            desc: "History search",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+Space",
+            desc: "Enter copy mode (vim-style)",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+C",
+            desc: "Copy selection",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+V",
+            desc: "Paste",
+        },
         Row::Spacer,
         Row::Section("─── NAVIGATION ─────────────────────────────────────"),
-        Row::Bind { key: "Ctrl+Up",          desc: "Jump to previous prompt mark" },
-        Row::Bind { key: "Ctrl+Down",        desc: "Jump to next prompt mark" },
+        Row::Bind {
+            key: "Ctrl+Up",
+            desc: "Jump to previous prompt mark",
+        },
+        Row::Bind {
+            key: "Ctrl+Down",
+            desc: "Jump to next prompt mark",
+        },
         Row::Spacer,
         Row::Section("─── FONT ───────────────────────────────────────────"),
-        Row::Bind { key: "Ctrl+=",           desc: "Increase font size" },
-        Row::Bind { key: "Ctrl+-",           desc: "Decrease font size" },
-        Row::Bind { key: "Ctrl+0",           desc: "Reset font size" },
+        Row::Bind {
+            key: "Ctrl+=",
+            desc: "Increase font size",
+        },
+        Row::Bind {
+            key: "Ctrl+-",
+            desc: "Decrease font size",
+        },
+        Row::Bind {
+            key: "Ctrl+0",
+            desc: "Reset font size",
+        },
         Row::Spacer,
         Row::Section("─── WORKSPACE ──────────────────────────────────────"),
-        Row::Bind { key: "Ctrl+Shift+N",     desc: "New workspace" },
-        Row::Bind { key: "Ctrl+Alt+Tab",     desc: "Switch workspace" },
-        Row::Bind { key: "Ctrl+Shift+Alt+R", desc: "Rename workspace" },
-        Row::Bind { key: "Ctrl+Shift+Alt+D", desc: "Delete workspace" },
+        Row::Bind {
+            key: "Ctrl+Shift+N",
+            desc: "New workspace",
+        },
+        Row::Bind {
+            key: "Ctrl+Alt+Tab",
+            desc: "Switch workspace",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+Alt+R",
+            desc: "Rename workspace",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+Alt+D",
+            desc: "Delete workspace",
+        },
         Row::Spacer,
         Row::Section("─── MISC ───────────────────────────────────────────"),
-        Row::Bind { key: "Ctrl+L",           desc: "Clear screen" },
-        Row::Bind { key: "Ctrl+Shift+S",     desc: "Toggle status bar" },
-        Row::Bind { key: "Ctrl+Shift+P",     desc: "Command palette" },
-        Row::Bind { key: "Ctrl+Shift+B",     desc: "Broadcast to all panes" },
-        Row::Bind { key: "Ctrl+Shift+R",     desc: "Start / stop asciinema recording" },
-        Row::Bind { key: "Ctrl+Shift+E",     desc: "Toggle GPU effects" },
+        Row::Bind {
+            key: "Ctrl+L",
+            desc: "Clear screen",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+S",
+            desc: "Toggle status bar",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+P",
+            desc: "Command palette",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+B",
+            desc: "Broadcast to all panes",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+R",
+            desc: "Start / stop asciinema recording",
+        },
+        Row::Bind {
+            key: "Ctrl+Shift+E",
+            desc: "Toggle GPU effects",
+        },
         Row::Spacer,
         Row::Section("─── COPY MODE ──────────────────────────────────────"),
-        Row::Bind { key: "h j k l",          desc: "Move cursor" },
-        Row::Bind { key: "v / V",            desc: "Char / line selection" },
-        Row::Bind { key: "y",                desc: "Yank (copy) selection" },
-        Row::Bind { key: "/ or ?",           desc: "Search forward / backward" },
-        Row::Bind { key: "Esc / q",          desc: "Exit copy mode" },
+        Row::Bind {
+            key: "h j k l",
+            desc: "Move cursor",
+        },
+        Row::Bind {
+            key: "v / V",
+            desc: "Char / line selection",
+        },
+        Row::Bind {
+            key: "y",
+            desc: "Yank (copy) selection",
+        },
+        Row::Bind {
+            key: "/ or ?",
+            desc: "Search forward / backward",
+        },
+        Row::Bind {
+            key: "Esc / q",
+            desc: "Exit copy mode",
+        },
     ];
 
     let key_col_w: usize = 26;
@@ -2726,7 +2897,14 @@ fn render_keybinds_cells(
     });
     let title = " SYNAPSE_ KEYBINDS  \u{b7}  \u{2191}\u{2193} scroll  \u{b7}  Esc / F1 close ";
     for (j, c) in title.chars().enumerate() {
-        cell_data.push((c, box_x + 12.0 + j as f32 * cell_w, box_y + 4.0, cell_h, title_fg, header_bg));
+        cell_data.push((
+            c,
+            box_x + 12.0 + j as f32 * cell_w,
+            box_y + 4.0,
+            cell_h,
+            title_fg,
+            header_bg,
+        ));
     }
 
     // Footer note
@@ -2738,7 +2916,14 @@ fn render_keybinds_cells(
     });
     let note = " macOS/Linux: Ctrl = ^   Windows: not yet supported ";
     for (j, c) in note.chars().enumerate() {
-        cell_data.push((c, box_x + 12.0 + j as f32 * cell_w, ny + 2.0, cell_h, dim_fg, header_bg));
+        cell_data.push((
+            c,
+            box_x + 12.0 + j as f32 * cell_w,
+            ny + 2.0,
+            cell_h,
+            dim_fg,
+            header_bg,
+        ));
     }
 
     let content_y_start = box_y + title_h + 4.0;
@@ -2756,7 +2941,14 @@ fn render_keybinds_cells(
                     color: [0.05, 0.07, 0.14, 1.0],
                 });
                 for (j, c) in label.chars().enumerate() {
-                    cell_data.push((c, cx + j as f32 * cell_w, ry, cell_h, header_fg, [0.05, 0.07, 0.14, 1.0]));
+                    cell_data.push((
+                        c,
+                        cx + j as f32 * cell_w,
+                        ry,
+                        cell_h,
+                        header_fg,
+                        [0.05, 0.07, 0.14, 1.0],
+                    ));
                 }
             }
             Row::Bind { key, desc } => {
@@ -2816,7 +3008,13 @@ fn render_settings_cells(
     }
 
     let cfg = &state.config;
-    let bool_str = |b: bool| -> String { if b { "ON".into() } else { "OFF".into() } };
+    let bool_str = |b: bool| -> String {
+        if b {
+            "ON".into()
+        } else {
+            "OFF".into()
+        }
+    };
     let cursor_str = |cs: &CursorStyle| -> String {
         match cs {
             CursorStyle::Block => "Block".into(),
@@ -2827,16 +3025,56 @@ fn render_settings_cells(
     };
 
     let items: &[Item] = &[
-        Item { label: "Font Size",        value: format!("{:.0}", cfg.font_size),  section: Some("FONT") },
-        Item { label: "Font Ligatures",   value: bool_str(cfg.font_ligatures),     section: None },
-        Item { label: "Theme",            value: cfg.theme.clone(),                section: Some("APPEARANCE") },
-        Item { label: "Cursor Style",     value: cursor_str(&cfg.cursor_style),    section: None },
-        Item { label: "Cursor Blink",     value: bool_str(cfg.cursor_blink),       section: None },
-        Item { label: "Status Bar",       value: bool_str(cfg.status_bar),         section: Some("UI") },
-        Item { label: "Scrollbar",        value: bool_str(cfg.scrollbar),          section: None },
-        Item { label: "Show Pane Labels", value: bool_str(cfg.show_pane_labels),   section: None },
-        Item { label: "Pane Badge",       value: bool_str(cfg.pane_badge),         section: None },
-        Item { label: "Effects",          value: bool_str(cfg.effects.enabled),    section: Some("EFFECTS") },
+        Item {
+            label: "Font Size",
+            value: format!("{:.0}", cfg.font_size),
+            section: Some("FONT"),
+        },
+        Item {
+            label: "Font Ligatures",
+            value: bool_str(cfg.font_ligatures),
+            section: None,
+        },
+        Item {
+            label: "Theme",
+            value: cfg.theme.clone(),
+            section: Some("APPEARANCE"),
+        },
+        Item {
+            label: "Cursor Style",
+            value: cursor_str(&cfg.cursor_style),
+            section: None,
+        },
+        Item {
+            label: "Cursor Blink",
+            value: bool_str(cfg.cursor_blink),
+            section: None,
+        },
+        Item {
+            label: "Status Bar",
+            value: bool_str(cfg.status_bar),
+            section: Some("UI"),
+        },
+        Item {
+            label: "Scrollbar",
+            value: bool_str(cfg.scrollbar),
+            section: None,
+        },
+        Item {
+            label: "Show Pane Labels",
+            value: bool_str(cfg.show_pane_labels),
+            section: None,
+        },
+        Item {
+            label: "Pane Badge",
+            value: bool_str(cfg.pane_badge),
+            section: None,
+        },
+        Item {
+            label: "Effects",
+            value: bool_str(cfg.effects.enabled),
+            section: Some("EFFECTS"),
+        },
     ];
 
     let label_w: usize = 20;
@@ -2874,7 +3112,14 @@ fn render_settings_cells(
     });
     let title = " SETTINGS  \u{b7}  F2 close  \u{b7}  S save ";
     for (j, c) in title.chars().enumerate() {
-        cell_data.push((c, box_x + 12.0 + j as f32 * cell_w, box_y + 4.0, cell_h, title_fg, header_bg));
+        cell_data.push((
+            c,
+            box_x + 12.0 + j as f32 * cell_w,
+            box_y + 4.0,
+            cell_h,
+            title_fg,
+            header_bg,
+        ));
     }
 
     // Footer
@@ -2884,9 +3129,17 @@ fn render_settings_cells(
         size: [box_w, footer_h],
         color: header_bg,
     });
-    let footer = " \u{2191}\u{2193} navigate   \u{2190}\u{2192} change   S save & close   Esc cancel ";
+    let footer =
+        " \u{2191}\u{2193} navigate   \u{2190}\u{2192} change   S save & close   Esc cancel ";
     for (j, c) in footer.chars().enumerate() {
-        cell_data.push((c, box_x + 8.0 + j as f32 * cell_w, fy + 3.0, cell_h, dim_fg, header_bg));
+        cell_data.push((
+            c,
+            box_x + 8.0 + j as f32 * cell_w,
+            fy + 3.0,
+            cell_h,
+            dim_fg,
+            header_bg,
+        ));
     }
 
     let cx = box_x + 12.0;
@@ -2902,7 +3155,14 @@ fn render_settings_cells(
                 color: [0.04, 0.06, 0.12, 1.0],
             });
             for (j, c) in sec_label.chars().enumerate() {
-                cell_data.push((c, cx + j as f32 * cell_w, row_y, cell_h, section_fg, [0.04, 0.06, 0.12, 1.0]));
+                cell_data.push((
+                    c,
+                    cx + j as f32 * cell_w,
+                    row_y,
+                    cell_h,
+                    section_fg,
+                    [0.04, 0.06, 0.12, 1.0],
+                ));
             }
             row_y += cell_h;
         }
@@ -2910,7 +3170,11 @@ fn render_settings_cells(
         let is_selected = item_idx == state.settings_item;
         let row_bg = if is_selected { sel_bg } else { overlay_bg };
         let row_label_fg = if is_selected { sel_fg } else { label_fg };
-        let row_value_fg = if is_selected { [0.0f32, 1.0, 0.8, 1.0] } else { value_fg };
+        let row_value_fg = if is_selected {
+            [0.0f32, 1.0, 0.8, 1.0]
+        } else {
+            value_fg
+        };
 
         if is_selected {
             bg_rects.push(UIRect {
@@ -2923,7 +3187,14 @@ fn render_settings_cells(
         // Label
         let padded_label = format!("{:<width$}", item.label, width = label_w);
         for (j, c) in padded_label.chars().enumerate() {
-            cell_data.push((c, cx + j as f32 * cell_w, row_y, cell_h, row_label_fg, row_bg));
+            cell_data.push((
+                c,
+                cx + j as f32 * cell_w,
+                row_y,
+                cell_h,
+                row_label_fg,
+                row_bg,
+            ));
         }
 
         // Separator
@@ -2936,7 +3207,14 @@ fn render_settings_cells(
         let vx = sep_x + 2.0 * cell_w;
         let padded_val = format!("{:<width$}", item.value, width = value_w);
         for (j, c) in padded_val.chars().enumerate() {
-            cell_data.push((c, vx + j as f32 * cell_w, row_y, cell_h, row_value_fg, row_bg));
+            cell_data.push((
+                c,
+                vx + j as f32 * cell_w,
+                row_y,
+                cell_h,
+                row_value_fg,
+                row_bg,
+            ));
         }
 
         // Hint arrows (only on selected row)
@@ -3142,7 +3420,8 @@ impl AppCore {
                     if matches!(cmd.action, KittyAction::Delete) && cmd.image_id != 0 {
                         self.renderer.remove_image(cmd.image_id);
                     }
-                    self.image_store.process(cmd, cursor_col, cursor_row, Some(pane.id));
+                    self.image_store
+                        .process(cmd, cursor_col, cursor_row, Some(pane.id));
                 }
             }
         }
@@ -3363,7 +3642,6 @@ impl AppCore {
             self.cached_cursor_rects_start = 0;
             self.cached_cursor_pixel = None;
         }
-
     }
 
     fn poll_overlay_events(&mut self) {
@@ -3443,81 +3721,211 @@ impl AppCore {
         let header_fg = [1.0f32, 0.647, 0.0, 1.0]; // amber section headers
         let key_fg = [0.0f32, 0.898, 1.0, 1.0]; // bright cyan for keys
         let desc_fg = theme.tab_text;
-        let dim_fg = [theme.tab_text_inactive[0], theme.tab_text_inactive[1],
-                      theme.tab_text_inactive[2], 1.0];
+        let dim_fg = [
+            theme.tab_text_inactive[0],
+            theme.tab_text_inactive[1],
+            theme.tab_text_inactive[2],
+            1.0,
+        ];
         let overlay_bg = [0.03f32, 0.04, 0.08, 0.94];
         let header_bg = [0.06f32, 0.08, 0.16, 1.0];
 
         #[derive(Clone)]
         enum Row {
             Section(&'static str),
-            Bind { key: &'static str, desc: &'static str },
+            Bind {
+                key: &'static str,
+                desc: &'static str,
+            },
             Spacer,
         }
 
         let rows: &[Row] = &[
             Row::Section("─── GENERAL ───────────────────────────────────────"),
-            Row::Bind { key: "F1",            desc: "Show / hide this keybinds panel" },
-            Row::Bind { key: "Ctrl+,",        desc: "Reload config (hot-reload)" },
-            Row::Bind { key: "F11",           desc: "Fullscreen" },
-            Row::Bind { key: "F12",           desc: "Toggle performance profiler" },
+            Row::Bind {
+                key: "F1",
+                desc: "Show / hide this keybinds panel",
+            },
+            Row::Bind {
+                key: "Ctrl+,",
+                desc: "Reload config (hot-reload)",
+            },
+            Row::Bind {
+                key: "F11",
+                desc: "Fullscreen",
+            },
+            Row::Bind {
+                key: "F12",
+                desc: "Toggle performance profiler",
+            },
             Row::Spacer,
             Row::Section("─── TABS ───────────────────────────────────────────"),
-            Row::Bind { key: "Ctrl+T",        desc: "New tab" },
-            Row::Bind { key: "Ctrl+W",        desc: "Close tab" },
-            Row::Bind { key: "Ctrl+Tab",      desc: "Next tab" },
-            Row::Bind { key: "Ctrl+Shift+Tab",desc: "Previous tab" },
-            Row::Bind { key: "Ctrl+1..9",     desc: "Jump to tab N" },
+            Row::Bind {
+                key: "Ctrl+T",
+                desc: "New tab",
+            },
+            Row::Bind {
+                key: "Ctrl+W",
+                desc: "Close tab",
+            },
+            Row::Bind {
+                key: "Ctrl+Tab",
+                desc: "Next tab",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+Tab",
+                desc: "Previous tab",
+            },
+            Row::Bind {
+                key: "Ctrl+1..9",
+                desc: "Jump to tab N",
+            },
             Row::Spacer,
             Row::Section("─── PANES ──────────────────────────────────────────"),
-            Row::Bind { key: "Ctrl+Shift+D",  desc: "Split pane vertically" },
-            Row::Bind { key: "Ctrl+Shift+H",  desc: "Split pane horizontally" },
-            Row::Bind { key: "Ctrl+Enter",    desc: "Auto split" },
-            Row::Bind { key: "Ctrl+Shift+W",  desc: "Close pane" },
-            Row::Bind { key: "Ctrl+Shift+↑↓←→", desc: "Navigate between panes" },
-            Row::Bind { key: "Ctrl+Shift+Alt+↑↓←→", desc: "Resize pane" },
-            Row::Bind { key: "Ctrl+Shift+Z",  desc: "Zoom / unzoom active pane" },
+            Row::Bind {
+                key: "Ctrl+Shift+D",
+                desc: "Split pane vertically",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+H",
+                desc: "Split pane horizontally",
+            },
+            Row::Bind {
+                key: "Ctrl+Enter",
+                desc: "Auto split",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+W",
+                desc: "Close pane",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+↑↓←→",
+                desc: "Navigate between panes",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+Alt+↑↓←→",
+                desc: "Resize pane",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+Z",
+                desc: "Zoom / unzoom active pane",
+            },
             Row::Spacer,
             Row::Section("─── SEARCH & COPY ──────────────────────────────────"),
-            Row::Bind { key: "Ctrl+Shift+F",  desc: "In-buffer search" },
-            Row::Bind { key: "Ctrl+R",        desc: "History search" },
-            Row::Bind { key: "Ctrl+Shift+Space", desc: "Enter copy mode (vim-style)" },
-            Row::Bind { key: "Ctrl+Shift+C",  desc: "Copy selection" },
-            Row::Bind { key: "Ctrl+Shift+V",  desc: "Paste" },
+            Row::Bind {
+                key: "Ctrl+Shift+F",
+                desc: "In-buffer search",
+            },
+            Row::Bind {
+                key: "Ctrl+R",
+                desc: "History search",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+Space",
+                desc: "Enter copy mode (vim-style)",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+C",
+                desc: "Copy selection",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+V",
+                desc: "Paste",
+            },
             Row::Spacer,
             Row::Section("─── NAVIGATION ─────────────────────────────────────"),
-            Row::Bind { key: "Ctrl+↑",        desc: "Jump to previous prompt mark" },
-            Row::Bind { key: "Ctrl+↓",        desc: "Jump to next prompt mark" },
+            Row::Bind {
+                key: "Ctrl+↑",
+                desc: "Jump to previous prompt mark",
+            },
+            Row::Bind {
+                key: "Ctrl+↓",
+                desc: "Jump to next prompt mark",
+            },
             Row::Spacer,
             Row::Section("─── FONT ───────────────────────────────────────────"),
-            Row::Bind { key: "Ctrl+=",        desc: "Increase font size" },
-            Row::Bind { key: "Ctrl+-",        desc: "Decrease font size" },
-            Row::Bind { key: "Ctrl+0",        desc: "Reset font size" },
+            Row::Bind {
+                key: "Ctrl+=",
+                desc: "Increase font size",
+            },
+            Row::Bind {
+                key: "Ctrl+-",
+                desc: "Decrease font size",
+            },
+            Row::Bind {
+                key: "Ctrl+0",
+                desc: "Reset font size",
+            },
             Row::Spacer,
             Row::Section("─── WORKSPACE ──────────────────────────────────────"),
-            Row::Bind { key: "Ctrl+Shift+N",  desc: "New workspace" },
-            Row::Bind { key: "Ctrl+Alt+Tab",  desc: "Switch workspace" },
-            Row::Bind { key: "Ctrl+Shift+Alt+R", desc: "Rename workspace" },
-            Row::Bind { key: "Ctrl+Shift+Alt+D", desc: "Delete workspace" },
+            Row::Bind {
+                key: "Ctrl+Shift+N",
+                desc: "New workspace",
+            },
+            Row::Bind {
+                key: "Ctrl+Alt+Tab",
+                desc: "Switch workspace",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+Alt+R",
+                desc: "Rename workspace",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+Alt+D",
+                desc: "Delete workspace",
+            },
             Row::Spacer,
             Row::Section("─── MISC ───────────────────────────────────────────"),
-            Row::Bind { key: "Ctrl+L",        desc: "Clear screen" },
-            Row::Bind { key: "Ctrl+Shift+S",  desc: "Toggle status bar" },
-            Row::Bind { key: "Ctrl+Shift+P",  desc: "Command palette" },
-            Row::Bind { key: "Ctrl+Shift+B",  desc: "Toggle broadcast to all panes" },
-            Row::Bind { key: "Ctrl+Shift+R",  desc: "Start / stop asciinema recording" },
-            Row::Bind { key: "Ctrl+Shift+E",  desc: "Toggle GPU effects (scanlines, bloom…)" },
+            Row::Bind {
+                key: "Ctrl+L",
+                desc: "Clear screen",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+S",
+                desc: "Toggle status bar",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+P",
+                desc: "Command palette",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+B",
+                desc: "Toggle broadcast to all panes",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+R",
+                desc: "Start / stop asciinema recording",
+            },
+            Row::Bind {
+                key: "Ctrl+Shift+E",
+                desc: "Toggle GPU effects (scanlines, bloom…)",
+            },
             Row::Spacer,
             Row::Section("─── COPY MODE (when active) ────────────────────────"),
-            Row::Bind { key: "h j k l",       desc: "Move cursor" },
-            Row::Bind { key: "v / V",         desc: "Start char / line selection" },
-            Row::Bind { key: "y",             desc: "Yank (copy) selection" },
-            Row::Bind { key: "/ or ?",        desc: "Search forward / backward" },
-            Row::Bind { key: "Esc / q",       desc: "Exit copy mode" },
+            Row::Bind {
+                key: "h j k l",
+                desc: "Move cursor",
+            },
+            Row::Bind {
+                key: "v / V",
+                desc: "Start char / line selection",
+            },
+            Row::Bind {
+                key: "y",
+                desc: "Yank (copy) selection",
+            },
+            Row::Bind {
+                key: "/ or ?",
+                desc: "Search forward / backward",
+            },
+            Row::Bind {
+                key: "Esc / q",
+                desc: "Exit copy mode",
+            },
         ];
 
-        let key_col_w = 26usize;   // chars for key column
-        let desc_col_w = 52usize;  // chars for desc column
+        let key_col_w = 26usize; // chars for key column
+        let desc_col_w = 52usize; // chars for desc column
         let total_w_chars = key_col_w + 2 + desc_col_w;
         let box_w = total_w_chars as f32 * char_w + 24.0;
         let visible_rows = ((screen_h - 80.0) / line_h).floor() as usize;

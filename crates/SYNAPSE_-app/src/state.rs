@@ -109,7 +109,11 @@ pub struct WsRenameState {
 
 impl WsRenameState {
     pub fn new() -> Self {
-        Self { active: false, term: String::new(), cursor_pos: 0 }
+        Self {
+            active: false,
+            term: String::new(),
+            cursor_pos: 0,
+        }
     }
 
     pub fn activate(&mut self, current: &str) {

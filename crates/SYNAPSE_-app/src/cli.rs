@@ -22,6 +22,10 @@ pub struct Cli {
     #[arg(long = "restore")]
     pub restore_session: Option<String>,
 
+    /// Open a new window. Delegates to a running instance via IPC if one exists.
+    #[arg(long)]
+    pub new_window: bool,
+
     #[arg(long)]
     pub quake: bool,
 
@@ -73,5 +77,17 @@ pub enum IpcCommand {
     Kill {
         /// Pane ID to kill (see `list` for IDs)
         pane_id: Option<u32>,
+    },
+
+    /// Open a new window in the running instance
+    #[command(name = "new-window")]
+    NewWindow {
+        /// Command to run in the new window
+        #[arg(long)]
+        cmd: Option<String>,
+
+        /// Working directory for the new window
+        #[arg(long)]
+        cwd: Option<String>,
     },
 }

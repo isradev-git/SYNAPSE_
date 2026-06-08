@@ -115,8 +115,8 @@ fn scrollbar_click(
                         let total = (pane_rows + history_size).max(1) as f32;
                         let thumb_h = (content_h * pane_rows as f32 / total).max(12.0);
                         let travel = content_h - thumb_h;
-                        let frac =
-                            ((cursor_y as f32 - content_y - thumb_h / 2.0) / travel).clamp(0.0, 1.0);
+                        let frac = ((cursor_y as f32 - content_y - thumb_h / 2.0) / travel)
+                            .clamp(0.0, 1.0);
                         let target_offset = ((1.0 - frac) * history_size as f32) as usize;
                         let delta = target_offset as i32 - display_offset as i32;
                         if delta != 0 {
@@ -459,9 +459,8 @@ pub fn handle_cursor_moved(
                         let total = (pane_rows + history_size).max(1) as f32;
                         let thumb_h = (content_h * pane_rows as f32 / total).max(12.0);
                         let travel = content_h - thumb_h;
-                        let frac =
-                            ((state.cursor_y as f32 - content_y - thumb_h / 2.0) / travel)
-                                .clamp(0.0, 1.0);
+                        let frac = ((state.cursor_y as f32 - content_y - thumb_h / 2.0) / travel)
+                            .clamp(0.0, 1.0);
                         let target_offset = ((1.0 - frac) * history_size as f32) as usize;
                         let delta = target_offset as i32 - display_offset as i32;
                         if delta != 0 {

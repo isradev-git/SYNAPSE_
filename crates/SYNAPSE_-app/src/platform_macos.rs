@@ -6,11 +6,11 @@ pub fn apply_window_blur(window: &winit::window::Window) {
 #[cfg(target_os = "macos")]
 unsafe fn apply_vibrancy(window: &winit::window::Window) {
     use objc2::rc::Retained;
-    use objc2_foundation::MainThreadMarker;
     use objc2_app_kit::{
         NSAutoresizingMaskOptions, NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
         NSVisualEffectState, NSVisualEffectView, NSWindowOrderingMode,
     };
+    use objc2_foundation::MainThreadMarker;
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     let handle = match window.window_handle() {

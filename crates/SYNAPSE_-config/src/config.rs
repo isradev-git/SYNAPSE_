@@ -696,7 +696,10 @@ sidebar_width = 200
     fn test_font_ligatures_default_true_in_toml() {
         // serde(default) on bool gives false; we use default_true to keep ligatures on
         let cfg: Config = toml::from_str("").unwrap();
-        assert!(cfg.font_ligatures, "ligatures should default to true when key absent from TOML");
+        assert!(
+            cfg.font_ligatures,
+            "ligatures should default to true when key absent from TOML"
+        );
     }
 
     #[test]
@@ -728,7 +731,10 @@ background_opacity = 0.5
 background_mode = "contain"
 "#;
         let cfg: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(cfg.background_image.as_deref(), Some("/home/user/wallpaper.png"));
+        assert_eq!(
+            cfg.background_image.as_deref(),
+            Some("/home/user/wallpaper.png")
+        );
         assert_eq!(cfg.background_opacity, 0.5);
         assert_eq!(cfg.background_mode, BackgroundMode::Contain);
     }

@@ -24,7 +24,11 @@ impl Layout {
     }
 
     pub fn title_bar_height(&self) -> f32 {
-        if self.wayland_decorated { 28.0 } else { 0.0 }
+        if self.wayland_decorated {
+            28.0
+        } else {
+            0.0
+        }
     }
 
     pub fn update(&mut self, width: f32, height: f32) {

@@ -1731,9 +1731,7 @@ impl AppCore {
         use winit::keyboard::NamedKey;
 
         // When keybinds overlay is open, intercept keys for scroll/close.
-        if self.state.keybinds_open
-            && event.state == winit::event::ElementState::Pressed
-        {
+        if self.state.keybinds_open && event.state == winit::event::ElementState::Pressed {
             match &event.logical_key {
                 winit::keyboard::Key::Named(NamedKey::Escape)
                 | winit::keyboard::Key::Named(NamedKey::F1) => {
@@ -1742,8 +1740,7 @@ impl AppCore {
                     return;
                 }
                 winit::keyboard::Key::Named(NamedKey::ArrowUp) => {
-                    self.state.keybinds_scroll =
-                        self.state.keybinds_scroll.saturating_sub(1);
+                    self.state.keybinds_scroll = self.state.keybinds_scroll.saturating_sub(1);
                     return;
                 }
                 winit::keyboard::Key::Named(NamedKey::ArrowDown) => {
@@ -1751,8 +1748,7 @@ impl AppCore {
                     return;
                 }
                 winit::keyboard::Key::Named(NamedKey::PageUp) => {
-                    self.state.keybinds_scroll =
-                        self.state.keybinds_scroll.saturating_sub(10);
+                    self.state.keybinds_scroll = self.state.keybinds_scroll.saturating_sub(10);
                     return;
                 }
                 winit::keyboard::Key::Named(NamedKey::PageDown) => {
@@ -1799,9 +1795,7 @@ impl AppCore {
                     self.settings_change(1);
                     return;
                 }
-                winit::keyboard::Key::Character(c)
-                    if c.as_str().eq_ignore_ascii_case("s") =>
-                {
+                winit::keyboard::Key::Character(c) if c.as_str().eq_ignore_ascii_case("s") => {
                     let new_size = self.state.config.font_size;
                     let _ = self.state.config.save();
                     self.state.settings_original_config = None;
@@ -2128,16 +2122,32 @@ impl AppCore {
             3 => {
                 self.state.config.cursor_style = match &self.state.config.cursor_style {
                     CursorStyle::Block => {
-                        if dir > 0 { CursorStyle::Beam } else { CursorStyle::NeonUnderbar }
+                        if dir > 0 {
+                            CursorStyle::Beam
+                        } else {
+                            CursorStyle::NeonUnderbar
+                        }
                     }
                     CursorStyle::Beam => {
-                        if dir > 0 { CursorStyle::Underline } else { CursorStyle::Block }
+                        if dir > 0 {
+                            CursorStyle::Underline
+                        } else {
+                            CursorStyle::Block
+                        }
                     }
                     CursorStyle::Underline => {
-                        if dir > 0 { CursorStyle::NeonUnderbar } else { CursorStyle::Beam }
+                        if dir > 0 {
+                            CursorStyle::NeonUnderbar
+                        } else {
+                            CursorStyle::Beam
+                        }
                     }
                     CursorStyle::NeonUnderbar => {
-                        if dir > 0 { CursorStyle::Block } else { CursorStyle::Underline }
+                        if dir > 0 {
+                            CursorStyle::Block
+                        } else {
+                            CursorStyle::Underline
+                        }
                     }
                 };
             }

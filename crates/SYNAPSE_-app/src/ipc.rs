@@ -26,6 +26,10 @@ pub enum IpcCommandKind {
         command: Option<String>,
         cwd: Option<String>,
     },
+    NewWindow {
+        command: Option<String>,
+        cwd: Option<String>,
+    },
     Kill {
         pane_id: Option<u32>,
     },
@@ -43,21 +47,10 @@ pub struct PaneInfo {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum IpcResponse {
-    Panes {
-        ok: bool,
-        panes: Vec<PaneInfo>,
-    },
-    Text {
-        ok: bool,
-        output: String,
-    },
-    Err {
-        ok: bool,
-        error: String,
-    },
-    Ok {
-        ok: bool,
-    },
+    Panes { ok: bool, panes: Vec<PaneInfo> },
+    Text { ok: bool, output: String },
+    Err { ok: bool, error: String },
+    Ok { ok: bool },
 }
 
 impl IpcResponse {
@@ -65,7 +58,10 @@ impl IpcResponse {
         Self::Ok { ok: true }
     }
     pub fn err(msg: impl Into<String>) -> Self {
-        Self::Err { ok: false, error: msg.into() }
+        Self::Err {
+            ok: false,
+            error: msg.into(),
+        }
     }
 }
 
@@ -130,7 +126,13 @@ fn handle_connection(stream: UnixStream, tx: mpsc::Sender<IpcRequest>) {
         };
 
         let (resp_tx, resp_rx) = mpsc::sync_channel(1);
-        if tx.send(IpcRequest { command, response_tx: resp_tx }).is_err() {
+        if tx
+            .send(IpcRequest {
+                command,
+                response_tx: resp_tx,
+            })
+            .is_err()
+        {
             break;
         }
 
@@ -208,16 +210,13 @@ mod tests {
     fn test_ipc_command_deserialize_new_tab() {
         let cmd: IpcCommandKind =
             serde_json::from_str(r#"{"cmd":"new-tab","command":"vim","cwd":"/tmp"}"#).unwrap();
-        assert!(
-            matches!(cmd, IpcCommandKind::NewTab { command, cwd }
-                if command.as_deref() == Some("vim") && cwd.as_deref() == Some("/tmp"))
-        );
+        assert!(matches!(cmd, IpcCommandKind::NewTab { command, cwd }
+                if command.as_deref() == Some("vim") && cwd.as_deref() == Some("/tmp")));
     }
 
     #[test]
     fn test_ipc_command_deserialize_kill_no_id() {
-        let cmd: IpcCommandKind =
-            serde_json::from_str(r#"{"cmd":"kill","pane_id":null}"#).unwrap();
+        let cmd: IpcCommandKind = serde_json::from_str(r#"{"cmd":"kill","pane_id":null}"#).unwrap();
         assert!(matches!(cmd, IpcCommandKind::Kill { pane_id: None }));
     }
 

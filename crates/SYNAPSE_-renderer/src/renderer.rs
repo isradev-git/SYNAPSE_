@@ -356,10 +356,7 @@ impl Renderer {
         family_idx: usize,
     ) {
         let target = font_size as u32;
-        let rgba = match self
-            .text
-            .extract_emoji_bitmap(family_idx, c, target)
-        {
+        let rgba = match self.text.extract_emoji_bitmap(family_idx, c, target) {
             Some((w, h, mut pixels)) => {
                 for chunk in pixels.chunks_exact_mut(4) {
                     let a = chunk[3] as f32 / 255.0;

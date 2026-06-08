@@ -9,7 +9,6 @@ mod mouse;
 mod overlay;
 mod palette;
 mod pane_ops;
-mod update;
 #[cfg(target_os = "macos")]
 mod platform_macos;
 mod quake;
@@ -20,6 +19,7 @@ mod session;
 mod setup;
 mod sixel;
 mod state;
+mod update;
 mod workspace;
 
 use clap::Parser;
@@ -67,12 +67,42 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
         return run_ipc_client(command);
     }
 
+    // If another SYNAPSE_ instance is already running, delegate new-window/new-tab to it.
+    // Plain `synapse_` launch also opens a new window in the existing instance.
+    if try_delegate_to_existing(&cli) {
+        return Ok(());
+    }
+
     if config.check_updates_on_startup {
         update::spawn_background_check();
     }
 
     let (app, event_loop) = app::App::new(cli)?;
     app.run(event_loop)
+}
+
+/// Returns true if an existing instance handled the request (this process should exit).
+fn try_delegate_to_existing(cli: &cli::Cli) -> bool {
+    use ipc::IpcCommandKind;
+
+    // Only delegate on new-window / plain launch (no -e command that implies a fresh window).
+    // --quake, --restore, --setup always start their own instance.
+    if cli.quake || cli.setup || cli.restore_session.is_some() {
+        return false;
+    }
+
+    let cmd = IpcCommandKind::NewWindow {
+        command: cli.command.clone(),
+        cwd: cli.working_directory.clone(),
+    };
+
+    match ipc::client_send(&cmd) {
+        Ok(_) => {
+            tracing::info!("Delegated new window to existing SYNAPSE_ instance.");
+            true
+        }
+        Err(_) => false, // No existing instance — start normally.
+    }
 }
 
 fn run_ipc_client(command: &cli::IpcCommand) -> Result<(), Box<dyn std::error::Error>> {
@@ -85,8 +115,10 @@ fn run_ipc_client(command: &cli::IpcCommand) -> Result<(), Box<dyn std::error::E
             command: cmd.clone(),
             cwd: cwd.clone(),
         },
-        cli::IpcCommand::Kill { pane_id } => IpcCommandKind::Kill {
-            pane_id: *pane_id,
+        cli::IpcCommand::Kill { pane_id } => IpcCommandKind::Kill { pane_id: *pane_id },
+        cli::IpcCommand::NewWindow { cmd, cwd } => IpcCommandKind::NewWindow {
+            command: cmd.clone(),
+            cwd: cwd.clone(),
         },
     };
 

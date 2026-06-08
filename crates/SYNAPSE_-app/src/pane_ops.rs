@@ -35,7 +35,11 @@ fn decrqm_pm(mode: u16, flags: &TermMode) -> u8 {
         2004 => TermMode::BRACKETED_PASTE,
         _ => return 0,
     };
-    if flags.contains(flag) { 1 } else { 2 }
+    if flags.contains(flag) {
+        1
+    } else {
+        2
+    }
 }
 
 /// Scan `bytes` for OSC 7 sequences (`ESC ] 7 ; <uri> BEL/ST`) and return

@@ -5,9 +5,18 @@ use crate::cli::Cli;
 use synapse_config::config::Config;
 
 const SCRIPTS: &[(&str, &str)] = &[
-    ("synapse-integration.zsh", include_str!("../../../assets/shell/synapse-integration.zsh")),
-    ("synapse-integration.bash", include_str!("../../../assets/shell/synapse-integration.bash")),
-    ("synapse-integration.fish", include_str!("../../../assets/shell/synapse-integration.fish")),
+    (
+        "synapse-integration.zsh",
+        include_str!("../../../assets/shell/synapse-integration.zsh"),
+    ),
+    (
+        "synapse-integration.bash",
+        include_str!("../../../assets/shell/synapse-integration.bash"),
+    ),
+    (
+        "synapse-integration.fish",
+        include_str!("../../../assets/shell/synapse-integration.fish"),
+    ),
 ];
 
 const ZSH_SOURCE: &str = "\n# SYNAPSE_ shell integration\n[ -f ~/.config/SYNAPSE_/shell/synapse-integration.zsh ] && source ~/.config/SYNAPSE_/shell/synapse-integration.zsh\n";

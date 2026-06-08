@@ -904,8 +904,7 @@ mod tests {
     #[test]
     fn parse_apc_with_placement_cols_rows() {
         // c= and r= set display cell dimensions; C=1 is do_not_move_cursor, not column.
-        let cmd =
-            parse_apc("Ga=T,f=32,i=1,s=2,v=2,c=4,r=3,C=1;AAAAAAAA").expect("parse failed");
+        let cmd = parse_apc("Ga=T,f=32,i=1,s=2,v=2,c=4,r=3,C=1;AAAAAAAA").expect("parse failed");
         assert_eq!(cmd.action, KittyAction::Transmit);
         assert_eq!(cmd.columns, 4);
         assert_eq!(cmd.rows, 3);

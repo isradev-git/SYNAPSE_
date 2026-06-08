@@ -424,7 +424,13 @@ mod tests {
 
     #[test]
     fn all_builtin_themes_load() {
-        for name in &["synapse_", "dracula", "catppuccin-mocha", "tokyo-night", "high-contrast"] {
+        for name in &[
+            "synapse_",
+            "dracula",
+            "catppuccin-mocha",
+            "tokyo-night",
+            "high-contrast",
+        ] {
             let t = Theme::load(name, None);
             // bg alpha should always be 1.0
             assert!(

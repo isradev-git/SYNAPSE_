@@ -4,7 +4,6 @@ const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("../../../assets/fonts/JetBrai
 const JETBRAINS_MONO_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf");
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlyphKey {
     pub ch: char,
@@ -263,8 +262,12 @@ impl FontFamily {
         if img.width() == target && img.height() == target {
             Some((target, target, img.to_rgba8().into_raw()))
         } else {
-            let resized =
-                image::imageops::resize(&img, target, target, image::imageops::FilterType::Lanczos3);
+            let resized = image::imageops::resize(
+                &img,
+                target,
+                target,
+                image::imageops::FilterType::Lanczos3,
+            );
             Some((target, target, resized.into_raw()))
         }
     }

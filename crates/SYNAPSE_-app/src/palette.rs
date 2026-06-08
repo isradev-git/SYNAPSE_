@@ -321,7 +321,8 @@ pub fn handle_palette_input(
         }
         Key::Named(NamedKey::Backspace) => {
             state.palette.query.pop();
-            let items = build_palette_items(tab_bar, &state.palette.plugins, &state.palette.ssh_profiles);
+            let items =
+                build_palette_items(tab_bar, &state.palette.plugins, &state.palette.ssh_profiles);
             state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
             if state.palette.selected >= state.palette.results.len() {
                 state.palette.selected = state.palette.results.len().saturating_sub(1);
@@ -331,7 +332,8 @@ pub fn handle_palette_input(
             if !state.palette.query.is_empty() {
                 state.palette.query.remove(0);
             }
-            let items = build_palette_items(tab_bar, &state.palette.plugins, &state.palette.ssh_profiles);
+            let items =
+                build_palette_items(tab_bar, &state.palette.plugins, &state.palette.ssh_profiles);
             state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
             if state.palette.selected >= state.palette.results.len() {
                 state.palette.selected = state.palette.results.len().saturating_sub(1);
@@ -345,7 +347,11 @@ pub fn handle_palette_input(
                             state.palette.query.push(c);
                         }
                     }
-                    let items = build_palette_items(tab_bar, &state.palette.plugins, &state.palette.ssh_profiles);
+                    let items = build_palette_items(
+                        tab_bar,
+                        &state.palette.plugins,
+                        &state.palette.ssh_profiles,
+                    );
                     state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
                     state.palette.selected = 0;
                 }
