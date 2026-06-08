@@ -27,6 +27,15 @@ pub enum KittyFormat {
     Png, // f=100
 }
 
+/// One frame of an animated image (GIF / APNG).
+#[derive(Debug, Clone)]
+pub struct AnimFrame {
+    /// Raw RGBA bytes for this frame (width * height * 4).
+    pub rgba: Vec<u8>,
+    /// How long to display this frame, in milliseconds.
+    pub delay_ms: u32,
+}
+
 /// A fully decoded Kitty image stored in the image store.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -34,8 +43,12 @@ pub struct StoredImage {
     pub id: u32,
     pub width: u32,
     pub height: u32,
-    /// Raw RGBA bytes (width * height * 4).
+    /// First frame RGBA bytes (width * height * 4). Always valid; used for the
+    /// initial GPU upload and as the frame-0 data for animated images.
     pub rgba: Vec<u8>,
+    /// All frames for animated images (GIF / APNG), including frame 0.
+    /// Empty for static images.
+    pub frames: Vec<AnimFrame>,
 }
 
 /// A placement of an image in the terminal grid.
@@ -87,11 +100,26 @@ pub struct ApcCommand {
     pub more: bool,
 }
 
+// ─── Animation state ─────────────────────────────────────────────────────────
+
+/// Per-image animation playback state. Only created for images with > 1 frame.
+#[derive(Debug)]
+pub struct AnimState {
+    /// Index into `StoredImage::frames` for the currently displayed frame.
+    pub frame_idx: usize,
+    /// `now_ms` timestamp when the current frame started displaying.
+    pub last_tick_ms: u64,
+    /// Cached delay (ms) for each frame so `tick_animations` needs no borrow of `images`.
+    pub frame_delays_ms: Vec<u32>,
+}
+
 // ─── ImageStore ──────────────────────────────────────────────────────────────
 
 pub struct ImageStore {
     pub images: HashMap<u32, StoredImage>,
     pub placements: Vec<ImagePlacement>,
+    /// Animation state keyed by image_id. Only present for animated images.
+    pub anim_states: HashMap<u32, AnimState>,
     /// Accumulate base64 chunks for chunked transmits.
     pending: HashMap<u32, String>,
 }
@@ -101,6 +129,7 @@ impl ImageStore {
         Self {
             images: HashMap::new(),
             placements: Vec::new(),
+            anim_states: HashMap::new(),
             pending: HashMap::new(),
         }
     }
@@ -113,8 +142,48 @@ impl ImageStore {
                 width,
                 height,
                 rgba,
+                frames: Vec::new(),
             },
         );
+    }
+
+    /// Advance animation frames for all animated images. Returns the IDs of images
+    /// that advanced to a new frame this call (caller should re-upload GPU texture).
+    pub fn tick_animations(&mut self, now_ms: u64) -> Vec<u32> {
+        let mut advanced = Vec::new();
+        for (image_id, state) in &mut self.anim_states {
+            if state.frame_delays_ms.is_empty() {
+                continue;
+            }
+            let delay = state.frame_delays_ms[state.frame_idx].max(10) as u64;
+            if now_ms.saturating_sub(state.last_tick_ms) >= delay {
+                state.frame_idx = (state.frame_idx + 1) % state.frame_delays_ms.len();
+                state.last_tick_ms = now_ms;
+                advanced.push(*image_id);
+            }
+        }
+        advanced
+    }
+
+    /// Return the RGBA bytes for the current animation frame of an image.
+    /// For static images or frame 0, returns `image.rgba`. For later frames,
+    /// returns the frame data from `image.frames`.
+    pub fn current_frame_rgba(&self, id: u32) -> Option<(&[u8], u32, u32)> {
+        let image = self.images.get(&id)?;
+        if image.frames.is_empty() {
+            return Some((&image.rgba, image.width, image.height));
+        }
+        let frame_idx = self
+            .anim_states
+            .get(&id)
+            .map(|s| s.frame_idx)
+            .unwrap_or(0);
+        let rgba = image
+            .frames
+            .get(frame_idx)
+            .map(|f| f.rgba.as_slice())
+            .unwrap_or(&image.rgba);
+        Some((rgba, image.width, image.height))
     }
 
     /// Accept a decoded Sixel image into the store and create a placement.
@@ -136,6 +205,7 @@ impl ImageStore {
                 width,
                 height,
                 rgba,
+                frames: Vec::new(),
             },
         );
         self.placements.push(ImagePlacement {
@@ -150,6 +220,8 @@ impl ImageStore {
     }
 
     /// Accept a decoded iTerm2 OSC 1337 inline image into the store and create a placement.
+    /// `frames` should contain all animation frames (including frame 0) for animated images,
+    /// or be empty for static images.
     #[allow(clippy::too_many_arguments)]
     pub fn accept_iterm2(
         &mut self,
@@ -157,10 +229,22 @@ impl ImageStore {
         width: u32,
         height: u32,
         rgba: &[u8],
+        frames: Vec<AnimFrame>,
         col: usize,
         row: usize,
         pane_id: Option<synapse_ui::PaneId>,
     ) {
+        if frames.len() > 1 {
+            let delays: Vec<u32> = frames.iter().map(|f| f.delay_ms).collect();
+            self.anim_states.insert(
+                id,
+                AnimState {
+                    frame_idx: 0,
+                    last_tick_ms: 0,
+                    frame_delays_ms: delays,
+                },
+            );
+        }
         self.images.insert(
             id,
             StoredImage {
@@ -168,6 +252,7 @@ impl ImageStore {
                 width,
                 height,
                 rgba: rgba.to_vec(),
+                frames,
             },
         );
         self.placements.push(ImagePlacement {
@@ -256,6 +341,7 @@ impl ImageStore {
                 width: w,
                 height: h,
                 rgba,
+                frames: Vec::new(),
             },
         );
 
@@ -768,14 +854,52 @@ pub fn process_iterm2_sequences(staging: &mut Vec<u8>) -> Vec<Iterm2Image> {
 
 // ─── Image decoding (multi-format) ───────────────────────────────────────────
 
-/// Decode raw image bytes (PNG, JPEG, GIF, BMP) to RGBA using the `image` crate.
-/// Returns (width, height, RGBA bytes).
-pub fn decode_image_bytes(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+/// Decode raw image bytes detecting animated formats (GIF / APNG).
+/// Returns (width, height, first-frame RGBA, all-frames).
+/// For static images `all-frames` is empty and only the RGBA bytes are returned.
+pub fn decode_animated(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>, Vec<AnimFrame>)> {
+    if bytes.starts_with(b"GIF8") {
+        if let Some((w, h, frames)) = decode_gif_frames(bytes) {
+            if !frames.is_empty() {
+                let first_rgba = frames[0].rgba.clone();
+                return Some((w, h, first_rgba, frames));
+            }
+        }
+    }
+    // Fallback: load as single static frame.
     use image::GenericImageView;
     let img = image::load_from_memory(bytes).ok()?;
     let (w, h) = img.dimensions();
     let rgba = img.to_rgba8().into_raw();
-    Some((w, h, rgba))
+    Some((w, h, rgba, Vec::new()))
+}
+
+/// Decode all frames of a GIF image.
+/// Returns `(width, height, frames)` where each `AnimFrame` carries full-size RGBA data.
+fn decode_gif_frames(bytes: &[u8]) -> Option<(u32, u32, Vec<AnimFrame>)> {
+    use image::AnimationDecoder;
+    let decoder = image::codecs::gif::GifDecoder::new(std::io::Cursor::new(bytes)).ok()?;
+    let mut frames_out: Vec<AnimFrame> = Vec::new();
+    let mut width = 0u32;
+    let mut height = 0u32;
+    for frame_result in decoder.into_frames() {
+        let frame = frame_result.ok()?;
+        let (numer, denom) = frame.delay().numer_denom_ms();
+        let delay_ms = numer.checked_div(denom).unwrap_or(100).max(10);
+        let buf = frame.into_buffer();
+        if width == 0 {
+            width = buf.width();
+            height = buf.height();
+        }
+        frames_out.push(AnimFrame {
+            rgba: buf.into_raw(),
+            delay_ms,
+        });
+    }
+    if frames_out.is_empty() {
+        return None;
+    }
+    Some((width, height, frames_out))
 }
 
 /// Load a background image from a file path, apply opacity to alpha.
@@ -965,6 +1089,7 @@ mod tests {
                 width: 1,
                 height: 1,
                 rgba: vec![0; 4],
+                frames: Vec::new(),
             },
         );
         store.placements.push(ImagePlacement {
@@ -1013,6 +1138,7 @@ mod tests {
                 width: 1,
                 height: 1,
                 rgba: vec![0; 4],
+                frames: Vec::new(),
             },
         );
         store.placements.push(ImagePlacement {
@@ -1131,7 +1257,7 @@ mod tests {
     #[test]
     fn accept_iterm2_creates_entry() {
         let mut store = ImageStore::new();
-        store.accept_iterm2(42, 100, 50, &[0u8; 20000], 10, 5, None);
+        store.accept_iterm2(42, 100, 50, &[0u8; 20000], Vec::new(), 10, 5, None);
         assert!(store.images.contains_key(&42));
         assert_eq!(store.placements.len(), 1);
         assert_eq!(store.placements[0].image_id, 42);
@@ -1184,11 +1310,12 @@ mod tests {
             let pixel: [u8; 4] = [255, 0, 0, 255]; // red, opaque
             writer.write_image_data(&pixel).unwrap();
         }
-        let (w, h, rgba) = decode_image_bytes(&png_buf).expect("should decode generated PNG");
+        let (w, h, rgba, frames) = decode_animated(&png_buf).expect("should decode generated PNG");
         assert_eq!(w, 1);
         assert_eq!(h, 1);
         assert_eq!(rgba.len(), 4);
         assert_eq!(rgba, vec![255, 0, 0, 255]);
+        assert!(frames.is_empty(), "static PNG should have no animation frames");
     }
 
     // ─── kitty_response tests ─────────────────────────────────────────────────
@@ -1251,5 +1378,144 @@ mod tests {
         let resp = kitty_response(&cmd, None).expect("should produce response");
         let s = String::from_utf8(resp).unwrap();
         assert!(s.contains("i=7") && s.contains("p=2"), "got: {s:?}");
+    }
+
+    // ─── Animation / GIF tests ────────────────────────────────────────────────
+
+    fn make_animated_store(id: u32, delays: &[u32]) -> ImageStore {
+        let mut store = ImageStore::new();
+        let frames: Vec<AnimFrame> = delays
+            .iter()
+            .map(|&d| AnimFrame { rgba: vec![0u8; 4], delay_ms: d })
+            .collect();
+        let first_rgba = frames[0].rgba.clone();
+        store.anim_states.insert(
+            id,
+            AnimState {
+                frame_idx: 0,
+                last_tick_ms: 0,
+                frame_delays_ms: delays.to_vec(),
+            },
+        );
+        store.images.insert(
+            id,
+            StoredImage {
+                id,
+                width: 1,
+                height: 1,
+                rgba: first_rgba,
+                frames,
+            },
+        );
+        store
+    }
+
+    #[test]
+    fn tick_animations_no_advance_before_delay() {
+        let mut store = make_animated_store(1, &[100, 100]);
+        let advanced = store.tick_animations(50); // only 50ms elapsed
+        assert!(advanced.is_empty());
+        assert_eq!(store.anim_states[&1].frame_idx, 0);
+    }
+
+    #[test]
+    fn tick_animations_advances_after_delay() {
+        let mut store = make_animated_store(1, &[100, 100]);
+        let advanced = store.tick_animations(100); // exactly at delay boundary
+        assert_eq!(advanced, vec![1]);
+        assert_eq!(store.anim_states[&1].frame_idx, 1);
+    }
+
+    #[test]
+    fn tick_animations_wraps_to_frame0() {
+        let mut store = make_animated_store(1, &[100, 100]);
+        store.tick_animations(100); // frame 0 → 1
+        let advanced = store.tick_animations(200); // frame 1 → 0 (wraps)
+        assert_eq!(advanced, vec![1]);
+        assert_eq!(store.anim_states[&1].frame_idx, 0);
+    }
+
+    #[test]
+    fn tick_animations_no_state_for_static_images() {
+        let mut store = ImageStore::new();
+        store.images.insert(
+            99,
+            StoredImage {
+                id: 99,
+                width: 1,
+                height: 1,
+                rgba: vec![0u8; 4],
+                frames: Vec::new(),
+            },
+        );
+        let advanced = store.tick_animations(9999);
+        assert!(advanced.is_empty()); // no AnimState registered → no tick
+    }
+
+    #[test]
+    fn accept_iterm2_animated_registers_anim_state() {
+        let mut store = ImageStore::new();
+        let frames = vec![
+            AnimFrame { rgba: vec![0u8; 4], delay_ms: 100 },
+            AnimFrame { rgba: vec![1u8; 4], delay_ms: 200 },
+        ];
+        store.accept_iterm2(5, 1, 1, &[0u8; 4], frames, 0, 0, None);
+        assert!(store.anim_states.contains_key(&5));
+        assert_eq!(store.anim_states[&5].frame_delays_ms, vec![100, 200]);
+    }
+
+    #[test]
+    fn accept_iterm2_static_no_anim_state() {
+        let mut store = ImageStore::new();
+        store.accept_iterm2(6, 1, 1, &[0u8; 4], Vec::new(), 0, 0, None);
+        assert!(!store.anim_states.contains_key(&6));
+    }
+
+    #[test]
+    fn current_frame_rgba_static() {
+        let mut store = ImageStore::new();
+        store.images.insert(
+            10,
+            StoredImage {
+                id: 10,
+                width: 1,
+                height: 1,
+                rgba: vec![42u8; 4],
+                frames: Vec::new(),
+            },
+        );
+        let (rgba, w, h) = store.current_frame_rgba(10).unwrap();
+        assert_eq!(rgba, &[42u8; 4]);
+        assert_eq!((w, h), (1, 1));
+    }
+
+    #[test]
+    fn current_frame_rgba_animated_follows_frame_idx() {
+        let mut store = make_animated_store(2, &[100, 200]);
+        // frame 0
+        {
+            let (rgba, _, _) = store.current_frame_rgba(2).unwrap();
+            assert_eq!(rgba, &[0u8; 4]);
+        }
+        // advance to frame 1
+        store.tick_animations(100);
+        {
+            let (rgba, _, _) = store.current_frame_rgba(2).unwrap();
+            assert_eq!(rgba, &[0u8; 4]); // both frames have same pixel data in test
+        }
+    }
+
+    #[test]
+    fn decode_animated_static_png_no_frames() {
+        let mut png_buf = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_buf, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[0u8; 4]).unwrap();
+        }
+        let (_w, _h, _rgba, frames) = decode_animated(&png_buf).unwrap();
+        assert!(frames.is_empty());
     }
 }

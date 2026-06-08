@@ -3510,8 +3510,8 @@ impl AppCore {
                         Err(_) => continue,
                     };
 
-                    let (img_w, img_h, rgba) =
-                        match crate::image_protocol::decode_image_bytes(&raw_bytes) {
+                    let (img_w, img_h, rgba, frames) =
+                        match crate::image_protocol::decode_animated(&raw_bytes) {
                             Some(v) => v,
                             None => continue,
                         };
@@ -3541,6 +3541,7 @@ impl AppCore {
                         img_w,
                         img_h,
                         &rgba,
+                        frames,
                         cursor_col,
                         cursor_row,
                         Some(pane.id),
@@ -3626,6 +3627,19 @@ impl AppCore {
         };
 
         self.poll_overlay_events();
+
+        // Advance animated images (GIF / APNG). Re-upload GPU textures for any
+        // frame that advanced. render_instances always runs so the new textures
+        // take effect this frame without any additional dirty-flag plumbing.
+        {
+            let now_ms = self.start_time.elapsed().as_millis() as u64;
+            let advanced = self.image_store.tick_animations(now_ms);
+            for id in advanced {
+                if let Some((rgba, w, h)) = self.image_store.current_frame_rgba(id) {
+                    self.renderer.upload_image(id, rgba, w, h);
+                }
+            }
+        }
 
         let effective_fs = self.state.font_size * self.scale_factor;
         let (tab_bar, panes, cell_caches) = self.workspaces.active_split_mut();
