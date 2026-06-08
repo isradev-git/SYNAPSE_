@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## Pending / Roadmap
+
+### App Icons
+- **Status:** not started
+- **Needs:** source PNG 1024×1024 (cyberpunk design, `#0A0C14` bg, `#FF003C` accent)
+- **macOS:** convert to `.icns` via `iconutil`, embed in `.app` bundle `Info.plist`
+- **Linux:** 256×256 PNG at `assets/icon.png`, loaded at runtime via `window.set_window_icon()`
+- **Windows:** `.ico` via ImageMagick (deferred — Windows not an active target)
+- **Code:** `build.rs` + `app.rs` `set_window_icon()` call — no code written yet
+
+### Screenshots in README
+- **Status:** not started
+- **Needs:** run `cargo run -p SYNAPSE_-app`, capture screenshots showing:
+  - Main terminal with cyberpunk theme
+  - Split panes
+  - Search bar with regex active
+  - Animated GIF playback
+  - Command palette
+- Add images to `assets/screenshots/` and reference in `README.md`
+
+### Variable Fonts / OpenType Features (optional)
+- **Status:** not started
+- Ligature support, stylistic sets, font weight variation via OpenType feature tags
+- Requires `rustybuzz` or `harfbuzz-sys` for full OT shaping pipeline
+
+---
+
 ## [Unreleased]
 
 ### Added
