@@ -1201,9 +1201,9 @@ pub fn render_frame(
         state.cached_time_sec = now_sec;
     }
 
-    // Cell data only changes on real terminal events — not on cursor blink.
-    let needs_cell_rebuild = pty_received
-        || font_changed
+    // Changes triggered by non-PTY sources always force a GPU re-upload.
+    // PTY-only frames may turn out to have zero terminal damage — tracked below.
+    let non_pty_trigger = font_changed
         || tab_changed
         || first_frame
         || ui_active
@@ -1214,8 +1214,17 @@ pub fn render_frame(
         || state.profiler_active
         || state.keybinds_open
         || state.settings_open;
+
+    // Cell data only changes on real terminal events — not on cursor blink.
+    let needs_cell_rebuild = pty_received || non_pty_trigger;
     // UI rects (cursor shape) also change on blink.
     let needs_ui_rebuild = needs_cell_rebuild || blink_changed;
+
+    // Tracks whether any pane had genuine terminal damage this frame.
+    // When pty_received fires but every pane's damage list is empty
+    // (e.g. only invisible escape sequences were processed), we can skip
+    // the GPU atlas rebuild and instance upload — cells_dirty = false.
+    let mut any_pane_had_damage = non_pty_trigger;
 
     if needs_cell_rebuild {
         cached_cell_data.clear();
@@ -1375,7 +1384,11 @@ pub fn render_frame(
 
                 if use_cache {
                     let cache = pane_cell_caches.entry(pane_id).or_default();
-                    cache.update_damaged_from_term(&mut term, pane_cols, pane_rows, display_offset);
+                    let pane_had_damage =
+                        cache.update_damaged_from_term(&mut term, pane_cols, pane_rows, display_offset);
+                    if pane_had_damage {
+                        any_pane_had_damage = true;
+                    }
 
                     for vp_row in 0..pane_rows {
                         let raw_row = vp_row as i32 - display_offset as i32;
@@ -1434,6 +1447,7 @@ pub fn render_frame(
                     let cache = pane_cell_caches.entry(pane_id).or_default();
                     cache.rebuild_full(grid, pane_cols, pane_rows, display_offset);
                     term.reset_damage();
+                    any_pane_had_damage = true;
                 }
 
                 (
@@ -2485,6 +2499,12 @@ pub fn render_frame(
         );
     }
 
+    // cells_dirty = false when pty_received fired but every active pane's
+    // damage list was empty (invisible escape sequences, mode queries, etc.).
+    // In that case cached_cell_data is identical to the previous frame, so we
+    // can reuse the GPU instance buffer without re-running atlas lookups.
+    let cells_dirty = needs_cell_rebuild && any_pane_had_damage;
+
     renderer.draw_frame_with_options(
         cached_cell_data,
         cached_ui_rects,
@@ -2494,7 +2514,7 @@ pub fn render_frame(
         &image_draw_ids,
         &image_clips,
         state.config.font_ligatures,
-        needs_cell_rebuild,
+        cells_dirty,
         needs_ui_rebuild,
     );
 
