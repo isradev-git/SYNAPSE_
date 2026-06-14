@@ -38,6 +38,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Animated GIF/APNG playback** via iTerm2 OSC 1337 protocol. Frames decoded with `image::codecs::gif::GifDecoder`, per-frame GPU texture re-upload, per-image `AnimState` tracking delays. Static images unaffected.
 - **Search regex toggle** — `Ctrl+/` (or `Alt+R`) switches between literal and regex search inside the search bar. Right-side `[re]` indicator: dim = off, accent = active, red = invalid pattern.
 - **Multi-window support** — launching a second `synapse_` process delegates to the existing instance via IPC. `--new-window` flag forces a fresh window. Single IPC server per user session.
+- **Linux window blur (full)** — `window_blur = true` sets `_KDE_NET_WM_BLUR_BEHIND_REGION` on X11 (KDE Plasma, picom) and calls `window.set_blur(true)` on Wayland (delegates to `org_kde_kwin_blur_manager` via winit — KWin/KDE Plasma). Zero extra dependencies.
+- **Neuromancer boot screen** — startup animation completely rebuilt: hex data rain, dual CRT scan lines, segmented vertical rails, character-by-character glitch title reveal, block progress bar (`[████░░░]  42%`), blinking cursor on status line, sequential module scan list, `NEURAL SYSTEMS CORP · 2049` footer. Duration extended to 3.5 s.
+- **Tab profiles** — `[[tab_profile]]` TOML blocks define named sessions with preset shell, cwd and environment variables. Profiles appear in the command palette (type "Profile:") and can be bound to keybinds via `open_tab_profile`.
+- **Warm glyph atlas** — atlas is serialised to `~/.cache/SYNAPSE_/glyph_atlas.bin` on shutdown and reloaded on startup, eliminating per-session cold-render for common glyphs (~50ms startup improvement).
 
 ### Changed
 - Search bar UI: regex indicator moved to right side (always visible), no longer shifts the query text area when toggled.

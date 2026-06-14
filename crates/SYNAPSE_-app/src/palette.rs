@@ -13,6 +13,7 @@ pub struct PaletteState {
     #[allow(dead_code)]
     plugins: Vec<synapse_config::PluginCommand>,
     ssh_profiles: Vec<synapse_config::SshProfile>,
+    tab_profiles: Vec<synapse_config::TabProfile>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,10 @@ pub enum PaletteItem {
         label: String,
         index: usize,
     },
+    TabProfile {
+        label: String,
+        index: usize,
+    },
 }
 
 impl PaletteState {
@@ -46,6 +51,7 @@ impl PaletteState {
             pending_theme_reload: false,
             plugins: Vec::new(),
             ssh_profiles: Vec::new(),
+            tab_profiles: Vec::new(),
         }
     }
 
@@ -57,12 +63,21 @@ impl PaletteState {
         self.ssh_profiles = profiles;
     }
 
+    pub fn set_tab_profiles(&mut self, profiles: Vec<synapse_config::TabProfile>) {
+        self.tab_profiles = profiles;
+    }
+
     pub fn toggle(&mut self, tab_bar: &TabBar) {
         self.active = !self.active;
         if self.active {
             self.query.clear();
             self.selected = 0;
-            self.results = build_palette_items(tab_bar, &self.plugins, &self.ssh_profiles);
+            self.results = build_palette_items(
+                tab_bar,
+                &self.plugins,
+                &self.ssh_profiles,
+                &self.tab_profiles,
+            );
         }
     }
 
@@ -125,6 +140,7 @@ fn build_palette_items(
     tab_bar: &TabBar,
     plugins: &[synapse_config::PluginCommand],
     ssh_profiles: &[synapse_config::SshProfile],
+    tab_profiles: &[synapse_config::TabProfile],
 ) -> Vec<PaletteItem> {
     let mut items = vec![
         action_item!("New Tab", Some("Ctrl+T"), Action::NewTab),
@@ -267,6 +283,18 @@ fn build_palette_items(
         });
     }
 
+    for (i, profile) in tab_profiles.iter().enumerate() {
+        let detail = profile
+            .cwd
+            .as_deref()
+            .map(|c| format!(" ({})", c))
+            .unwrap_or_default();
+        items.push(PaletteItem::TabProfile {
+            label: format!("Profile: {}{}", profile.name, detail),
+            index: i,
+        });
+    }
+
     items
 }
 
@@ -279,6 +307,7 @@ pub fn do_fuzzy_filter(query: &str, items: &[PaletteItem]) -> Vec<PaletteItem> {
                 PaletteItem::Tab { label, .. } => label,
                 PaletteItem::Theme { name } => name,
                 PaletteItem::Ssh { label, .. } => label,
+                PaletteItem::TabProfile { label, .. } => label,
             };
             fuzzy_score(query, label).map(|s| (s, item.clone()))
         })
@@ -321,8 +350,12 @@ pub fn handle_palette_input(
         }
         Key::Named(NamedKey::Backspace) => {
             state.palette.query.pop();
-            let items =
-                build_palette_items(tab_bar, &state.palette.plugins, &state.palette.ssh_profiles);
+            let items = build_palette_items(
+                tab_bar,
+                &state.palette.plugins,
+                &state.palette.ssh_profiles,
+                &state.palette.tab_profiles,
+            );
             state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
             if state.palette.selected >= state.palette.results.len() {
                 state.palette.selected = state.palette.results.len().saturating_sub(1);
@@ -332,8 +365,12 @@ pub fn handle_palette_input(
             if !state.palette.query.is_empty() {
                 state.palette.query.remove(0);
             }
-            let items =
-                build_palette_items(tab_bar, &state.palette.plugins, &state.palette.ssh_profiles);
+            let items = build_palette_items(
+                tab_bar,
+                &state.palette.plugins,
+                &state.palette.ssh_profiles,
+                &state.palette.tab_profiles,
+            );
             state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
             if state.palette.selected >= state.palette.results.len() {
                 state.palette.selected = state.palette.results.len().saturating_sub(1);
@@ -351,6 +388,7 @@ pub fn handle_palette_input(
                         tab_bar,
                         &state.palette.plugins,
                         &state.palette.ssh_profiles,
+                        &state.palette.tab_profiles,
                     );
                     state.palette.results = do_fuzzy_filter(&state.palette.query, &items);
                     state.palette.selected = 0;
@@ -378,6 +416,9 @@ pub fn execute_palette_item(item: PaletteItem, state: &mut AppState, tab_bar: &m
         }
         PaletteItem::Ssh { index, .. } => {
             state.palette.pending_action = Some(Action::OpenSshProfile(index));
+        }
+        PaletteItem::TabProfile { index, .. } => {
+            state.palette.pending_action = Some(Action::OpenTabProfile(index));
         }
     }
 }
@@ -478,14 +519,14 @@ mod tests {
 
     #[test]
     fn test_do_fuzzy_filter_returns_all_on_empty_query() {
-        let items = build_palette_items(&empty_tab_bar(), &[], &[]);
+        let items = build_palette_items(&empty_tab_bar(), &[], &[], &[]);
         let results = do_fuzzy_filter("", &items);
         assert_eq!(results.len(), items.len());
     }
 
     #[test]
     fn test_do_fuzzy_filter_specific_action() {
-        let items = build_palette_items(&empty_tab_bar(), &[], &[]);
+        let items = build_palette_items(&empty_tab_bar(), &[], &[], &[]);
         let results = do_fuzzy_filter("split vertical", &items);
         assert!(!results.is_empty());
         assert!(results.iter().any(|item| matches!(
@@ -496,14 +537,14 @@ mod tests {
 
     #[test]
     fn test_do_fuzzy_filter_no_results() {
-        let items = build_palette_items(&empty_tab_bar(), &[], &[]);
+        let items = build_palette_items(&empty_tab_bar(), &[], &[], &[]);
         let results = do_fuzzy_filter("zzz nonexistent", &items);
         assert!(results.is_empty());
     }
 
     #[test]
     fn test_do_fuzzy_filter_theme_results() {
-        let items = build_palette_items(&empty_tab_bar(), &[], &[]);
+        let items = build_palette_items(&empty_tab_bar(), &[], &[], &[]);
         let results = do_fuzzy_filter("dracula", &items);
         assert!(!results.is_empty());
         assert!(results.iter().any(|item| matches!(

@@ -6,7 +6,6 @@ use synapse_ui::tab_bar::TabBar;
 use crate::pane_ops::create_pane_full;
 use crate::render::PaneCellCache;
 
-#[allow(dead_code)]
 pub struct Workspace {
     pub name: String,
     pub tab_bar: TabBar,
@@ -52,16 +51,6 @@ impl WorkspaceManager {
 
     pub fn active_panes(&self) -> &[Pane] {
         &self.active_ws().panes
-    }
-
-    #[allow(dead_code)]
-    pub fn active_cell_caches(&self) -> &HashMap<PaneId, PaneCellCache> {
-        &self.active_ws().pane_cell_caches
-    }
-
-    #[allow(dead_code)]
-    pub fn active_tab_bar_mut(&mut self) -> &mut TabBar {
-        &mut self.workspaces.get_mut(&self.active).unwrap().tab_bar
     }
 
     pub fn active_panes_mut(&mut self) -> &mut Vec<Pane> {
@@ -187,54 +176,6 @@ impl WorkspaceManager {
             .collect()
     }
 
-    #[allow(dead_code)]
-    pub fn load_tab_bars(
-        &mut self,
-        saved: HashMap<String, TabBar>,
-        cols: usize,
-        rows: usize,
-        scrollback: usize,
-    ) {
-        for (name, tab_bar) in saved {
-            let tab_bar = tab_bar.from_saved();
-            let mut panes = Vec::new();
-            for tab in &tab_bar.tabs {
-                for pane_id in tab.pane_tree.all_panes() {
-                    match create_pane_full(
-                        pane_id,
-                        cols,
-                        rows,
-                        if tab.cwd.is_empty() {
-                            None
-                        } else {
-                            Some(tab.cwd.clone())
-                        },
-                        None,
-                        &[],
-                        scrollback,
-                    ) {
-                        Ok(pane) => panes.push(pane),
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to restore pane {} in ws '{}': {e}",
-                                pane_id.0,
-                                name
-                            );
-                        }
-                    }
-                }
-            }
-            self.workspaces.insert(
-                name.clone(),
-                Workspace {
-                    name: name.clone(),
-                    tab_bar,
-                    panes,
-                    pane_cell_caches: HashMap::new(),
-                },
-            );
-        }
-    }
 }
 
 #[cfg(test)]

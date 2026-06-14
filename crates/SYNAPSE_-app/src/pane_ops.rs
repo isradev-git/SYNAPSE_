@@ -2,6 +2,8 @@ use std::io::Read;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
+use synapse_config::config::Config as SynapseConfig;
+
 use alacritty_terminal::event::Event;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
@@ -284,6 +286,22 @@ pub fn create_pane_full(
     shell_args: &[String],
     scrollback_lines: usize,
 ) -> Result<Pane, String> {
+    create_pane_full_env(id, cols, rows, cwd, shell_override, shell_args, &[], scrollback_lines)
+}
+
+/// Like `create_pane_full` but also injects `extra_env` key-value pairs into
+/// the child process environment before spawn. Used by tab profiles (P-006).
+#[allow(clippy::too_many_arguments)]
+pub fn create_pane_full_env(
+    id: PaneId,
+    cols: usize,
+    rows: usize,
+    cwd: Option<String>,
+    shell_override: Option<&str>,
+    shell_args: &[String],
+    extra_env: &[(String, String)],
+    scrollback_lines: usize,
+) -> Result<Pane, String> {
     // 1. Open a PTY pair sized to the current pane geometry.
     let pty_system = native_pty_system();
     let pty_pair = pty_system
@@ -302,6 +320,29 @@ pub fn create_pane_full(
     };
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("SYNAPSE_INSIDE", "true");
+    cmd.env("SYNAPSE_VERSION", env!("CARGO_PKG_VERSION"));
+    cmd.env("TERM_PROGRAM", "SYNAPSE_");
+    cmd.env("COLORTERM", "truecolor");
+
+    // ZDOTDIR injection for zsh: redirect to our shim directory so that
+    // synapse-env.zsh (prompt, plugins, completions) loads automatically
+    // without the user having to run --setup.
+    let shell_basename = std::path::Path::new(&shell)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if shell_basename == "zsh" {
+        if let Some(zdotdir) = SynapseConfig::config_dir()
+            .map(|d| d.join("zdotdir"))
+            .filter(|p| p.join(".zshrc").exists())
+        {
+            cmd.env("ZDOTDIR", zdotdir);
+        }
+    }
+
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
     if shell_override.is_some() {
         for arg in shell_args {
             cmd.arg(arg);

@@ -64,6 +64,7 @@ pub enum Action {
     ToggleProfiler,
     PluginExecute(usize),
     OpenSshProfile(usize),
+    OpenTabProfile(usize),
     ToggleRecording,
     ToggleKeybinds,
     ToggleSettings,

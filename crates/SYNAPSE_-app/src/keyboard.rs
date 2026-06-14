@@ -589,7 +589,8 @@ pub fn handle_keyboard(
                             | Action::ToggleKeybinds
                             | Action::ToggleSettings
                             | Action::PluginExecute(_)
-                            | Action::OpenSshProfile(_) => {
+                            | Action::OpenSshProfile(_)
+                            | Action::OpenTabProfile(_) => {
                                 return PostKeyAction::WorkspaceAction(action);
                             }
                             _ => {
@@ -1121,7 +1122,8 @@ pub fn handle_keyboard(
                 | Some(Action::ToggleKeybinds)
                 | Some(Action::ToggleSettings)
                 | Some(Action::PluginExecute(_))
-                | Some(Action::OpenSshProfile(_)) => {
+                | Some(Action::OpenSshProfile(_))
+                | Some(Action::OpenTabProfile(_)) => {
                     return PostKeyAction::WorkspaceAction(action_opt.unwrap());
                 }
                 None => {
@@ -2049,7 +2051,53 @@ impl AppCore {
             synapse_config::keybinds::Action::OpenSshProfile(idx) => {
                 self.open_ssh_profile(idx);
             }
+            synapse_config::keybinds::Action::OpenTabProfile(idx) => {
+                self.open_tab_profile(idx);
+            }
             _ => {}
+        }
+    }
+
+    fn open_tab_profile(&mut self, idx: usize) {
+        let profile = match self.state.config.tab_profiles.get(idx) {
+            Some(p) => p.clone(),
+            None => {
+                tracing::warn!("Tab profile index {idx} out of range");
+                return;
+            }
+        };
+        let shell_override = profile.shell.as_deref().map(|s| s.to_string());
+        let (cols, rows) = {
+            let ws = self.workspaces.active_ws();
+            let pane_id = ws.tab_bar.active_tab().active_pane;
+            ws.panes
+                .iter()
+                .find(|p| p.id == pane_id)
+                .map_or((80, 24), |p| (p.cols, p.rows))
+        };
+        let scrollback = self.state.config.scrollback_lines;
+        let env_pairs: Vec<(String, String)> = profile.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let ws = self.workspaces.active_ws_mut();
+        let (_tab_id, pane_id) = ws.tab_bar.new_tab();
+        match crate::pane_ops::create_pane_full_env(
+            pane_id,
+            cols,
+            rows,
+            profile.cwd.clone(),
+            shell_override.as_deref(),
+            &profile.shell_args,
+            &env_pairs,
+            scrollback,
+        ) {
+            Ok(pane) => {
+                ws.panes.push(pane);
+                tracing::info!(
+                    "Opened tab profile '{}' ({} env vars)",
+                    profile.name,
+                    env_pairs.len()
+                );
+            }
+            Err(e) => tracing::error!("Failed to open tab profile '{}': {e}", profile.name),
         }
     }
 

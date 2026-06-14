@@ -38,3 +38,6 @@ ureq = { version = "2", features = ["json"] }
 objc2 = "0.5"
 objc2-app-kit = { version = "0.2", features = ["NSView", "NSWindow", "NSVisualEffectView"] }
 objc2-foundation = { version = "0.2", features = ["NSGeometry"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11-dl = "2"

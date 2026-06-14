@@ -11,6 +11,8 @@ mod palette;
 mod pane_ops;
 #[cfg(target_os = "macos")]
 mod platform_macos;
+#[cfg(target_os = "linux")]
+mod platform_linux;
 mod quake;
 mod record;
 mod render;
@@ -58,6 +60,7 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = cli::Cli::parse();
     let config = synapse_config::config::Config::load();
     setup::maybe_install_integration(&cli, &config);
+    setup::ensure_zdotdir_shim();
 
     if cli.check_update {
         return update::run_check();

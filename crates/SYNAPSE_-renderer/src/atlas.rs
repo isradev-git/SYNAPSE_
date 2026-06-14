@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::path::Path;
 
 use crate::text::{GlyphKey, ShapedGlyphKey};
 
@@ -36,6 +38,10 @@ pub struct TextureAtlas {
     needs_reset: bool,
     warned_90: bool,
     atlas_size: u32,
+    // CPU-side pixel mirror for cross-session warm loading.
+    warm_glyphs: HashMap<GlyphKey, (Vec<u8>, u32, u32)>,
+    warm_shaped: HashMap<ShapedGlyphKey, (Vec<u8>, u32, u32)>,
+    warm_emoji: HashMap<u32, (Vec<u8>, u32, u32)>,
 }
 
 #[derive(Debug)]
@@ -129,6 +135,9 @@ impl TextureAtlas {
             needs_reset: false,
             warned_90: false,
             atlas_size,
+            warm_glyphs: HashMap::new(),
+            warm_shaped: HashMap::new(),
+            warm_emoji: HashMap::new(),
         }
     }
 
@@ -360,6 +369,181 @@ impl TextureAtlas {
             },
         );
     }
+
+    pub fn store_warm(&mut self, key: GlyphKey, rgba: &[u8], w: u32, h: u32) {
+        self.warm_glyphs.insert(key, (rgba.to_vec(), w, h));
+    }
+
+    pub fn store_warm_shaped(&mut self, key: ShapedGlyphKey, rgba: &[u8], w: u32, h: u32) {
+        self.warm_shaped.insert(key, (rgba.to_vec(), w, h));
+    }
+
+    pub fn store_warm_emoji(&mut self, key: u32, rgba: &[u8], w: u32, h: u32) {
+        self.warm_emoji.insert(key, (rgba.to_vec(), w, h));
+    }
+
+    /// Persist the warm pixel cache to disk. Called on graceful shutdown.
+    pub fn save_warm_cache(&self, path: &Path) -> io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = std::fs::File::create(path)?;
+        let mut w = BufWriter::new(file);
+
+        w.write_all(b"SATL")?;
+        w.write_all(&[1u8])?; // version
+        w.write_all(&self.atlas_size.to_le_bytes())?;
+
+        w.write_all(&(self.warm_glyphs.len() as u32).to_le_bytes())?;
+        for (key, (rgba, gw, gh)) in &self.warm_glyphs {
+            w.write_all(&(key.ch as u32).to_le_bytes())?;
+            w.write_all(&key.font_size_bits.to_le_bytes())?;
+            w.write_all(&[key.bold as u8, key.italic as u8, key.font_index])?;
+            w.write_all(&gw.to_le_bytes())?;
+            w.write_all(&gh.to_le_bytes())?;
+            w.write_all(&(rgba.len() as u32).to_le_bytes())?;
+            w.write_all(rgba)?;
+        }
+
+        w.write_all(&(self.warm_shaped.len() as u32).to_le_bytes())?;
+        for (key, (rgba, gw, gh)) in &self.warm_shaped {
+            w.write_all(&key.glyph_id.to_le_bytes())?;
+            w.write_all(&key.font_size_bits.to_le_bytes())?;
+            w.write_all(&[key.bold as u8, key.italic as u8, key.font_index])?;
+            w.write_all(&gw.to_le_bytes())?;
+            w.write_all(&gh.to_le_bytes())?;
+            w.write_all(&(rgba.len() as u32).to_le_bytes())?;
+            w.write_all(rgba)?;
+        }
+
+        w.write_all(&(self.warm_emoji.len() as u32).to_le_bytes())?;
+        for (key, (rgba, gw, gh)) in &self.warm_emoji {
+            w.write_all(&key.to_le_bytes())?;
+            w.write_all(&gw.to_le_bytes())?;
+            w.write_all(&gh.to_le_bytes())?;
+            w.write_all(&(rgba.len() as u32).to_le_bytes())?;
+            w.write_all(rgba)?;
+        }
+
+        w.flush()?;
+        tracing::debug!(
+            "warm cache saved: {} glyphs, {} shaped, {} emoji → {}",
+            self.warm_glyphs.len(),
+            self.warm_shaped.len(),
+            self.warm_emoji.len(),
+            path.display(),
+        );
+        Ok(())
+    }
+
+    /// Load warm cache from disk and re-upload to GPU. Returns number of glyphs loaded.
+    pub fn load_and_warm(&mut self, path: &Path, queue: &wgpu::Queue) -> io::Result<usize> {
+        let file = std::fs::File::open(path)?;
+        let mut r = BufReader::new(file);
+
+        let mut magic = [0u8; 4];
+        r.read_exact(&mut magic)?;
+        if &magic != b"SATL" {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "bad magic"));
+        }
+        let mut ver = [0u8];
+        r.read_exact(&mut ver)?;
+        if ver[0] != 1 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported version"));
+        }
+        let saved_size = read_u32(&mut r)?;
+        if saved_size != self.atlas_size {
+            tracing::debug!(
+                "warm cache atlas_size mismatch ({saved_size} vs {}), skipping",
+                self.atlas_size
+            );
+            return Ok(0);
+        }
+
+        let mut count = 0usize;
+
+        let glyph_count = read_u32(&mut r)?;
+        let mut glyphs = Vec::with_capacity(glyph_count as usize);
+        for _ in 0..glyph_count {
+            let ch = char::from_u32(read_u32(&mut r)?)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "bad char"))?;
+            let font_size_bits = read_u32(&mut r)?;
+            let mut flags = [0u8; 3];
+            r.read_exact(&mut flags)?;
+            let key = GlyphKey { ch, font_size_bits, bold: flags[0] != 0, italic: flags[1] != 0, font_index: flags[2] };
+            let gw = read_u32(&mut r)?;
+            let gh = read_u32(&mut r)?;
+            let rgba = read_bytes(&mut r)?;
+            glyphs.push((key, rgba, gw, gh));
+        }
+        for (key, rgba, gw, gh) in glyphs {
+            self.warm_glyphs.insert(key, (rgba.clone(), gw, gh));
+            if let Some((uv, true)) = self.get_or_insert(key, gw, gh) {
+                self.upload_glyph(queue, uv, &rgba, gw, gh);
+                count += 1;
+            }
+        }
+
+        let shaped_count = read_u32(&mut r)?;
+        let mut shaped = Vec::with_capacity(shaped_count as usize);
+        for _ in 0..shaped_count {
+            let glyph_id = read_u16(&mut r)?;
+            let font_size_bits = read_u32(&mut r)?;
+            let mut flags = [0u8; 3];
+            r.read_exact(&mut flags)?;
+            let key = ShapedGlyphKey { glyph_id, font_size_bits, bold: flags[0] != 0, italic: flags[1] != 0, font_index: flags[2] };
+            let gw = read_u32(&mut r)?;
+            let gh = read_u32(&mut r)?;
+            let rgba = read_bytes(&mut r)?;
+            shaped.push((key, rgba, gw, gh));
+        }
+        for (key, rgba, gw, gh) in shaped {
+            self.warm_shaped.insert(key, (rgba.clone(), gw, gh));
+            if let Some((uv, true)) = self.get_or_insert_shaped(key, gw, gh) {
+                self.upload_glyph(queue, uv, &rgba, gw, gh);
+                count += 1;
+            }
+        }
+
+        let emoji_count = read_u32(&mut r)?;
+        let mut emojis = Vec::with_capacity(emoji_count as usize);
+        for _ in 0..emoji_count {
+            let key = read_u32(&mut r)?;
+            let gw = read_u32(&mut r)?;
+            let gh = read_u32(&mut r)?;
+            let rgba = read_bytes(&mut r)?;
+            emojis.push((key, rgba, gw, gh));
+        }
+        for (key, rgba, gw, gh) in emojis {
+            self.warm_emoji.insert(key, (rgba.clone(), gw, gh));
+            if let Some((uv, true)) = self.get_or_insert_emoji(key, gw, gh) {
+                self.upload_glyph(queue, uv, &rgba, gw, gh);
+                count += 1;
+            }
+        }
+
+        tracing::debug!("warm cache loaded: {count} glyphs from {}", path.display());
+        Ok(count)
+    }
+}
+
+fn read_u16(r: &mut impl Read) -> io::Result<u16> {
+    let mut b = [0u8; 2];
+    r.read_exact(&mut b)?;
+    Ok(u16::from_le_bytes(b))
+}
+
+fn read_u32(r: &mut impl Read) -> io::Result<u32> {
+    let mut b = [0u8; 4];
+    r.read_exact(&mut b)?;
+    Ok(u32::from_le_bytes(b))
+}
+
+fn read_bytes(r: &mut impl Read) -> io::Result<Vec<u8>> {
+    let len = read_u32(r)? as usize;
+    let mut buf = vec![0u8; len];
+    r.read_exact(&mut buf)?;
+    Ok(buf)
 }
 
 #[cfg(test)]
@@ -626,6 +810,9 @@ mod tests {
                 needs_reset: false,
                 warned_90: false,
                 atlas_size: ATLAS_SIZE,
+                warm_glyphs: HashMap::new(),
+                warm_shaped: HashMap::new(),
+                warm_emoji: HashMap::new(),
             }
         }
     }

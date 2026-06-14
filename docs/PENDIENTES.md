@@ -48,65 +48,46 @@ Antes de los gaps, lista de lo que realmente funciona para evitar reimplementar:
 
 ## 1. Stubs sin implementación de backend
 
-### P-001 · `window_blur` — config stub, cero OS backend
-**Archivo:** `crates/SYNAPSE_-config/src/config.rs:234`
-**Estado:** Campo en `Config`, default `false`. Ninguna llamada en `app.rs`, `render.rs` ni ningún otro archivo de app.
-**Necesita:**
-- macOS: `objc2` + `NSVisualEffectView` con material `.hudWindow`/`.underWindowBackground`
-- Linux X11: `_NET_WM_BLUR_BEHIND` atom via xcb (KDE/Picom)
-- Linux Wayland: `zwlr_layer_shell` o extensión compositor (KDE, GNOME con blur plugin)
-**Impacto:** Diferenciador visual clave. Warp/iTerm2 lo tienen. Es el feature más pedido en terminales modernas.
-**Esfuerzo:** Medio (macOS ~200 LOC, Linux ~150 LOC).
+### ~~P-001 · `window_blur`~~ ✅ IMPLEMENTADO
+- macOS: `NSVisualEffectView` via `objc2` → `platform_macos.rs`
+- Linux X11: `_KDE_NET_WM_BLUR_BEHIND_REGION` via `x11-dl` → `platform_linux.rs`
+- Linux Wayland: `window.set_blur(true)` via winit → delegado a `org_kde_kwin_blur_manager` (KDE/KWin). Sin deps extra (winit ya lleva `wayland-protocols-plasma` internamente).
 
 ---
 
 ## 2. Features con estructura pero sin UI/wiring completo
 
-### P-002 · Workspace rename — UI de entrada de texto faltante
-**Estado:** `workspace.rs:142` tiene `rename()` con `#[allow(dead_code)]`. Lógica completa. Sin inline text input en status bar para dispararlo.
-**Fix:** Inline text input en status bar (similar al search bar existente).
-**Esfuerzo:** Bajo (~80 LOC, reusar SearchBarState pattern).
+### ~~P-002 · Workspace rename~~ ✅ IMPLEMENTADO
+- `WsRenameState` en `state.rs`, F2 keybind, render en status bar, `workspace.rs::rename()`
 
-### P-003 · `active_cell_caches` / `active_tab_bar_mut` — métodos dead_code en WorkspaceManager
-**Estado:** `workspace.rs:57,62` — métodos públicos con `#[allow(dead_code)]`. Navegación rápida entre workspaces puede no estar completamente wired en todos los edge cases.
-**Fix:** Auditar si `switch_workspace` funciona correctamente con el TabBar renderer.
+### ~~P-003 · dead_code WorkspaceManager~~ ✅ RESUELTO
+- `active_cell_caches()`, `active_tab_bar_mut()`, `load_tab_bars()` eliminados. `#[allow(dead_code)]` en `Workspace` struct eliminado.
 
 ---
 
 ## 3. Features que la competencia tiene y SYNAPSE_ no
 
-### P-004 · IPC daemon socket
-**Estado:** Cero evidencia en codebase. `cli.rs` tiene `--new-tab` como arg pero sin socket backend.
-**Necesita:** Unix socket `/tmp/SYNAPSE_-$UID.sock`, protocolo JSON-line, subcomandos `list`/`kill`/`send`/`new-tab`.
-**Impacto:** Esencial para integración con Neovim, scripts de shell, launchers.
-**Esfuerzo:** Medio (~300 LOC).
+### ~~P-004 · IPC daemon socket~~ ✅ IMPLEMENTADO
+- `ipc.rs`: UnixSocket `/tmp/synapse_$UID.sock`, JSON-line, comandos `list`/`kill`/`send`/`new-tab`/`new-window`
 
-### P-005 · SSH Profiles
-**Estado:** No implementado.
-**Diseño:** `[[ssh_profile]]` en TOML → abre tab/pane con `ssh user@host -i key -p port`.
-**Esfuerzo:** Medio (~150 LOC config + spawning).
+### ~~P-005 · SSH Profiles~~ ✅ IMPLEMENTADO
+- `SshProfile` en config, `open_ssh_profile()` en keyboard.rs, palette command
 
-### P-006 · Variables de entorno por perfil/tab
-**Estado:** No implementado. PTY spawn usa env del proceso padre.
-**Diseño:** `[[tab_profile]]` con `env = { "API_KEY" = "..." }`, pasado a PTY spawn.
+### ~~P-006 · Variables de entorno por perfil/tab~~ ✅ IMPLEMENTADO
+- `TabProfile { name, shell, cwd, env }` en config. `create_pane_full_env()` inyecta env vars al PTY spawn. Perfil visible en command palette como "Profile: nombre".
 
-### P-007 · Auto-update / `--check-update`
-**Estado:** No implementado.
-**Opción mínima:** Consultar GitHub Releases API, mostrar notificación, sin auto-install.
-**Esfuerzo:** Bajo (~80 LOC, `reqwest` + tokio ya en deps potenciales).
+### ~~P-007 · Auto-update~~ ✅ IMPLEMENTADO
+- `update.rs`: consulta GitHub Releases API. `--check-update` CLI flag. `check_updates_on_startup` en config.
 
-### P-008 · Multi-window con daemon compartido
-**Estado:** No implementado. Cada instancia es independiente.
-**Bloqueado por:** P-004 (IPC socket).
+### ~~P-008 · Multi-window~~ ✅ IMPLEMENTADO
+- IPC `NewWindow` delega a instancia existente. `--new-window` flag abre en instancia activa.
 
 ---
 
 ## 4. VT / compatibilidad pendiente
 
-### P-009 · DECRQM — responder a queries de modo terminal
-**Estado:** `CSI ? Ps $ p` enviado por tmux/vim no recibe respuesta (silencio actual).
-**Fix:** Tabla de modos + respuesta `CSI ? Ps ; Pm $ y`.
-**Esfuerzo:** Bajo (~60 LOC en VTE handler).
+### ~~P-009 · DECRQM~~ ✅ IMPLEMENTADO
+- `scan_decrqm()` en `image_protocol.rs`, `decrqm_pm()` en `pane_ops.rs`. tmux/vim obtienen respuesta correcta.
 
 ### P-010 · BiDi / RTL
 **Estado:** No implementado. Texto árabe/hebreo se renderiza incorrectamente (LTR forzado).
@@ -121,10 +102,8 @@ Antes de los gaps, lista de lo que realmente funciona para evitar reimplementar:
 
 ## 5. Performance gaps
 
-### P-012 · Atlas warm entre sesiones
-**Estado:** Atlas se vacía en restart. Glyphs más frecuentes se re-renderizan al arrancar.
-**Fix:** Serializar atlas a disco (`.cache/SYNAPSE_/glyph_atlas.bin`), cargar en startup.
-**Esfuerzo:** Medio. Bloquea ganar ~50ms de startup en uso real.
+### ~~P-012 · Atlas warm entre sesiones~~ ✅ IMPLEMENTADO
+- `atlas.rs`: `save_warm_cache()` / `load_and_warm()`. Path: `~/.cache/SYNAPSE_/glyph_atlas.bin`. Guarda en graceful shutdown, carga en startup.
 
 ---
 

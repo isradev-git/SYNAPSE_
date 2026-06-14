@@ -2166,6 +2166,9 @@ pub fn render_frame(
                         (format!("Theme: {}", name), None, false)
                     }
                     crate::palette::PaletteItem::Ssh { label, .. } => (label.clone(), None, false),
+                    crate::palette::PaletteItem::TabProfile { label, .. } => {
+                        (label.clone(), None, false)
+                    }
                 };
 
                 // Highlight selected row
@@ -3246,11 +3249,8 @@ fn render_settings_cells(
     }
 }
 
-/// Duración del splash en segundos.
-const SPLASH_DURATION_SECS: f32 = 2.5;
+const SPLASH_DURATION_SECS: f32 = 3.5;
 
-/// Renderiza la pantalla de arranque cyberpunk.
-/// `progress` va de 0.0 (inicio) a 1.0 (fin).
 pub fn render_splash_screen(
     renderer: &mut Renderer,
     layout: &Layout,
@@ -3265,115 +3265,261 @@ pub fn render_splash_screen(
     let mut cells: CellData = Vec::new();
 
     let transparent = [0.0_f32, 0.0, 0.0, 0.0];
-    // Color atenuado para subtítulo y decoraciones
-    let dim_fg = [theme.fg[0], theme.fg[1], theme.fg[2], 0.45];
+    let accent = theme.cursor;
+    let fg = theme.fg;
+    let dim_fg  = [fg[0], fg[1], fg[2], 0.55_f32];
+    let mid_fg  = [fg[0], fg[1], fg[2], 0.85_f32];
+    let full_fg = [fg[0], fg[1], fg[2], 1.0_f32];
+    let mid_acc  = [accent[0], accent[1], accent[2], 0.75_f32];
+    let full_acc = [accent[0], accent[1], accent[2], 1.0_f32];
+    let dim_acc  = [accent[0], accent[1], accent[2], 0.40_f32];
 
-    // ── Fondo completo ──────────────────────────────────────────────────────
+    // ── 1. Background + pulsing red glow ────────────────────────────────────
+    bg_rects.push(UIRect { pos: [0.0, 0.0], size: [w, h], color: theme.bg });
+    let pulse = ((progress * std::f32::consts::TAU * 0.8).sin() * 0.5 + 0.5) * 0.02 + 0.03;
+    bg_rects.push(UIRect {
+        pos: [w * 0.08, h * 0.12],
+        size: [w * 0.84, h * 0.76],
+        color: [accent[0], accent[1], accent[2], pulse],
+    });
     bg_rects.push(UIRect {
         pos: [0.0, 0.0],
-        size: [w, h],
-        color: theme.bg,
+        size: [w * 0.35, h * 0.35],
+        color: [accent[0], accent[1], accent[2], 0.010],
     });
 
-    // ── Título: "S Y N A P S E  _" con letra espaciada ──────────────────────
-    let title_fs: f32 = 30.0;
-    let title_char_w = title_fs * 0.6;
-    // Espacio entre letras para efecto cyberpunk
-    let title = "S Y N A P S E  _";
-    let title_w = title.chars().count() as f32 * title_char_w;
+    // ── 2. Hex data rain — more rows, more visible ──────────────────────────
+    let hex_digits = b"0123456789ABCDEF";
+    let hex_fs: f32 = 12.0;
+    let hex_cw = hex_fs * 0.60;
+    let hex_scroll = progress * 6.0;
+    for row in 0..8usize {
+        let y_raw = row as f32 * 18.0 - (hex_scroll * 18.0).rem_euclid(8.0 * 18.0);
+        let y_base = y_raw.rem_euclid(h * 0.42) + h * 0.02;
+        let alpha = 0.12 + row as f32 * 0.028;
+        let row_col = [fg[0], fg[1], fg[2], alpha];
+        let addr_hi = ((row as u32 + 1).wrapping_mul(0xDEAD).wrapping_add((progress * 400.0) as u32)) & 0xFFFF;
+        let addr_lo = (row as u32).wrapping_mul(0x1337) & 0xFFFF;
+        let addr = format!("0x{:04X}:{:04X}  ", addr_hi, addr_lo);
+        let mut x = w * 0.025;
+        for c in addr.chars() {
+            cells.push((c, x, y_base, hex_fs, row_col, transparent));
+            x += hex_cw;
+        }
+        for col in 0..52usize {
+            let v = ((col as f32 * 7.31 + row as f32 * 19.13 + hex_scroll * 3.77) * 13.7).sin();
+            let idx = ((v * 7.5 + 7.5) as usize).min(15);
+            let c = hex_digits[idx] as char;
+            cells.push((c, x, y_base, hex_fs, row_col, transparent));
+            x += hex_cw;
+            if col % 4 == 3 { x += hex_cw * 0.6; }
+        }
+    }
+
+    // ── 3. CRT scan lines ───────────────────────────────────────────────────
+    let scan1 = ((progress * 0.85) % 1.0) * h;
+    let scan2 = ((progress * 0.55 + 0.4) % 1.0) * h;
+    let scan3 = ((progress * 0.32 + 0.7) % 1.0) * h;
+    ui_rects.push(UIRect { pos: [0.0, scan1], size: [w, 2.0], color: [accent[0], accent[1], accent[2], 0.14] });
+    ui_rects.push(UIRect { pos: [0.0, scan2], size: [w, 1.5], color: [fg[0], fg[1], fg[2], 0.07] });
+    ui_rects.push(UIRect { pos: [0.0, scan3], size: [w, 1.0], color: [accent[0], accent[1], accent[2], 0.06] });
+
+    // ── 4. Vertical rail decorations ────────────────────────────────────────
+    let rail_top = h * 0.10;
+    let rail_bot = h * 0.90;
+    let rail_h   = rail_bot - rail_top;
+    let lx = w * 0.08;
+    let rx = w * 0.92;
+    for seg in 0..14usize {
+        let sy = rail_top + seg as f32 * rail_h / 14.0;
+        let sl = rail_h / 14.0 * 0.68;
+        ui_rects.push(UIRect { pos: [lx, sy], size: [1.5, sl], color: dim_fg });
+        ui_rects.push(UIRect { pos: [rx, sy], size: [1.5, sl], color: dim_fg });
+    }
+    for ty in &[rail_top, rail_bot] {
+        ui_rects.push(UIRect { pos: [lx - 6.0, *ty], size: [14.0, 1.5], color: mid_fg });
+        ui_rects.push(UIRect { pos: [rx - 6.0, *ty], size: [14.0, 1.5], color: mid_fg });
+        ui_rects.push(UIRect { pos: [lx - 2.0, *ty - 5.0], size: [1.5, 10.0], color: mid_acc });
+        ui_rects.push(UIRect { pos: [rx - 1.0, *ty - 5.0], size: [1.5, 10.0], color: mid_acc });
+    }
+
+    // ── 5. Top header ───────────────────────────────────────────────────────
+    let hdr_y = h * 0.14;
+    let hdr_fs: f32 = 13.0;
+    let hdr_cw = hdr_fs * 0.60;
+    ui_rects.push(UIRect { pos: [lx + 8.0, hdr_y - 12.0], size: [rx - lx - 16.0, 1.5], color: dim_fg });
+    let hdr_str = "[ WINTERMUTE  ·  CORTEX I/O  ·  JACK IN ]";
+    let hdr_w = hdr_str.chars().count() as f32 * hdr_cw;
+    let hdr_x = (w - hdr_w) * 0.5;
+    for (j, c) in hdr_str.chars().enumerate() {
+        let col = if c == '[' || c == ']' || c == '·' { mid_acc } else { dim_fg };
+        cells.push((c, hdr_x + j as f32 * hdr_cw, hdr_y, hdr_fs, col, transparent));
+    }
+
+    // ── 6. Main title — glitch reveal ───────────────────────────────────────
+    let title_fs: f32 = 52.0;
+    let title_cw = title_fs * 0.60;
+    let title_chars: Vec<char> = "SYNAPSE_".chars().collect();
+    let n = title_chars.len();
+    let title_w = n as f32 * title_cw;
     let title_x = (w - title_w) * 0.5;
-    // Centrado vertical ligeramente por encima del centro
-    let title_y = h * 0.38 - title_fs;
+    let title_y = h * 0.33;
 
-    for (j, c) in title.chars().enumerate() {
-        cells.push((
-            c,
-            title_x + j as f32 * title_char_w,
-            title_y,
-            title_fs,
-            theme.fg,
-            transparent,
-        ));
-    }
-
-    // ── Línea decorativa bajo el título ─────────────────────────────────────
-    let line_y = title_y + title_fs * 1.5;
-    let line_w = (title_w * 1.15).min(w * 0.75);
-    let line_x = (w - line_w) * 0.5;
-    ui_rects.push(UIRect {
-        pos: [line_x, line_y],
-        size: [line_w, 1.0],
-        color: dim_fg,
+    // Layered glow behind title
+    bg_rects.push(UIRect {
+        pos: [title_x - 40.0, title_y - 16.0],
+        size: [title_w + 80.0, title_fs + 32.0],
+        color: [accent[0], accent[1], accent[2], 0.09],
+    });
+    bg_rects.push(UIRect {
+        pos: [title_x - 12.0, title_y - 5.0],
+        size: [title_w + 24.0, title_fs + 10.0],
+        color: [accent[0], accent[1], accent[2], 0.05],
     });
 
-    // ── Subtítulo ────────────────────────────────────────────────────────────
-    let sub_fs: f32 = 11.0;
-    let sub_char_w = sub_fs * 0.6;
-    let subtitle = "NEURAL INTERFACE // v0.2.0";
-    let sub_w = subtitle.chars().count() as f32 * sub_char_w;
+    let glitch_pool = b"!@#$%^&*<>[]{}/\\|?~XZQW0987654321";
+    let gp_len = glitch_pool.len();
+    for (j, &real_ch) in title_chars.iter().enumerate() {
+        let reveal_at = j as f32 / n as f32 * 0.50;
+        let char_p = (progress - reveal_at) / 0.09;
+
+        let (display_ch, col) = if char_p >= 1.0 {
+            let flicker = (progress * 47.3 + j as f32 * 11.1).sin();
+            if flicker > 0.96 && progress < 0.65 {
+                let gi = (((j as f32 * 17.3 + progress * 210.0).sin() * 0.5 + 0.5) * gp_len as f32) as usize;
+                (glitch_pool[gi.min(gp_len - 1)] as char, mid_acc)
+            } else {
+                (real_ch, full_fg)
+            }
+        } else if char_p >= 0.0 {
+            let gi = (((j as f32 * 13.7 + progress * 190.0).sin() * 0.5 + 0.5) * gp_len as f32) as usize;
+            (glitch_pool[gi.min(gp_len - 1)] as char, full_acc)
+        } else if real_ch == ' ' {
+            (' ', transparent)
+        } else {
+            let gi = (((j as f32 * 9.1 + progress * 55.0).sin() * 0.5 + 0.5) * gp_len as f32) as usize;
+            (glitch_pool[gi.min(gp_len - 1)] as char, dim_acc)
+        };
+
+        cells.push((display_ch, title_x + j as f32 * title_cw, title_y, title_fs, col, transparent));
+    }
+
+    // ── 7. Separator with chevron endcaps ───────────────────────────────────
+    let sep_y = title_y + title_fs + 20.0;
+    let sep_w = (title_w * 1.30).min(w * 0.74);
+    let sep_x = (w - sep_w) * 0.5;
+    ui_rects.push(UIRect { pos: [sep_x + 20.0, sep_y + 8.0], size: [sep_w - 40.0, 1.5], color: mid_fg });
+    let chev_fs: f32 = 15.0;
+    cells.push(('▶', sep_x, sep_y, chev_fs, mid_acc, transparent));
+    cells.push(('◀', sep_x + sep_w - chev_fs * 0.60, sep_y, chev_fs, mid_acc, transparent));
+
+    // ── 8. Subtitle (fade in after title) ───────────────────────────────────
+    let sub_fs: f32 = 15.0;
+    let sub_cw  = sub_fs * 0.60;
+    let subtitle_chars: Vec<char> = "NEURAL INTERFACE  ──  v0.2.0".chars().collect();
+    let sub_w = subtitle_chars.len() as f32 * sub_cw;
     let sub_x = (w - sub_w) * 0.5;
-    let sub_y = line_y + 10.0;
-    for (j, c) in subtitle.chars().enumerate() {
-        cells.push((
-            c,
-            sub_x + j as f32 * sub_char_w,
-            sub_y,
-            sub_fs,
-            dim_fg,
-            transparent,
-        ));
+    let sub_y = sep_y + 24.0;
+    let sub_alpha = ((progress - 0.38) / 0.14).clamp(0.0, 1.0);
+    let sub_col = [fg[0], fg[1], fg[2], 0.88 * sub_alpha];
+    for (j, &c) in subtitle_chars.iter().enumerate() {
+        cells.push((c, sub_x + j as f32 * sub_cw, sub_y, sub_fs, sub_col, transparent));
     }
 
-    // ── Barra de progreso ────────────────────────────────────────────────────
-    let bar_y = sub_y + 45.0;
-    let bar_w: f32 = (w * 0.5).clamp(200.0, 500.0);
-    let bar_x = (w - bar_w) * 0.5;
-    let bar_h: f32 = 2.0;
-
-    // Track (fondo de la barra)
-    ui_rects.push(UIRect {
-        pos: [bar_x, bar_y],
-        size: [bar_w, bar_h],
-        color: dim_fg,
-    });
-    // Fill (progreso)
-    if progress > 0.0 {
-        ui_rects.push(UIRect {
-            pos: [bar_x, bar_y],
-            size: [bar_w * progress, bar_h],
-            color: theme.cursor,
-        });
+    // ── 9. Block progress bar ───────────────────────────────────────────────
+    let bar_y = sub_y + 60.0;
+    let bar_fs: f32 = 15.0;
+    let bar_cw = bar_fs * 0.60;
+    let bar_blocks: usize = 28;
+    let filled = (progress * bar_blocks as f32) as usize;
+    let bar_total_w = (bar_blocks + 2) as f32 * bar_cw;
+    let bar_x = (w - bar_total_w) * 0.5 - 22.0;
+    cells.push(('[', bar_x, bar_y, bar_fs, mid_fg, transparent));
+    for i in 0..bar_blocks {
+        let (c, col) = if i < filled {
+            ('█', full_acc)
+        } else {
+            ('░', dim_fg)
+        };
+        cells.push((c, bar_x + (i + 1) as f32 * bar_cw, bar_y, bar_fs, col, transparent));
+    }
+    cells.push((']', bar_x + (bar_blocks + 1) as f32 * bar_cw, bar_y, bar_fs, mid_fg, transparent));
+    let pct_str = format!("  {:>3}%", (progress * 100.0) as u32);
+    for (j, c) in pct_str.chars().enumerate() {
+        cells.push((c, bar_x + (bar_blocks + 2) as f32 * bar_cw + j as f32 * bar_cw, bar_y, bar_fs, mid_fg, transparent));
     }
 
-    // ── Texto de estado animado ───────────────────────────────────────────────
-    let status_fs: f32 = 11.0;
-    let status_char_w = status_fs * 0.6;
-    let status = match (progress * 4.0) as u32 {
-        0 => "> INITIALIZING KERNEL...",
-        1 => "> MOUNTING NEURAL INTERFACE...",
-        2 => "> SYNCING UPLINK PROTOCOLS...",
-        3 => "> ESTABLISHING SECURE CHANNEL...",
-        _ => "> SYSTEM READY",
+    // ── 10. Status line + blinking cursor ───────────────────────────────────
+    let st_fs: f32 = 14.0;
+    let st_cw = st_fs * 0.60;
+    let st_msg = match (progress * 5.5) as u32 {
+        0 => "CORTEX UPLINK INITIALIZING",
+        1 => "SIMSTIM DECK CALIBRATING",
+        2 => "NEURAL LACE HANDSHAKE",
+        3 => "ICE BOUNDARY DISSOLVING",
+        4 => "SECURE CHANNEL ESTABLISHED",
+        _ => "SYSTEM READY  //  JACK IN",
     };
-    let status_w = status.chars().count() as f32 * status_char_w;
-    let status_x = (w - status_w) * 0.5;
-    let status_y = bar_y + 14.0;
-    // Al llegar al final, usar el color del cursor (más brillante) como confirmación
-    let status_color = if progress >= 0.95 {
-        theme.cursor
-    } else {
-        dim_fg
-    };
-    for (j, c) in status.chars().enumerate() {
-        cells.push((
-            c,
-            status_x + j as f32 * status_char_w,
-            status_y,
-            status_fs,
-            status_color,
-            transparent,
-        ));
+    let st_prefix = ">  ";
+    let full_st = format!("{}{}", st_prefix, st_msg);
+    let st_w = full_st.chars().count() as f32 * st_cw;
+    let st_x = (w - st_w) * 0.5;
+    let st_y = bar_y + 30.0;
+    let st_col = if progress >= 0.95 { full_acc } else { mid_fg };
+    for (j, c) in full_st.chars().enumerate() {
+        let col = if j < st_prefix.len() { mid_acc } else { st_col };
+        cells.push((c, st_x + j as f32 * st_cw, st_y, st_fs, col, transparent));
     }
+    let cursor_on = (progress * std::f32::consts::TAU * 4.2).sin() > 0.0;
+    if cursor_on {
+        let cx = st_x + full_st.chars().count() as f32 * st_cw + st_cw * 0.4;
+        cells.push(('▌', cx, st_y, st_fs, full_acc, transparent));
+    }
+
+    // ── 11. Module scan list ─────────────────────────────────────────────────
+    let mod_fs: f32 = 13.0;
+    let mod_cw = mod_fs * 0.60;
+    let modules: &[(&str, f32)] = &[
+        ("matrix.core",  0.18),
+        ("ice.breaker",  0.38),
+        ("cortex.link",  0.52),
+        ("pty.backend",  0.64),
+        ("uplink.proto", 0.78),
+    ];
+    let col_gap = 20.0 * mod_cw;
+    let total_mw = modules.len() as f32 * col_gap;
+    let mut mx = (w - total_mw) * 0.5;
+    let my = st_y + 40.0;
+    for &(name, appear_at) in modules {
+        if progress >= appear_at {
+            let settled = progress > appear_at + 0.14;
+            let ok_col: [f32; 4] = if settled { [0.30, 0.90, 0.42, 0.92] } else { mid_acc };
+            let label = if settled {
+                format!("[OK] {}", name)
+            } else {
+                format!("[▪▪] {}", name)
+            };
+            for (j, c) in label.chars().enumerate() {
+                let col = if j <= 3 { ok_col } else { dim_fg };
+                cells.push((c, mx + j as f32 * mod_cw, my, mod_fs, col, transparent));
+            }
+        }
+        mx += col_gap;
+    }
+
+    // ── 12. Bottom bar ──────────────────────────────────────────────────────
+    let bot_y = h * 0.87;
+    ui_rects.push(UIRect { pos: [lx + 8.0, bot_y], size: [rx - lx - 16.0, 1.5], color: dim_fg });
+    let corp_fs: f32 = 12.0;
+    let corp_cw = corp_fs * 0.60;
+    let corp_str = "SYNAPSE_  ·  CHIBA CITY CONSTRUCT  ·  2049";
+    let corp_w = corp_str.chars().count() as f32 * corp_cw;
+    let corp_x = (w - corp_w) * 0.5;
+    for (j, c) in corp_str.chars().enumerate() {
+        let col = if c == '·' { mid_acc } else { [fg[0], fg[1], fg[2], 0.50] };
+        cells.push((c, corp_x + j as f32 * corp_cw, bot_y + 12.0, corp_fs, col, transparent));
+    }
+
 
     renderer.draw_frame_with_options(
         &cells,

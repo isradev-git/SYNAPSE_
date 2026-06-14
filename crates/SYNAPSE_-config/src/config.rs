@@ -107,6 +107,33 @@ pub struct PluginCommand {
     pub replace_selection: bool,
 }
 
+/// Tab profile — spawns a new tab with preset shell, cwd and environment variables.
+///
+/// Example TOML:
+/// ```toml
+/// [[tab_profile]]
+/// name = "work"
+/// cwd = "~/work/myproject"
+/// shell = "/bin/zsh"        # optional, falls back to $SHELL
+/// shell_args = ["--login"]  # optional
+///
+/// [tab_profile.env]
+/// API_URL = "https://api.example.com"
+/// NODE_ENV = "development"
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct TabProfile {
+    pub name: String,
+    #[serde(default)]
+    pub shell: Option<String>,
+    #[serde(default)]
+    pub shell_args: Vec<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+}
+
 /// SSH connection profile for command-palette quick-connect.
 ///
 /// Example TOML:
@@ -291,6 +318,8 @@ pub struct Config {
     #[serde(default)]
     pub ssh_profiles: Vec<SshProfile>,
     #[serde(default)]
+    pub tab_profiles: Vec<TabProfile>,
+    #[serde(default)]
     pub check_updates_on_startup: bool,
 }
 
@@ -380,6 +409,7 @@ impl Default for Config {
             window_blur: false,
             shell_integration: false,
             ssh_profiles: Vec::new(),
+            tab_profiles: Vec::new(),
             check_updates_on_startup: false,
         }
     }

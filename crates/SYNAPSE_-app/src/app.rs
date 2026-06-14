@@ -159,6 +159,11 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(core) = self.cores.get_mut(&window_id) {
                     core.save_current_session();
                     core.stop_recording_if_active();
+                    if let Some(path) = session::session_cache_dir()
+                        .map(|d| d.join("glyph_atlas.bin"))
+                    {
+                        core.renderer.save_warm_cache(&path);
+                    }
                 }
                 self.cores.remove(&window_id);
                 if self.focused_window == Some(window_id) {
@@ -412,6 +417,10 @@ impl AppCore {
         let mut renderer =
             Renderer::new(window.clone(), &config.font_family).expect("Renderer init failed");
 
+        if let Some(path) = session::session_cache_dir().map(|d| d.join("glyph_atlas.bin")) {
+            renderer.load_warm_cache(&path);
+        }
+
         let mut layout = Layout::new();
         layout.wayland_decorated = is_wayland;
         let size = renderer.size();
@@ -605,6 +614,9 @@ impl AppCore {
         state
             .palette
             .set_ssh_profiles(state.config.ssh_profiles.clone());
+        state
+            .palette
+            .set_tab_profiles(state.config.tab_profiles.clone());
 
         // When blur is on but opacity is fully opaque, default to 0.85 so vibrancy shows through.
         let effective_opacity = if state.config.window_blur && state.config.window_opacity >= 1.0 {
@@ -617,6 +629,10 @@ impl AppCore {
         #[cfg(target_os = "macos")]
         if state.config.window_blur {
             crate::platform_macos::apply_window_blur(&window);
+        }
+        #[cfg(target_os = "linux")]
+        if state.config.window_blur {
+            crate::platform_linux::apply_window_blur(&window);
         }
         renderer.set_effects_config(state.config.effects.clone());
         renderer.set_effects_enabled(state.config.effects.enabled);

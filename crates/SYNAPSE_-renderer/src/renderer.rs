@@ -328,6 +328,7 @@ impl Renderer {
                 let rgba = Self::gray_to_rgba(&bitmap.data);
                 self.atlas
                     .upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
+                self.atlas.store_warm(key, &rgba, bitmap.width, bitmap.height);
             }
             let line_h = font_size * 1.2;
             let baseline = cell_y + line_h * 0.8;
@@ -378,6 +379,7 @@ impl Renderer {
         if let Some((uv, is_new)) = self.atlas.get_or_insert_emoji(emoji_key, w, h) {
             if is_new {
                 self.atlas.upload_glyph(&self.queue, uv, &rgba, w, h);
+                self.atlas.store_warm_emoji(emoji_key, &rgba, w, h);
             }
             let line_h = font_size * 1.2;
             let baseline = cell_y + line_h * 0.5;
@@ -548,6 +550,7 @@ impl Renderer {
                 let rgba = Self::gray_to_rgba(&bitmap.data);
                 self.atlas
                     .upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
+                self.atlas.store_warm_shaped(key, &rgba, bitmap.width, bitmap.height);
             }
             let line_h = font_size * 1.2;
             let baseline = cell_y + line_h * 0.8;
@@ -763,6 +766,21 @@ impl Renderer {
             matrix_density: cfg.matrix_bg.density,
             _pad: 0.0,
             matrix_color: parse_hex_color(&cfg.matrix_bg.color),
+        }
+    }
+
+    pub fn save_warm_cache(&self, path: &std::path::Path) {
+        if let Err(e) = self.atlas.save_warm_cache(path) {
+            tracing::warn!("Failed to save warm glyph cache: {e}");
+        }
+    }
+
+    pub fn load_warm_cache(&mut self, path: &std::path::Path) {
+        match self.atlas.load_and_warm(path, &self.queue) {
+            Ok(n) if n > 0 => tracing::debug!("Warm atlas: loaded {n} glyphs"),
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::warn!("Failed to load warm glyph cache: {e}"),
         }
     }
 }
