@@ -2076,7 +2076,11 @@ impl AppCore {
                 .map_or((80, 24), |p| (p.cols, p.rows))
         };
         let scrollback = self.state.config.scrollback_lines;
-        let env_pairs: Vec<(String, String)> = profile.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let env_pairs: Vec<(String, String)> = profile
+            .env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         let ws = self.workspaces.active_ws_mut();
         let (_tab_id, pane_id) = ws.tab_bar.new_tab();
         match crate::pane_ops::create_pane_full_env(
@@ -2324,7 +2328,8 @@ impl AppCore {
             }
         };
 
-        let shell_args: Vec<String> = vec!["-c".to_string(), command];
+        let (runner, run_flag) = crate::shell::command_runner();
+        let shell_args: Vec<String> = vec![run_flag.to_string(), command];
 
         if split == "tab" {
             let (_, new_pane_id) = tab_bar.new_tab();
@@ -2333,7 +2338,7 @@ impl AppCore {
                 cols,
                 rows,
                 cwd,
-                Some("/bin/sh"),
+                Some(runner),
                 &shell_args,
                 self.state.config.scrollback_lines,
             ) {
@@ -2358,7 +2363,7 @@ impl AppCore {
                     cols,
                     rows,
                     cwd,
-                    Some("/bin/sh"),
+                    Some(runner),
                     &shell_args,
                     self.state.config.scrollback_lines,
                 ) {

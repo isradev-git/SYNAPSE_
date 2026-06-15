@@ -1,7 +1,12 @@
 # SYNAPSE_ — Gaps y Pendientes
 
-> Auditado contra código real post-v0.2.0 (2026-05-24).
-> 303 tests passing · 5 crates · build limpio · 21k LOC.
+> Auditado contra código real para v1.0.0 (2026-06-15).
+> 353 tests passing · 5 crates · build limpio · clippy limpio · ~26k LOC.
+> Targets nativos: macOS · Linux · Raspberry Pi 4/5. **Windows: no soportado.**
+>
+> **v1.0.0 cierra:** Kitty graphics completo (chunked/o=z/t=f), BiDi/RTL (unicode-bidi +
+> Arabic joining), app icon procedural, latencia de respuestas DSR (síncronas),
+> logs silenciosos, docs (INSTALL/CONFIGURATION/COMPATIBILITY/BENCHMARKS).
 
 ---
 
@@ -89,14 +94,15 @@ Antes de los gaps, lista de lo que realmente funciona para evitar reimplementar:
 ### ~~P-009 · DECRQM~~ ✅ IMPLEMENTADO
 - `scan_decrqm()` en `image_protocol.rs`, `decrqm_pm()` en `pane_ops.rs`. tmux/vim obtienen respuesta correcta.
 
-### P-010 · BiDi / RTL
-**Estado:** No implementado. Texto árabe/hebreo se renderiza incorrectamente (LTR forzado).
-**Necesita:** `unicode-bidi` crate, reorder visual antes de shaping.
-**Esfuerzo:** Alto (interacción compleja con rustybuzz shaping).
+### ~~P-010 · BiDi / RTL~~ ✅ IMPLEMENTADO (v1.0)
+- `unicode-bidi` reorder visual (UAX #9) en `renderer::render_bidi_run`, gated por `text::contains_rtl` (LTR mantiene fast path).
+- Shaping direccional (`shape_run_dir`) → joining árabe vía rustybuzz `guess_segment_properties`.
+- Requiere fuente RTL en `font_family` (JetBrains Mono no trae glifos árabes/hebreos). Selección usa orden lógico.
 
-### P-011 · Kitty graphics protocol — completitud
-**Estado:** Placement + delete implementados. Chunked transmission (`m=1`), virtual cursor positioning, unicode placeholders — sin verificar.
-**Fix:** Auditar contra spec oficial Kitty, correr `kitten icat`.
+### ~~P-011 · Kitty graphics protocol — completitud~~ ✅ IMPLEMENTADO (v1.0)
+- Chunked transmission (`m=1`) ahora preserva id + acción en chunks siguientes (icat muestra imágenes).
+- Compresión `o=z` (zlib vía flate2), medios `t=f`/`t=t` (file/temp). Query ya respondía en reader thread.
+- Pendiente menor: `t=s` (shared memory), `U=1` (unicode placeholders).
 
 ---
 
@@ -111,13 +117,13 @@ Antes de los gaps, lista de lo que realmente funciona para evitar reimplementar:
 
 | Item | Estado | Nota |
 |------|--------|------|
-| App icons `.icns` / `.png 512px` | ❌ No existen | `assets/` solo tiene `fonts/` y `shell/` |
-| `docs/BENCHMARKS.md` | ❌ No existe | Necesita vtebench + mediciones reales |
-| `assets/screenshots/` | ❌ No existe | README sin imágenes del producto |
-| `CHANGELOG.md` | ❌ No existe | Linked desde README — enlace roto |
-| `CONFIGURATION.md` | ❌ No existe | Linked desde README — enlace roto (eliminado en README rewrite) |
-| `INSTALL.md` | ❌ No existe | Linked desde README — enlace roto (eliminado en README rewrite) |
-| `COMPATIBILITY.md` | ❌ No existe | Linked desde README — enlace roto (eliminado en README rewrite) |
+| App icon (`assets/icon.png` + `@512`) | ✅ Hecho | Procedural en runtime + `--export-icon`. Falta `.icns`/`.ico` empaquetado (docs en INSTALL). |
+| `docs/BENCHMARKS.md` | ✅ Hecho | Targets + mediciones headless; FPS/latencia = profiler F12 en hardware. |
+| `assets/screenshots/` | ❌ Pendiente | Requiere display; opcional post-1.0. |
+| `CHANGELOG.md` | ✅ Existe | Actualizado a [1.0.0]. |
+| `CONFIGURATION.md` | ✅ Hecho | Todas las opciones de `config.toml`. |
+| `INSTALL.md` | ✅ Hecho | Build macOS/Linux/Raspberry Pi. |
+| `COMPATIBILITY.md` | ✅ Hecho | Matriz de plataformas + escapes + gráficos. |
 
 ---
 

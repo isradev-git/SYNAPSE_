@@ -159,8 +159,8 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(core) = self.cores.get_mut(&window_id) {
                     core.save_current_session();
                     core.stop_recording_if_active();
-                    if let Some(path) = session::session_cache_dir()
-                        .map(|d| d.join("glyph_atlas.bin"))
+                    if let Some(path) =
+                        session::session_cache_dir().map(|d| d.join("glyph_atlas.bin"))
                     {
                         core.renderer.save_warm_cache(&path);
                     }
@@ -376,6 +376,7 @@ impl AppCore {
 
             let mut attrs = WindowAttributes::default()
                 .with_title("SYNAPSE_")
+                .with_window_icon(crate::icon::window_icon())
                 .with_inner_size(winit::dpi::LogicalSize::new(ww, wh))
                 .with_resizable(false)
                 .with_decorations(false)
@@ -395,6 +396,7 @@ impl AppCore {
         } else {
             let mut attrs = WindowAttributes::default()
                 .with_title("SYNAPSE_")
+                .with_window_icon(crate::icon::window_icon())
                 .with_inner_size(winit::dpi::LogicalSize::new(
                     config.window_width as f64,
                     config.window_height as f64,
@@ -457,7 +459,7 @@ impl AppCore {
         });
 
         let (shell_override, shell_args_vec) = if let Some(ref cmd) = cli.command {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+            let shell = crate::shell::default_shell();
             let wrapped_cmd = if cli.hold {
                 format!(
                     "{}; echo; echo '\\x1b[2m[Process exited - press Enter to close]\\x1b[0m'; read",
@@ -549,7 +551,7 @@ impl AppCore {
         };
 
         if let Some(ref new_tab_cmd) = cli.new_tab {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+            let shell = crate::shell::default_shell();
             let ws = workspaces.active_ws_mut();
             let (_tab_id, pane_id) = ws.tab_bar.new_tab();
             match create_pane_full(
@@ -889,7 +891,7 @@ impl AppCore {
                         .map_or(24, |p| p.rows)
                 };
                 let scrollback = self.state.config.scrollback_lines;
-                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+                let shell = crate::shell::default_shell();
                 let (shell_path, shell_args): (String, Vec<String>) = match command {
                     Some(cmd) => (shell.clone(), vec!["-c".to_string(), cmd]),
                     None => (shell, vec![]),
@@ -941,7 +943,7 @@ impl AppCore {
         if let Some(shared) = crate::record::RECORDING.get() {
             if let Some((duration, events)) = shared.stop() {
                 self.state.recording = false;
-                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+                let shell = crate::shell::default_shell();
                 let path = match &self.state.config.recording_path {
                     Some(p) => std::path::PathBuf::from(p),
                     None => {

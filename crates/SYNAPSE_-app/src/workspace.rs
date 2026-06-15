@@ -175,7 +175,6 @@ impl WorkspaceManager {
             })
             .collect()
     }
-
 }
 
 #[cfg(test)]

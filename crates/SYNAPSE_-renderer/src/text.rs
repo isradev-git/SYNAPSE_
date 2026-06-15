@@ -76,6 +76,24 @@ pub struct ShapedGlyph {
     pub font_index: u8,
 }
 
+/// Fast pre-check: does the text contain any right-to-left codepoint?
+/// Covers Hebrew, Arabic (incl. Supplement / Extended-A), and Arabic
+/// presentation forms. Used to gate the (slower) BiDi reordering path so
+/// pure-LTR text — the overwhelming common case — keeps the fast path.
+pub fn contains_rtl(text: &str) -> bool {
+    text.chars().any(|c| {
+        matches!(c,
+            '\u{0590}'..='\u{05FF}'   // Hebrew
+            | '\u{0600}'..='\u{06FF}' // Arabic
+            | '\u{0700}'..='\u{074F}' // Syriac
+            | '\u{0750}'..='\u{077F}' // Arabic Supplement
+            | '\u{08A0}'..='\u{08FF}' // Arabic Extended-A
+            | '\u{FB1D}'..='\u{FDFF}' // Hebrew / Arabic presentation forms A
+            | '\u{FE70}'..='\u{FEFF}' // Arabic presentation forms B
+        )
+    })
+}
+
 fn normalize_family(family: &str) -> String {
     family
         .chars()
@@ -444,13 +462,14 @@ impl TextShaping {
             .extract_emoji_bitmap(ch, target_px as f32)
     }
 
-    fn shape_run_single(
+    fn shape_run_single_dir(
         &self,
         text: &str,
         font_size: f32,
         bold: bool,
         italic: bool,
         family_idx: u8,
+        rtl: bool,
     ) -> Vec<ShapedGlyph> {
         if text.is_empty() {
             return Vec::new();
@@ -460,8 +479,14 @@ impl TextShaping {
         let scale = font_size / units_per_em;
 
         let mut buffer = rustybuzz::UnicodeBuffer::new();
-        buffer.set_direction(rustybuzz::Direction::LeftToRight);
         buffer.push_str(text);
+        if rtl {
+            // Derive script/direction/language from the text so Arabic gets its
+            // joining forms and Hebrew/Arabic glyphs come back in visual order.
+            buffer.guess_segment_properties();
+        } else {
+            buffer.set_direction(rustybuzz::Direction::LeftToRight);
+        }
 
         let features: Vec<rustybuzz::Feature> = ["calt", "liga", "clig"]
             .iter()
@@ -492,15 +517,29 @@ impl TextShaping {
         bold: bool,
         italic: bool,
     ) -> Vec<ShapedGlyph> {
+        self.shape_run_dir(text, font_size, bold, italic, false)
+    }
+
+    /// Shape a run with an explicit direction. `rtl = true` enables Arabic/Hebrew
+    /// joining and returns glyphs in visual (right-to-left) order. The font
+    /// fallback chain is honoured for both directions.
+    pub fn shape_run_dir(
+        &self,
+        text: &str,
+        font_size: f32,
+        bold: bool,
+        italic: bool,
+        rtl: bool,
+    ) -> Vec<ShapedGlyph> {
         if text.is_empty() {
             return Vec::new();
         }
 
         if self.families.len() == 1 {
-            return self.shape_run_single(text, font_size, bold, italic, 0);
+            return self.shape_run_single_dir(text, font_size, bold, italic, 0, rtl);
         }
 
-        let primary = self.shape_run_single(text, font_size, bold, italic, 0);
+        let primary = self.shape_run_single_dir(text, font_size, bold, italic, 0, rtl);
         let num_primary = primary.len();
 
         let char_count = text.chars().count();
@@ -588,7 +627,8 @@ impl TextShaping {
                 if !self.families[fb_idx].has_glyph(first_ch) {
                     continue;
                 }
-                let fb_glyphs = self.shape_run_single(sub, font_size, bold, italic, fb_idx as u8);
+                let fb_glyphs =
+                    self.shape_run_single_dir(sub, font_size, bold, italic, fb_idx as u8, rtl);
                 for g in &fb_glyphs {
                     result.push(ShapedGlyph {
                         glyph_id: g.glyph_id,
@@ -653,6 +693,38 @@ mod tests {
         let key = GlyphKey::new(' ', 14.0, false, false);
         let glyph = shaping.rasterize(key);
         assert_eq!(glyph.data.len(), 0, "space produces empty bitmap");
+    }
+
+    #[test]
+    fn contains_rtl_detects_hebrew_and_arabic() {
+        assert!(contains_rtl("\u{05E9}\u{05DC}\u{05D5}\u{05DD}")); // שלום (Hebrew)
+        assert!(contains_rtl("\u{0645}\u{0631}\u{062D}\u{0628}\u{0627}")); // مرحبا (Arabic)
+        assert!(contains_rtl("hi \u{05E9}")); // mixed
+        assert!(!contains_rtl("hello world"));
+        assert!(!contains_rtl("ls -la | grep foo"));
+        assert!(!contains_rtl(""));
+    }
+
+    #[test]
+    fn shape_run_dir_rtl_does_not_panic() {
+        // Even without an Arabic-capable fallback font, RTL shaping must not
+        // panic and must return one entry per input cluster (likely .notdef).
+        let shaping = TextShaping::new();
+        let glyphs =
+            shaping.shape_run_dir("\u{05E9}\u{05DC}\u{05D5}\u{05DD}", 14.0, false, false, true);
+        assert!(!glyphs.is_empty());
+    }
+
+    #[test]
+    fn bidi_reorders_rtl_visually() {
+        // Sanity-check the BiDi engine itself: a pure-RTL string yields a single
+        // RTL level run covering the whole text.
+        let text = "\u{05E9}\u{05DC}\u{05D5}\u{05DD}";
+        let bidi = unicode_bidi::BidiInfo::new(text, None);
+        let para = &bidi.paragraphs[0];
+        let (_levels, runs) = bidi.visual_runs(para, para.range.clone());
+        assert_eq!(runs.len(), 1);
+        assert!(bidi.levels[runs[0].start].is_rtl());
     }
 
     #[test]

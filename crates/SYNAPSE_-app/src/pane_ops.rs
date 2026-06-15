@@ -286,7 +286,16 @@ pub fn create_pane_full(
     shell_args: &[String],
     scrollback_lines: usize,
 ) -> Result<Pane, String> {
-    create_pane_full_env(id, cols, rows, cwd, shell_override, shell_args, &[], scrollback_lines)
+    create_pane_full_env(
+        id,
+        cols,
+        rows,
+        cwd,
+        shell_override,
+        shell_args,
+        &[],
+        scrollback_lines,
+    )
 }
 
 /// Like `create_pane_full` but also injects `extra_env` key-value pairs into
@@ -316,7 +325,7 @@ pub fn create_pane_full_env(
     // 2. Build the shell command, applying overrides and cwd.
     let shell = match shell_override {
         Some(s) if !s.is_empty() => s.to_string(),
-        _ => std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()),
+        _ => crate::shell::default_shell(),
     };
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("SYNAPSE_INSIDE", "true");
@@ -370,11 +379,15 @@ pub fn create_pane_full_env(
         .take_writer()
         .map_err(|e| format!("take_writer failed: {e}"))?;
     let pty_master = pty_pair.master;
+    // Shared PTY writer: the reader thread writes terminal query responses
+    // (DSR/DA via EventProxy, KKP, DECRQM) through it synchronously, and it also
+    // backs keyboard input on the main thread.
+    let pty_writer_shared = Arc::new(Mutex::new(pty_writer));
 
     // 5. Event channel for alacritty_terminal -> SYNAPSE_ events.
-    let (event_tx, event_rx) = mpsc::sync_channel::<Event>(256);
+    let (event_tx, event_rx) = mpsc::channel::<Event>();
     let exit_tx = event_tx.clone();
-    let proxy = EventProxy::new(event_tx);
+    let proxy = EventProxy::new(event_tx, Arc::clone(&pty_writer_shared));
 
     // 6. Construct the terminal.
     let size = TermSize {
@@ -404,8 +417,8 @@ pub fn create_pane_full_env(
     let dirty_reader = Arc::clone(&dirty);
     let frozen_reader = Arc::clone(&frozen);
     // Clones needed inside the reader thread.
-    let pty_writer_kkp = Arc::new(Mutex::new(pty_writer));
-    let pty_writer_main = Arc::clone(&pty_writer_kkp);
+    let pty_writer_kkp = Arc::clone(&pty_writer_shared);
+    let pty_writer_main = Arc::clone(&pty_writer_shared);
     std::thread::Builder::new()
         .name(format!("synapse-pty-{}", id.0))
         .spawn(move || {
@@ -418,7 +431,7 @@ pub fn create_pane_full_env(
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => {
-                        let _ = exit_tx.try_send(Event::Exit);
+                        let _ = exit_tx.send(Event::Exit);
                         break;
                     }
                     Ok(n) => {

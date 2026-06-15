@@ -328,7 +328,8 @@ impl Renderer {
                 let rgba = Self::gray_to_rgba(&bitmap.data);
                 self.atlas
                     .upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
-                self.atlas.store_warm(key, &rgba, bitmap.width, bitmap.height);
+                self.atlas
+                    .store_warm(key, &rgba, bitmap.width, bitmap.height);
             }
             let line_h = font_size * 1.2;
             let baseline = cell_y + line_h * 0.8;
@@ -477,6 +478,14 @@ impl Renderer {
             let run_len = j - i;
             let mut ligature_rendered = false;
 
+            // BiDi path: only when the run actually contains RTL codepoints, so
+            // the LTR fast path below is completely unaffected for ordinary text.
+            if crate::text::contains_rtl(&run_text) {
+                self.render_bidi_run(&mut instances, &run_text, x0, y0, fs0, fg0, cell_w);
+                i = j;
+                continue;
+            }
+
             if run_len >= 2 {
                 let shaped = self.text.shape_run(&run_text, fs0, false, false);
                 // Always render via shaped glyph IDs — handles both:
@@ -528,6 +537,69 @@ impl Renderer {
         instances
     }
 
+    /// Render a run that contains right-to-left text. Splits the run into BiDi
+    /// level runs (UAX #9), reorders them into visual order, shapes each with its
+    /// resolved direction, and lays the glyphs out left-to-right by advance.
+    /// Cell backgrounds, cursor and selection still use the logical grid order.
+    #[allow(clippy::too_many_arguments)]
+    fn render_bidi_run(
+        &mut self,
+        instances: &mut Vec<CellInstance>,
+        text: &str,
+        x0: f32,
+        y0: f32,
+        font_size: f32,
+        fg: [f32; 4],
+        cell_w: f32,
+    ) {
+        let bidi = unicode_bidi::BidiInfo::new(text, None);
+        let Some(para) = bidi.paragraphs.first() else {
+            return;
+        };
+        let (_levels, runs) = bidi.visual_runs(para, para.range.clone());
+
+        let mut x_cursor = x0;
+        for run in runs {
+            let rtl = bidi.levels[run.start].is_rtl();
+            let sub = &text[run.clone()];
+            let glyphs = self.text.shape_run_dir(sub, font_size, false, false, rtl);
+            for sg in &glyphs {
+                if sg.glyph_id == 0 {
+                    x_cursor += cell_w;
+                    continue;
+                }
+                let key = crate::text::ShapedGlyphKey {
+                    glyph_id: sg.glyph_id,
+                    font_size_bits: font_size.to_bits(),
+                    bold: false,
+                    italic: false,
+                    font_index: sg.font_index,
+                };
+                let bitmap = self.text.rasterize_glyph_id(
+                    sg.glyph_id,
+                    font_size,
+                    false,
+                    false,
+                    sg.font_index,
+                );
+                self.push_shaped_instance(
+                    instances,
+                    &bitmap,
+                    key,
+                    x_cursor + sg.x_offset,
+                    y0,
+                    font_size,
+                    fg,
+                );
+                x_cursor += if sg.x_advance > 0.0 {
+                    sg.x_advance
+                } else {
+                    cell_w
+                };
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn push_shaped_instance(
         &mut self,
@@ -550,7 +622,8 @@ impl Renderer {
                 let rgba = Self::gray_to_rgba(&bitmap.data);
                 self.atlas
                     .upload_glyph(&self.queue, uv, &rgba, bitmap.width, bitmap.height);
-                self.atlas.store_warm_shaped(key, &rgba, bitmap.width, bitmap.height);
+                self.atlas
+                    .store_warm_shaped(key, &rgba, bitmap.width, bitmap.height);
             }
             let line_h = font_size * 1.2;
             let baseline = cell_y + line_h * 0.8;

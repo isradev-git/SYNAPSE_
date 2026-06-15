@@ -1384,8 +1384,12 @@ pub fn render_frame(
 
                 if use_cache {
                     let cache = pane_cell_caches.entry(pane_id).or_default();
-                    let pane_had_damage =
-                        cache.update_damaged_from_term(&mut term, pane_cols, pane_rows, display_offset);
+                    let pane_had_damage = cache.update_damaged_from_term(
+                        &mut term,
+                        pane_cols,
+                        pane_rows,
+                        display_offset,
+                    );
                     if pane_had_damage {
                         any_pane_had_damage = true;
                     }
@@ -3267,15 +3271,19 @@ pub fn render_splash_screen(
     let transparent = [0.0_f32, 0.0, 0.0, 0.0];
     let accent = theme.cursor;
     let fg = theme.fg;
-    let dim_fg  = [fg[0], fg[1], fg[2], 0.55_f32];
-    let mid_fg  = [fg[0], fg[1], fg[2], 0.85_f32];
+    let dim_fg = [fg[0], fg[1], fg[2], 0.55_f32];
+    let mid_fg = [fg[0], fg[1], fg[2], 0.85_f32];
     let full_fg = [fg[0], fg[1], fg[2], 1.0_f32];
-    let mid_acc  = [accent[0], accent[1], accent[2], 0.75_f32];
+    let mid_acc = [accent[0], accent[1], accent[2], 0.75_f32];
     let full_acc = [accent[0], accent[1], accent[2], 1.0_f32];
-    let dim_acc  = [accent[0], accent[1], accent[2], 0.40_f32];
+    let dim_acc = [accent[0], accent[1], accent[2], 0.40_f32];
 
     // ── 1. Background + pulsing red glow ────────────────────────────────────
-    bg_rects.push(UIRect { pos: [0.0, 0.0], size: [w, h], color: theme.bg });
+    bg_rects.push(UIRect {
+        pos: [0.0, 0.0],
+        size: [w, h],
+        color: theme.bg,
+    });
     let pulse = ((progress * std::f32::consts::TAU * 0.8).sin() * 0.5 + 0.5) * 0.02 + 0.03;
     bg_rects.push(UIRect {
         pos: [w * 0.08, h * 0.12],
@@ -3298,7 +3306,10 @@ pub fn render_splash_screen(
         let y_base = y_raw.rem_euclid(h * 0.42) + h * 0.02;
         let alpha = 0.12 + row as f32 * 0.028;
         let row_col = [fg[0], fg[1], fg[2], alpha];
-        let addr_hi = ((row as u32 + 1).wrapping_mul(0xDEAD).wrapping_add((progress * 400.0) as u32)) & 0xFFFF;
+        let addr_hi = ((row as u32 + 1)
+            .wrapping_mul(0xDEAD)
+            .wrapping_add((progress * 400.0) as u32))
+            & 0xFFFF;
         let addr_lo = (row as u32).wrapping_mul(0x1337) & 0xFFFF;
         let addr = format!("0x{:04X}:{:04X}  ", addr_hi, addr_lo);
         let mut x = w * 0.025;
@@ -3312,7 +3323,9 @@ pub fn render_splash_screen(
             let c = hex_digits[idx] as char;
             cells.push((c, x, y_base, hex_fs, row_col, transparent));
             x += hex_cw;
-            if col % 4 == 3 { x += hex_cw * 0.6; }
+            if col % 4 == 3 {
+                x += hex_cw * 0.6;
+            }
         }
     }
 
@@ -3320,40 +3333,91 @@ pub fn render_splash_screen(
     let scan1 = ((progress * 0.85) % 1.0) * h;
     let scan2 = ((progress * 0.55 + 0.4) % 1.0) * h;
     let scan3 = ((progress * 0.32 + 0.7) % 1.0) * h;
-    ui_rects.push(UIRect { pos: [0.0, scan1], size: [w, 2.0], color: [accent[0], accent[1], accent[2], 0.14] });
-    ui_rects.push(UIRect { pos: [0.0, scan2], size: [w, 1.5], color: [fg[0], fg[1], fg[2], 0.07] });
-    ui_rects.push(UIRect { pos: [0.0, scan3], size: [w, 1.0], color: [accent[0], accent[1], accent[2], 0.06] });
+    ui_rects.push(UIRect {
+        pos: [0.0, scan1],
+        size: [w, 2.0],
+        color: [accent[0], accent[1], accent[2], 0.14],
+    });
+    ui_rects.push(UIRect {
+        pos: [0.0, scan2],
+        size: [w, 1.5],
+        color: [fg[0], fg[1], fg[2], 0.07],
+    });
+    ui_rects.push(UIRect {
+        pos: [0.0, scan3],
+        size: [w, 1.0],
+        color: [accent[0], accent[1], accent[2], 0.06],
+    });
 
     // ── 4. Vertical rail decorations ────────────────────────────────────────
     let rail_top = h * 0.10;
     let rail_bot = h * 0.90;
-    let rail_h   = rail_bot - rail_top;
+    let rail_h = rail_bot - rail_top;
     let lx = w * 0.08;
     let rx = w * 0.92;
     for seg in 0..14usize {
         let sy = rail_top + seg as f32 * rail_h / 14.0;
         let sl = rail_h / 14.0 * 0.68;
-        ui_rects.push(UIRect { pos: [lx, sy], size: [1.5, sl], color: dim_fg });
-        ui_rects.push(UIRect { pos: [rx, sy], size: [1.5, sl], color: dim_fg });
+        ui_rects.push(UIRect {
+            pos: [lx, sy],
+            size: [1.5, sl],
+            color: dim_fg,
+        });
+        ui_rects.push(UIRect {
+            pos: [rx, sy],
+            size: [1.5, sl],
+            color: dim_fg,
+        });
     }
     for ty in &[rail_top, rail_bot] {
-        ui_rects.push(UIRect { pos: [lx - 6.0, *ty], size: [14.0, 1.5], color: mid_fg });
-        ui_rects.push(UIRect { pos: [rx - 6.0, *ty], size: [14.0, 1.5], color: mid_fg });
-        ui_rects.push(UIRect { pos: [lx - 2.0, *ty - 5.0], size: [1.5, 10.0], color: mid_acc });
-        ui_rects.push(UIRect { pos: [rx - 1.0, *ty - 5.0], size: [1.5, 10.0], color: mid_acc });
+        ui_rects.push(UIRect {
+            pos: [lx - 6.0, *ty],
+            size: [14.0, 1.5],
+            color: mid_fg,
+        });
+        ui_rects.push(UIRect {
+            pos: [rx - 6.0, *ty],
+            size: [14.0, 1.5],
+            color: mid_fg,
+        });
+        ui_rects.push(UIRect {
+            pos: [lx - 2.0, *ty - 5.0],
+            size: [1.5, 10.0],
+            color: mid_acc,
+        });
+        ui_rects.push(UIRect {
+            pos: [rx - 1.0, *ty - 5.0],
+            size: [1.5, 10.0],
+            color: mid_acc,
+        });
     }
 
     // ── 5. Top header ───────────────────────────────────────────────────────
     let hdr_y = h * 0.14;
     let hdr_fs: f32 = 13.0;
     let hdr_cw = hdr_fs * 0.60;
-    ui_rects.push(UIRect { pos: [lx + 8.0, hdr_y - 12.0], size: [rx - lx - 16.0, 1.5], color: dim_fg });
+    ui_rects.push(UIRect {
+        pos: [lx + 8.0, hdr_y - 12.0],
+        size: [rx - lx - 16.0, 1.5],
+        color: dim_fg,
+    });
     let hdr_str = "[ WINTERMUTE  ·  CORTEX I/O  ·  JACK IN ]";
     let hdr_w = hdr_str.chars().count() as f32 * hdr_cw;
     let hdr_x = (w - hdr_w) * 0.5;
     for (j, c) in hdr_str.chars().enumerate() {
-        let col = if c == '[' || c == ']' || c == '·' { mid_acc } else { dim_fg };
-        cells.push((c, hdr_x + j as f32 * hdr_cw, hdr_y, hdr_fs, col, transparent));
+        let col = if c == '[' || c == ']' || c == '·' {
+            mid_acc
+        } else {
+            dim_fg
+        };
+        cells.push((
+            c,
+            hdr_x + j as f32 * hdr_cw,
+            hdr_y,
+            hdr_fs,
+            col,
+            transparent,
+        ));
     }
 
     // ── 6. Main title — glitch reveal ───────────────────────────────────────
@@ -3386,36 +3450,57 @@ pub fn render_splash_screen(
         let (display_ch, col) = if char_p >= 1.0 {
             let flicker = (progress * 47.3 + j as f32 * 11.1).sin();
             if flicker > 0.96 && progress < 0.65 {
-                let gi = (((j as f32 * 17.3 + progress * 210.0).sin() * 0.5 + 0.5) * gp_len as f32) as usize;
+                let gi = (((j as f32 * 17.3 + progress * 210.0).sin() * 0.5 + 0.5) * gp_len as f32)
+                    as usize;
                 (glitch_pool[gi.min(gp_len - 1)] as char, mid_acc)
             } else {
                 (real_ch, full_fg)
             }
         } else if char_p >= 0.0 {
-            let gi = (((j as f32 * 13.7 + progress * 190.0).sin() * 0.5 + 0.5) * gp_len as f32) as usize;
+            let gi =
+                (((j as f32 * 13.7 + progress * 190.0).sin() * 0.5 + 0.5) * gp_len as f32) as usize;
             (glitch_pool[gi.min(gp_len - 1)] as char, full_acc)
         } else if real_ch == ' ' {
             (' ', transparent)
         } else {
-            let gi = (((j as f32 * 9.1 + progress * 55.0).sin() * 0.5 + 0.5) * gp_len as f32) as usize;
+            let gi =
+                (((j as f32 * 9.1 + progress * 55.0).sin() * 0.5 + 0.5) * gp_len as f32) as usize;
             (glitch_pool[gi.min(gp_len - 1)] as char, dim_acc)
         };
 
-        cells.push((display_ch, title_x + j as f32 * title_cw, title_y, title_fs, col, transparent));
+        cells.push((
+            display_ch,
+            title_x + j as f32 * title_cw,
+            title_y,
+            title_fs,
+            col,
+            transparent,
+        ));
     }
 
     // ── 7. Separator with chevron endcaps ───────────────────────────────────
     let sep_y = title_y + title_fs + 20.0;
     let sep_w = (title_w * 1.30).min(w * 0.74);
     let sep_x = (w - sep_w) * 0.5;
-    ui_rects.push(UIRect { pos: [sep_x + 20.0, sep_y + 8.0], size: [sep_w - 40.0, 1.5], color: mid_fg });
+    ui_rects.push(UIRect {
+        pos: [sep_x + 20.0, sep_y + 8.0],
+        size: [sep_w - 40.0, 1.5],
+        color: mid_fg,
+    });
     let chev_fs: f32 = 15.0;
     cells.push(('▶', sep_x, sep_y, chev_fs, mid_acc, transparent));
-    cells.push(('◀', sep_x + sep_w - chev_fs * 0.60, sep_y, chev_fs, mid_acc, transparent));
+    cells.push((
+        '◀',
+        sep_x + sep_w - chev_fs * 0.60,
+        sep_y,
+        chev_fs,
+        mid_acc,
+        transparent,
+    ));
 
     // ── 8. Subtitle (fade in after title) ───────────────────────────────────
     let sub_fs: f32 = 15.0;
-    let sub_cw  = sub_fs * 0.60;
+    let sub_cw = sub_fs * 0.60;
     let subtitle_chars: Vec<char> = "NEURAL INTERFACE  ──  v0.2.0".chars().collect();
     let sub_w = subtitle_chars.len() as f32 * sub_cw;
     let sub_x = (w - sub_w) * 0.5;
@@ -3423,7 +3508,14 @@ pub fn render_splash_screen(
     let sub_alpha = ((progress - 0.38) / 0.14).clamp(0.0, 1.0);
     let sub_col = [fg[0], fg[1], fg[2], 0.88 * sub_alpha];
     for (j, &c) in subtitle_chars.iter().enumerate() {
-        cells.push((c, sub_x + j as f32 * sub_cw, sub_y, sub_fs, sub_col, transparent));
+        cells.push((
+            c,
+            sub_x + j as f32 * sub_cw,
+            sub_y,
+            sub_fs,
+            sub_col,
+            transparent,
+        ));
     }
 
     // ── 9. Block progress bar ───────────────────────────────────────────────
@@ -3441,12 +3533,33 @@ pub fn render_splash_screen(
         } else {
             ('░', dim_fg)
         };
-        cells.push((c, bar_x + (i + 1) as f32 * bar_cw, bar_y, bar_fs, col, transparent));
+        cells.push((
+            c,
+            bar_x + (i + 1) as f32 * bar_cw,
+            bar_y,
+            bar_fs,
+            col,
+            transparent,
+        ));
     }
-    cells.push((']', bar_x + (bar_blocks + 1) as f32 * bar_cw, bar_y, bar_fs, mid_fg, transparent));
+    cells.push((
+        ']',
+        bar_x + (bar_blocks + 1) as f32 * bar_cw,
+        bar_y,
+        bar_fs,
+        mid_fg,
+        transparent,
+    ));
     let pct_str = format!("  {:>3}%", (progress * 100.0) as u32);
     for (j, c) in pct_str.chars().enumerate() {
-        cells.push((c, bar_x + (bar_blocks + 2) as f32 * bar_cw + j as f32 * bar_cw, bar_y, bar_fs, mid_fg, transparent));
+        cells.push((
+            c,
+            bar_x + (bar_blocks + 2) as f32 * bar_cw + j as f32 * bar_cw,
+            bar_y,
+            bar_fs,
+            mid_fg,
+            transparent,
+        ));
     }
 
     // ── 10. Status line + blinking cursor ───────────────────────────────────
@@ -3480,10 +3593,10 @@ pub fn render_splash_screen(
     let mod_fs: f32 = 13.0;
     let mod_cw = mod_fs * 0.60;
     let modules: &[(&str, f32)] = &[
-        ("matrix.core",  0.18),
-        ("ice.breaker",  0.38),
-        ("cortex.link",  0.52),
-        ("pty.backend",  0.64),
+        ("matrix.core", 0.18),
+        ("ice.breaker", 0.38),
+        ("cortex.link", 0.52),
+        ("pty.backend", 0.64),
         ("uplink.proto", 0.78),
     ];
     let col_gap = 20.0 * mod_cw;
@@ -3493,7 +3606,11 @@ pub fn render_splash_screen(
     for &(name, appear_at) in modules {
         if progress >= appear_at {
             let settled = progress > appear_at + 0.14;
-            let ok_col: [f32; 4] = if settled { [0.30, 0.90, 0.42, 0.92] } else { mid_acc };
+            let ok_col: [f32; 4] = if settled {
+                [0.30, 0.90, 0.42, 0.92]
+            } else {
+                mid_acc
+            };
             let label = if settled {
                 format!("[OK] {}", name)
             } else {
@@ -3509,17 +3626,31 @@ pub fn render_splash_screen(
 
     // ── 12. Bottom bar ──────────────────────────────────────────────────────
     let bot_y = h * 0.87;
-    ui_rects.push(UIRect { pos: [lx + 8.0, bot_y], size: [rx - lx - 16.0, 1.5], color: dim_fg });
+    ui_rects.push(UIRect {
+        pos: [lx + 8.0, bot_y],
+        size: [rx - lx - 16.0, 1.5],
+        color: dim_fg,
+    });
     let corp_fs: f32 = 12.0;
     let corp_cw = corp_fs * 0.60;
     let corp_str = "SYNAPSE_  ·  CHIBA CITY CONSTRUCT  ·  2049";
     let corp_w = corp_str.chars().count() as f32 * corp_cw;
     let corp_x = (w - corp_w) * 0.5;
     for (j, c) in corp_str.chars().enumerate() {
-        let col = if c == '·' { mid_acc } else { [fg[0], fg[1], fg[2], 0.50] };
-        cells.push((c, corp_x + j as f32 * corp_cw, bot_y + 12.0, corp_fs, col, transparent));
+        let col = if c == '·' {
+            mid_acc
+        } else {
+            [fg[0], fg[1], fg[2], 0.50]
+        };
+        cells.push((
+            c,
+            corp_x + j as f32 * corp_cw,
+            bot_y + 12.0,
+            corp_fs,
+            col,
+            transparent,
+        ));
     }
-
 
     renderer.draw_frame_with_options(
         &cells,
@@ -3749,7 +3880,11 @@ impl AppCore {
         let elapsed = now.duration_since(self.fps_last_print);
         if elapsed >= std::time::Duration::from_secs(1) {
             let fps = self.frame_count as f64 / elapsed.as_secs_f64();
-            tracing::info!(target: "synapse_::bench", "FPS: {:.1}", fps);
+            // Only emit the per-second FPS line when the profiler overlay is on;
+            // it is otherwise console spam (and visible on-screen via F12).
+            if self.state.profiler_active {
+                tracing::info!(target: "synapse_::bench", "FPS: {:.1}", fps);
+            }
             self.frame_count = 0;
             self.fps_last_print = now;
         }

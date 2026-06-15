@@ -1,6 +1,7 @@
 mod app;
 mod cli;
 mod history;
+mod icon;
 mod image_protocol;
 mod input;
 mod ipc;
@@ -9,16 +10,17 @@ mod mouse;
 mod overlay;
 mod palette;
 mod pane_ops;
-#[cfg(target_os = "macos")]
-mod platform_macos;
 #[cfg(target_os = "linux")]
 mod platform_linux;
+#[cfg(target_os = "macos")]
+mod platform_macos;
 mod quake;
 mod record;
 mod render;
 mod search;
 mod session;
 mod setup;
+mod shell;
 mod sixel;
 mod state;
 mod update;
@@ -27,7 +29,14 @@ mod workspace;
 use clap::Parser;
 
 fn main() {
+    // Quiet by default — wgpu/naga log a line *per frame* at INFO, which floods
+    // the console and can itself cost frames. Keep our own crates at info; honour
+    // RUST_LOG when set for debugging.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new("warn,synapse_=info,synapse_renderer=info")
+    });
     tracing_subscriber::fmt()
+        .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .try_init()
         .ok();
@@ -64,6 +73,12 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
 
     if cli.check_update {
         return update::run_check();
+    }
+
+    if let Some(path) = &cli.export_icon {
+        icon::export_png(path, cli.icon_size)?;
+        println!("Wrote {}×{} icon to {path}", cli.icon_size, cli.icon_size);
+        return Ok(());
     }
 
     if let Some(cli::IpcSubcmd::Ipc { command }) = &cli.subcommand {

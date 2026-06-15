@@ -18,6 +18,7 @@ tracing = { workspace = true }
 pollster = { workspace = true }
 bytemuck = { workspace = true }
 rustybuzz = { workspace = true }
+unicode-bidi = "0.3"
 SYNAPSE_-config = { path = "../SYNAPSE_-config" }
 ttf-parser = { workspace = true }
 image = { workspace = true }

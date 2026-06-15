@@ -1,5 +1,8 @@
 /// Kitty image protocol implementation (APC-based, https://sw.kovidgoyal.net/kitty/graphics-protocol/).
-/// Supports: a=T (transmit), a=p (put), a=d (delete), format f=32 (RGBA) and f=100 (PNG).
+/// Supports: actions a=T/t/p/q/d (transmit, transmit-and-put, put, query, delete);
+/// formats f=24 (RGB), f=32 (RGBA), f=100 (PNG); chunked transmission (m=1);
+/// zlib compression (o=z); media t=d (direct), t=f (file), t=t (temp file).
+/// Not supported: t=s (shared memory), U=1 (unicode placeholders).
 use std::collections::HashMap;
 
 use base64::Engine;
@@ -25,6 +28,20 @@ pub enum KittyFormat {
     Rgba, // f=32
     Rgb, // f=24
     Png, // f=100
+}
+
+/// Transmission medium (`t=` key).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum KittyMedium {
+    /// `t=d` — base64 image data inline in the escape payload.
+    #[default]
+    Direct,
+    /// `t=f` — payload is a base64 file path; read the file for image data.
+    File,
+    /// `t=t` — like File, but delete the file after reading.
+    TempFile,
+    /// `t=s` — POSIX shared memory object. Not supported (skipped).
+    Shared,
 }
 
 /// One frame of an animated image (GIF / APNG).
@@ -94,6 +111,10 @@ pub struct ApcCommand {
     pub quiet: u8,
     /// U=1 → unicode placeholder mode (parsed but rendering not yet implemented).
     pub unicode_placeholder: bool,
+    /// o=z → payload is zlib-compressed (DEFLATE) before format decoding.
+    pub compression: bool,
+    /// Transmission medium (`t=` key): direct data, file, temp file or shared mem.
+    pub medium: KittyMedium,
     /// Base64-encoded image data (may span multiple chunks with m=1).
     pub data: String,
     /// Whether more data chunks follow (m=1).
@@ -115,13 +136,30 @@ pub struct AnimState {
 
 // ─── ImageStore ──────────────────────────────────────────────────────────────
 
+/// In-flight chunked transmission (`m=1`). Per the Kitty spec, only the first
+/// chunk carries the control keys; follow-up chunks send only `m` and payload.
+/// We therefore latch the first chunk's parameters here and append later data.
+struct PendingTransmit {
+    id: u32,
+    action: KittyAction,
+    format: KittyFormat,
+    medium: KittyMedium,
+    compression: bool,
+    width: u32,
+    height: u32,
+    columns: u32,
+    rows: u32,
+    placement_id: u32,
+    data: String,
+}
+
 pub struct ImageStore {
     pub images: HashMap<u32, StoredImage>,
     pub placements: Vec<ImagePlacement>,
     /// Animation state keyed by image_id. Only present for animated images.
     pub anim_states: HashMap<u32, AnimState>,
-    /// Accumulate base64 chunks for chunked transmits.
-    pending: HashMap<u32, String>,
+    /// The single in-flight chunked transmit, if any (Kitty allows one at a time).
+    pending_transmit: Option<PendingTransmit>,
 }
 
 impl ImageStore {
@@ -130,7 +168,7 @@ impl ImageStore {
             images: HashMap::new(),
             placements: Vec::new(),
             anim_states: HashMap::new(),
-            pending: HashMap::new(),
+            pending_transmit: None,
         }
     }
 
@@ -173,11 +211,7 @@ impl ImageStore {
         if image.frames.is_empty() {
             return Some((&image.rgba, image.width, image.height));
         }
-        let frame_idx = self
-            .anim_states
-            .get(&id)
-            .map(|s| s.frame_idx)
-            .unwrap_or(0);
+        let frame_idx = self.anim_states.get(&id).map(|s| s.frame_idx).unwrap_or(0);
         let rgba = image
             .frames
             .get(frame_idx)
@@ -276,6 +310,22 @@ impl ImageStore {
         cursor_row: usize,
         pane_id: Option<synapse_ui::PaneId>,
     ) {
+        // A continuation chunk of an in-flight transmit carries no control keys,
+        // so its parsed action defaults to Transmit. Route it to the latched
+        // transmit by presence of pending state, not by the (defaulted) action.
+        if self.pending_transmit.is_some() {
+            let done = {
+                let p = self.pending_transmit.as_mut().unwrap();
+                p.data.push_str(&cmd.data);
+                !cmd.more
+            };
+            if done {
+                let p = self.pending_transmit.take().unwrap();
+                self.finalize_transmit(p, cursor_col, cursor_row, pane_id);
+            }
+            return;
+        }
+
         match cmd.action {
             KittyAction::Delete => {
                 if cmd.image_id == 0 {
@@ -291,37 +341,95 @@ impl ImageStore {
         }
 
         let id = if cmd.image_id == 0 { 1 } else { cmd.image_id };
+        let pending = PendingTransmit {
+            id,
+            action: cmd.action,
+            format: cmd.format,
+            medium: cmd.medium,
+            compression: cmd.compression,
+            width: cmd.width,
+            height: cmd.height,
+            columns: cmd.columns,
+            rows: cmd.rows,
+            placement_id: cmd.placement_id,
+            data: cmd.data,
+        };
 
-        // Accumulate chunked data.
-        let entry = self.pending.entry(id).or_default();
-        entry.push_str(&cmd.data);
-
+        // First chunk of a chunked transmit: latch params and wait for the rest.
         if cmd.more {
-            return; // wait for more chunks
+            self.pending_transmit = Some(pending);
+            return;
         }
 
-        let b64 = self.pending.remove(&id).unwrap_or_default();
-        let raw_bytes = match base64::engine::general_purpose::STANDARD.decode(&b64) {
+        self.finalize_transmit(pending, cursor_col, cursor_row, pane_id);
+    }
+
+    /// Decode a complete (possibly chunked) transmit into an RGBA image and store
+    /// it, creating a placement when the action is put / transmit-and-put.
+    /// Handles the `t=` medium (direct / file / temp file) and `o=z` compression.
+    fn finalize_transmit(
+        &mut self,
+        p: PendingTransmit,
+        cursor_col: usize,
+        cursor_row: usize,
+        pane_id: Option<synapse_ui::PaneId>,
+    ) {
+        let payload = match base64::engine::general_purpose::STANDARD.decode(p.data.trim()) {
             Ok(b) => b,
             Err(_) => return,
         };
 
-        let (w, h, rgba) = match cmd.format {
+        // Resolve the transmission medium into the raw (still-compressed) bytes.
+        let mut raw_bytes = match p.medium {
+            KittyMedium::Direct => payload,
+            KittyMedium::File | KittyMedium::TempFile => {
+                let path = match String::from_utf8(payload) {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+                let bytes = match std::fs::read(&path) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        tracing::warn!("kitty t=f: failed to read {path}: {e}");
+                        return;
+                    }
+                };
+                if p.medium == KittyMedium::TempFile {
+                    let _ = std::fs::remove_file(&path);
+                }
+                bytes
+            }
+            KittyMedium::Shared => {
+                tracing::info!("kitty t=s (shared memory) unsupported, skipping");
+                return;
+            }
+        };
+
+        // Inflate zlib-compressed payloads (o=z).
+        if p.compression {
+            match inflate_zlib(&raw_bytes) {
+                Some(b) => raw_bytes = b,
+                None => {
+                    tracing::warn!("kitty o=z: zlib inflate failed");
+                    return;
+                }
+            }
+        }
+
+        let (w, h, rgba) = match p.format {
             KittyFormat::Png => match decode_png(&raw_bytes) {
                 Some(v) => v,
                 None => return,
             },
             KittyFormat::Rgba => {
-                let w = cmd.width;
-                let h = cmd.height;
+                let (w, h) = (p.width, p.height);
                 if w == 0 || h == 0 || raw_bytes.len() < (w * h * 4) as usize {
                     return;
                 }
                 (w, h, raw_bytes[..(w * h * 4) as usize].to_vec())
             }
             KittyFormat::Rgb => {
-                let w = cmd.width;
-                let h = cmd.height;
+                let (w, h) = (p.width, p.height);
                 if w == 0 || h == 0 || raw_bytes.len() < (w * h * 3) as usize {
                     return;
                 }
@@ -335,9 +443,9 @@ impl ImageStore {
         };
 
         self.images.insert(
-            id,
+            p.id,
             StoredImage {
-                id,
+                id: p.id,
                 width: w,
                 height: h,
                 rgba,
@@ -345,18 +453,27 @@ impl ImageStore {
             },
         );
 
-        if matches!(cmd.action, KittyAction::TransmitAndPut | KittyAction::Put) {
+        if matches!(p.action, KittyAction::TransmitAndPut | KittyAction::Put) {
             self.placements.push(ImagePlacement {
-                image_id: id,
-                placement_id: cmd.placement_id,
+                image_id: p.id,
+                placement_id: p.placement_id,
                 col: cursor_col,
                 row: cursor_row,
-                columns: cmd.columns,
-                rows: cmd.rows,
+                columns: p.columns,
+                rows: p.rows,
                 pane_id,
             });
         }
     }
+}
+
+/// Inflate a zlib (RFC 1950) stream, as used by the Kitty `o=z` key.
+fn inflate_zlib(data: &[u8]) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut decoder = flate2::read::ZlibDecoder::new(data);
+    let mut out = Vec::new();
+    decoder.read_to_end(&mut out).ok()?;
+    Some(out)
 }
 
 // ─── APC sequence extraction ─────────────────────────────────────────────────
@@ -426,6 +543,8 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
     let mut do_not_move_cursor = false;
     let mut quiet: u8 = 0;
     let mut unicode_placeholder = false;
+    let mut compression = false;
+    let mut medium = KittyMedium::Direct;
     let mut more = false;
 
     for kv in params_str.split(',') {
@@ -465,6 +584,15 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
             "C" => do_not_move_cursor = val == "1",
             "q" => quiet = val.parse().unwrap_or(0),
             "U" => unicode_placeholder = val == "1",
+            "o" => compression = val == "z",
+            "t" => {
+                medium = match val {
+                    "f" => KittyMedium::File,
+                    "t" => KittyMedium::TempFile,
+                    "s" => KittyMedium::Shared,
+                    _ => KittyMedium::Direct,
+                }
+            }
             "m" => more = val == "1",
             _ => {}
         }
@@ -486,6 +614,8 @@ pub fn parse_apc(s: &str) -> Option<ApcCommand> {
         do_not_move_cursor,
         quiet,
         unicode_placeholder,
+        compression,
+        medium,
         data,
         more,
     })
@@ -1118,6 +1248,8 @@ mod tests {
                 do_not_move_cursor: false,
                 quiet: 0,
                 unicode_placeholder: false,
+                compression: false,
+                medium: KittyMedium::Direct,
                 data: String::new(),
                 more: false,
             },
@@ -1167,6 +1299,8 @@ mod tests {
                 do_not_move_cursor: false,
                 quiet: 0,
                 unicode_placeholder: false,
+                compression: false,
+                medium: KittyMedium::Direct,
                 data: String::new(),
                 more: false,
             },
@@ -1315,7 +1449,10 @@ mod tests {
         assert_eq!(h, 1);
         assert_eq!(rgba.len(), 4);
         assert_eq!(rgba, vec![255, 0, 0, 255]);
-        assert!(frames.is_empty(), "static PNG should have no animation frames");
+        assert!(
+            frames.is_empty(),
+            "static PNG should have no animation frames"
+        );
     }
 
     // ─── kitty_response tests ─────────────────────────────────────────────────
@@ -1337,6 +1474,8 @@ mod tests {
             do_not_move_cursor: false,
             quiet,
             unicode_placeholder: false,
+            compression: false,
+            medium: KittyMedium::Direct,
             data: "AAAA".into(),
             more: false,
         }
@@ -1386,7 +1525,10 @@ mod tests {
         let mut store = ImageStore::new();
         let frames: Vec<AnimFrame> = delays
             .iter()
-            .map(|&d| AnimFrame { rgba: vec![0u8; 4], delay_ms: d })
+            .map(|&d| AnimFrame {
+                rgba: vec![0u8; 4],
+                delay_ms: d,
+            })
             .collect();
         let first_rgba = frames[0].rgba.clone();
         store.anim_states.insert(
@@ -1456,8 +1598,14 @@ mod tests {
     fn accept_iterm2_animated_registers_anim_state() {
         let mut store = ImageStore::new();
         let frames = vec![
-            AnimFrame { rgba: vec![0u8; 4], delay_ms: 100 },
-            AnimFrame { rgba: vec![1u8; 4], delay_ms: 200 },
+            AnimFrame {
+                rgba: vec![0u8; 4],
+                delay_ms: 100,
+            },
+            AnimFrame {
+                rgba: vec![1u8; 4],
+                delay_ms: 200,
+            },
         ];
         store.accept_iterm2(5, 1, 1, &[0u8; 4], frames, 0, 0, None);
         assert!(store.anim_states.contains_key(&5));
@@ -1517,5 +1665,78 @@ mod tests {
         }
         let (_w, _h, _rgba, frames) = decode_animated(&png_buf).unwrap();
         assert!(frames.is_empty());
+    }
+
+    fn feed(store: &mut ImageStore, apc: &str) {
+        let cmd = parse_apc(apc).expect("parse_apc");
+        store.process(cmd, 0, 0, None);
+    }
+
+    #[test]
+    fn parse_apc_reads_compression_and_medium() {
+        let cmd = parse_apc("Ga=T,f=32,o=z,t=f,s=2,v=2;ZGF0YQ==").unwrap();
+        assert!(cmd.compression);
+        assert_eq!(cmd.medium, KittyMedium::File);
+    }
+
+    #[test]
+    fn chunked_transmit_and_put_preserves_id_and_action() {
+        // 1×1 RGB pixel [10,20,30] → base64 "ChQe", split across two chunks.
+        // Follow-up chunk carries only `m=0` (no i=, no a=), exercising the
+        // latched-params path. Previously the placement + image id were lost.
+        let mut store = ImageStore::new();
+        feed(&mut store, "Ga=t,f=24,s=1,v=1,i=7,m=1;Ch");
+        assert!(store.images.is_empty(), "image must not finalize mid-chunk");
+        feed(&mut store, "Gm=0;Qe");
+
+        assert!(store.images.contains_key(&7), "image stored under i=7");
+        assert_eq!(store.images[&7].rgba, vec![10, 20, 30, 255]);
+        assert_eq!(
+            store.placements.iter().filter(|p| p.image_id == 7).count(),
+            1,
+            "transmit-and-put must create a placement on the final chunk"
+        );
+    }
+
+    #[test]
+    fn zlib_compressed_rgba_transmit_inflates() {
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let pixel = [1u8, 2, 3, 4];
+        let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+        enc.write_all(&pixel).unwrap();
+        let compressed = enc.finish().unwrap();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&compressed);
+
+        let mut store = ImageStore::new();
+        feed(&mut store, &format!("Ga=T,f=32,o=z,s=1,v=1,i=3;{b64}"));
+        assert_eq!(store.images[&3].rgba, pixel.to_vec());
+    }
+
+    #[test]
+    fn file_medium_reads_and_tempfile_deletes() {
+        // Encode a 1×1 RGBA PNG to a temp file, transmit it via t=t (temp file).
+        let mut png_buf = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_buf, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[9u8, 8, 7, 6]).unwrap();
+        }
+        let path = std::env::temp_dir().join("synapse_kitty_test_img.png");
+        std::fs::write(&path, &png_buf).unwrap();
+        let b64_path = base64::engine::general_purpose::STANDARD.encode(path.to_str().unwrap());
+
+        let mut store = ImageStore::new();
+        feed(&mut store, &format!("Ga=T,f=100,t=t,i=11;{b64_path}"));
+
+        assert!(store.images.contains_key(&11), "image loaded from file");
+        assert!(
+            !path.exists(),
+            "t=t must delete the temp file after reading"
+        );
     }
 }

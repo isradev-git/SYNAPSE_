@@ -178,7 +178,13 @@ impl TextureAtlas {
         }
 
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
+        self.cache.insert(
+            key,
+            AtlasEntry {
+                uv: rect,
+                last_frame: self.frame,
+            },
+        );
         Some((rect, true))
     }
 
@@ -193,7 +199,13 @@ impl TextureAtlas {
             return Some((entry.uv, false));
         }
         let rect = self.allocate(bitmap_width, bitmap_height)?;
-        self.shaped_cache.insert(key, AtlasEntry { uv: rect, last_frame: self.frame });
+        self.shaped_cache.insert(
+            key,
+            AtlasEntry {
+                uv: rect,
+                last_frame: self.frame,
+            },
+        );
         Some((rect, true))
     }
 
@@ -208,7 +220,13 @@ impl TextureAtlas {
             return Some((entry.uv, false));
         }
         let rect = self.allocate(width, height)?;
-        self.emoji_cache.insert(emoji_key, AtlasEntry { uv: rect, last_frame: self.frame });
+        self.emoji_cache.insert(
+            emoji_key,
+            AtlasEntry {
+                uv: rect,
+                last_frame: self.frame,
+            },
+        );
         Some((rect, true))
     }
 
@@ -449,7 +467,10 @@ impl TextureAtlas {
         let mut ver = [0u8];
         r.read_exact(&mut ver)?;
         if ver[0] != 1 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported version"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unsupported version",
+            ));
         }
         let saved_size = read_u32(&mut r)?;
         if saved_size != self.atlas_size {
@@ -470,7 +491,13 @@ impl TextureAtlas {
             let font_size_bits = read_u32(&mut r)?;
             let mut flags = [0u8; 3];
             r.read_exact(&mut flags)?;
-            let key = GlyphKey { ch, font_size_bits, bold: flags[0] != 0, italic: flags[1] != 0, font_index: flags[2] };
+            let key = GlyphKey {
+                ch,
+                font_size_bits,
+                bold: flags[0] != 0,
+                italic: flags[1] != 0,
+                font_index: flags[2],
+            };
             let gw = read_u32(&mut r)?;
             let gh = read_u32(&mut r)?;
             let rgba = read_bytes(&mut r)?;
@@ -491,7 +518,13 @@ impl TextureAtlas {
             let font_size_bits = read_u32(&mut r)?;
             let mut flags = [0u8; 3];
             r.read_exact(&mut flags)?;
-            let key = ShapedGlyphKey { glyph_id, font_size_bits, bold: flags[0] != 0, italic: flags[1] != 0, font_index: flags[2] };
+            let key = ShapedGlyphKey {
+                glyph_id,
+                font_size_bits,
+                bold: flags[0] != 0,
+                italic: flags[1] != 0,
+                font_index: flags[2],
+            };
             let gw = read_u32(&mut r)?;
             let gh = read_u32(&mut r)?;
             let rgba = read_bytes(&mut r)?;
@@ -666,7 +699,9 @@ mod tests {
 
         // Age both past eviction threshold then compact
         atlas.frame = EVICTION_AGE + 10;
-        let metrics = atlas.try_evict_and_compact().expect("should compact non-empty atlas");
+        let metrics = atlas
+            .try_evict_and_compact()
+            .expect("should compact non-empty atlas");
 
         // Cursor reset
         assert_eq!(atlas.x_offset, 0);
@@ -711,7 +746,10 @@ mod tests {
         // Cache must still be cleared to prevent UV corruption
         assert_eq!(atlas.cache.len(), 0);
         let (_, is_new_after) = atlas.get_or_insert(key_a, 32, 32).unwrap();
-        assert!(is_new_after, "key_a needs re-upload even though it was recent");
+        assert!(
+            is_new_after,
+            "key_a needs re-upload even though it was recent"
+        );
     }
 
     #[test]

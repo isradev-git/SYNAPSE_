@@ -328,7 +328,9 @@ fn tool_installed(tool: &Tool) -> bool {
     if !tool.binary.is_empty() && bin_exists(tool.binary) {
         return true;
     }
-    tool.check_paths.iter().any(|p| std::path::Path::new(p).exists())
+    tool.check_paths
+        .iter()
+        .any(|p| std::path::Path::new(p).exists())
 }
 
 fn run_install(pm: &Pm, pkgs: &[&str]) {
@@ -339,10 +341,7 @@ fn run_install(pm: &Pm, pkgs: &[&str]) {
     println!("\n{D}  ▸ Installing: {M}{pkg_list}{RST}\n");
 
     let status = match pm {
-        Pm::Brew => Command::new("brew")
-            .arg("install")
-            .args(pkgs)
-            .status(),
+        Pm::Brew => Command::new("brew").arg("install").args(pkgs).status(),
         Pm::Apt => Command::new("sudo")
             .args(["apt", "install", "-y"])
             .args(pkgs)
@@ -360,7 +359,10 @@ fn run_install(pm: &Pm, pkgs: &[&str]) {
 
     match status {
         Ok(s) if s.success() => println!("\n{G}  ✓ Installed successfully.{RST}"),
-        Ok(s) => println!("\n{R}  ✗ Install exited with code {}.{RST}", s.code().unwrap_or(-1)),
+        Ok(s) => println!(
+            "\n{R}  ✗ Install exited with code {}.{RST}",
+            s.code().unwrap_or(-1)
+        ),
         Err(e) => println!("\n{R}  ✗ Failed to run installer: {e}{RST}"),
     }
 }
@@ -399,7 +401,10 @@ pub fn install_recommended_tools() {
 
     println!("{M}{B}  Missing tools:{RST}");
     for t in &missing {
-        println!("    {R}·{RST}  {M}{:<28}{RST}{D}{}{RST}", t.name, t.description);
+        println!(
+            "    {R}·{RST}  {M}{:<28}{RST}{D}{}{RST}",
+            t.name, t.description
+        );
     }
     println!();
 

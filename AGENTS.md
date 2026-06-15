@@ -124,13 +124,6 @@ cargo watch -x test                          # hot-reload tests
 WINIT_UNIX_BACKEND=x11 ./target/debug/synapse_ # forzar X11 (WSLg workaround)
 ```
 
-## Cross-compilation (solo referencia, no soportado)
-
-```sh
-cargo install cargo-xwin
-cargo xwin build --release -p SYNAPSE_-app --target x86_64-pc-windows-msvc
-```
-
 ## Benchmarking
 
 ```sh

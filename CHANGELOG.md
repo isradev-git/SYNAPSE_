@@ -7,50 +7,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Pending / Roadmap
 
-### App Icons
-- **Status:** not started
-- **Needs:** source PNG 1024×1024 (cyberpunk design, `#0A0C14` bg, `#FF003C` accent)
-- **macOS:** convert to `.icns` via `iconutil`, embed in `.app` bundle `Info.plist`
-- **Linux:** 256×256 PNG at `assets/icon.png`, loaded at runtime via `window.set_window_icon()`
-- **Windows:** `.ico` via ImageMagick (deferred — Windows not an active target)
-- **Code:** `build.rs` + `app.rs` `set_window_icon()` call — no code written yet
-
-### Screenshots in README
-- **Status:** not started
-- **Needs:** run `cargo run -p SYNAPSE_-app`, capture screenshots showing:
-  - Main terminal with cyberpunk theme
-  - Split panes
-  - Search bar with regex active
-  - Animated GIF playback
-  - Command palette
-- Add images to `assets/screenshots/` and reference in `README.md`
-
-### Variable Fonts / OpenType Features (optional)
-- **Status:** not started
-- Ligature support, stylistic sets, font weight variation via OpenType feature tags
-- Requires `rustybuzz` or `harfbuzz-sys` for full OT shaping pipeline
+Optional, post-1.0 nice-to-haves:
+- **Screenshots in README** — capture the cyberpunk theme, splits, search regex, GIF playback and command palette into `assets/screenshots/` (needs a display).
+- **Variable fonts / OpenType features** — stylistic sets and weight axes via OT feature tags.
+- **Kitty graphics** — `t=s` (shared memory) and `U=1` (unicode placeholders).
+- **BiDi** — visual-order selection/copy (currently logical order).
 
 ---
 
-## [Unreleased]
+## [1.0.0] — 2026-06-15
+
+First stable release. Native on **macOS · Linux · Raspberry Pi 4/5**.
 
 ### Added
-- **Animated GIF/APNG playback** via iTerm2 OSC 1337 protocol. Frames decoded with `image::codecs::gif::GifDecoder`, per-frame GPU texture re-upload, per-image `AnimState` tracking delays. Static images unaffected.
-- **Search regex toggle** — `Ctrl+/` (or `Alt+R`) switches between literal and regex search inside the search bar. Right-side `[re]` indicator: dim = off, accent = active, red = invalid pattern.
-- **Multi-window support** — launching a second `synapse_` process delegates to the existing instance via IPC. `--new-window` flag forces a fresh window. Single IPC server per user session.
-- **Linux window blur (full)** — `window_blur = true` sets `_KDE_NET_WM_BLUR_BEHIND_REGION` on X11 (KDE Plasma, picom) and calls `window.set_blur(true)` on Wayland (delegates to `org_kde_kwin_blur_manager` via winit — KWin/KDE Plasma). Zero extra dependencies.
-- **Neuromancer boot screen** — startup animation completely rebuilt: hex data rain, dual CRT scan lines, segmented vertical rails, character-by-character glitch title reveal, block progress bar (`[████░░░]  42%`), blinking cursor on status line, sequential module scan list, `NEURAL SYSTEMS CORP · 2049` footer. Duration extended to 3.5 s.
-- **Tab profiles** — `[[tab_profile]]` TOML blocks define named sessions with preset shell, cwd and environment variables. Profiles appear in the command palette (type "Profile:") and can be bound to keybinds via `open_tab_profile`.
-- **Warm glyph atlas** — atlas is serialised to `~/.cache/SYNAPSE_/glyph_atlas.bin` on shutdown and reloaded on startup, eliminating per-session cold-render for common glyphs (~50ms startup improvement).
+- **Procedural app icon** — neon `>_` prompt drawn at runtime (no asset dependency), set as the window icon. Export packaging PNGs with `--export-icon <path> [--icon-size N]`.
+- **BiDi / RTL text** — `unicode-bidi` visual reordering (UAX #9) with Arabic/Hebrew joining via rustybuzz. Gated on RTL codepoints so left-to-right text keeps the fast path. Requires an RTL-capable font in `font_family`.
+- **Documentation** — `INSTALL.md`, `CONFIGURATION.md`, `COMPATIBILITY.md`, `docs/BENCHMARKS.md`.
+- From the 0.2.x sprint: animated GIF/APNG playback (OSC 1337), search regex toggle (`Ctrl+/`), multi-window via IPC, Linux window blur, Neuromancer boot screen, tab profiles, warm glyph atlas.
 
 ### Changed
-- Search bar UI: regex indicator moved to right side (always visible), no longer shifts the query text area when toggled.
+- **Kitty graphics protocol — completed.** Chunked transmission (`m=1`) now preserves the image id and action across follow-up chunks, so `kitten icat` images display correctly; added zlib payloads (`o=z`) and file / temp-file media (`t=f` / `t=t`). Query responses were already handled in the reader thread.
+- Search bar regex indicator moved to the right side (always visible).
 
 ### Fixed
-- **Atlas LRU eviction** — compact now clears all glyph entries and resets the cursor instead of performing broken in-place relocation.
+- **Build fix** — `raw-window-handle` API drift: `XlibWindowHandle.window` is now a `u64` (the Linux `window_blur` path failed to compile).
+- **Atlas LRU eviction** — `compact` now clears all glyph entries and resets the cursor instead of a broken in-place relocation.
 
 ### Performance
-- **Damage tracking** — GPU atlas rebuild skipped when PTY fires but the terminal grid reports no changed cells. Reduces CPU/GPU load during idle or light-output sessions.
+- **Terminal responses sent synchronously** — DSR/device-attribute replies are written from the reader thread immediately instead of being deferred to the main thread's per-frame event drain, removing up to a frame of latency for apps that block on the reply (vim, tmux).
+- **Event channel is now unbounded** — terminal events (incl. response writes) are never silently dropped under bursts.
+- **Quieter logging** — default log filter is `warn` (our crates `info`); the per-frame wgpu device-maintain spam and per-second FPS line no longer flood the console (FPS only logs with the profiler overlay).
+- **Damage tracking** — GPU atlas rebuild skipped when the PTY fires but the terminal grid reports no changed cells. Reduces CPU/GPU load during idle or light-output sessions.
 
 ---
 

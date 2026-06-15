@@ -11,7 +11,7 @@ pub fn apply_window_blur(window: &winit::window::Window) {
     };
 
     match handle.as_raw() {
-        RawWindowHandle::Xlib(h) => set_kde_blur_x11(h.window.get()),
+        RawWindowHandle::Xlib(h) => set_kde_blur_x11(h.window),
         RawWindowHandle::Xcb(h) => set_kde_blur_x11(h.window.get() as u64),
         RawWindowHandle::Wayland(_) => {
             // winit delegates to org_kde_kwin_blur_manager when available (KDE Plasma/KWin).
@@ -28,7 +28,7 @@ pub fn apply_window_blur(window: &winit::window::Window) {
 /// and picom/compton both honour.
 #[cfg(target_os = "linux")]
 fn set_kde_blur_x11(window_xid: u64) {
-    use x11_dl::xlib::{Xlib, XA_CARDINAL, PropModeReplace};
+    use x11_dl::xlib::{PropModeReplace, Xlib, XA_CARDINAL};
 
     let xlib = match Xlib::open() {
         Ok(x) => x,
@@ -48,7 +48,7 @@ fn set_kde_blur_x11(window_xid: u64) {
 
         let atom = (xlib.XInternAtom)(
             display,
-            b"_KDE_NET_WM_BLUR_BEHIND_REGION\0".as_ptr() as *const _,
+            c"_KDE_NET_WM_BLUR_BEHIND_REGION".as_ptr(),
             0, // create atom if it doesn't exist
         );
 

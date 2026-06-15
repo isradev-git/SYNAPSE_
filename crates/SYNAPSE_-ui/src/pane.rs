@@ -45,18 +45,37 @@ pub struct SemanticMark {
 
 #[derive(Clone)]
 pub struct EventProxy {
-    sender: mpsc::SyncSender<Event>,
+    sender: mpsc::Sender<Event>,
+    pty_writer: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
 impl EventProxy {
-    pub fn new(sender: mpsc::SyncSender<Event>) -> Self {
-        Self { sender }
+    pub fn new(sender: mpsc::Sender<Event>, pty_writer: Arc<Mutex<Box<dyn Write + Send>>>) -> Self {
+        Self { sender, pty_writer }
     }
 }
 
 impl EventListener for EventProxy {
     fn send_event(&self, event: Event) {
-        let _ = self.sender.try_send(event);
+        // Terminal query responses (DSR cursor position, device attributes, …)
+        // must reach the PTY *immediately*. send_event runs on the reader thread
+        // (inside `term.advance`), so write these synchronously rather than
+        // deferring to the main thread's per-frame event drain — apps that block
+        // waiting for the reply (vim/tmux query the cursor position) would
+        // otherwise stall up to a frame on every query.
+        //
+        // Lock order here is term → pty_writer, matching the reader thread's
+        // existing KKP/DECRQM responses, so this cannot deadlock.
+        if let Event::PtyWrite(s) = &event {
+            if let Ok(mut w) = self.pty_writer.lock() {
+                let _ = w.write_all(s.as_bytes());
+                let _ = w.flush();
+            }
+            return;
+        }
+        // All other events are non-urgent: hand off to the main thread. Unbounded
+        // and non-blocking so the reader thread never stalls holding the Term lock.
+        let _ = self.sender.send(event);
     }
 }
 

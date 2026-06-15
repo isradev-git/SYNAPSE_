@@ -355,7 +355,7 @@ PTY (portable-pty) → reader thread → mpsc channel
 cargo build -p SYNAPSE_-app              # debug build
 cargo run -p SYNAPSE_-app                # run
 cargo build --release -p SYNAPSE_-app    # release (thin LTO)
-cargo test --workspace                   # all 303 tests
+cargo test --workspace                   # all 353 tests
 cargo fmt --all -- --check               # format check
 cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings = errors)
 ```
@@ -364,17 +364,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for platform setup, code conventions, and
 
 ---
 
+## Documentation
+
+| Doc | Contents |
+|-----|----------|
+| [INSTALL.md](INSTALL.md) | Build from source (macOS / Linux / Raspberry Pi), packaging |
+| [CONFIGURATION.md](CONFIGURATION.md) | Every `config.toml` option with defaults |
+| [COMPATIBILITY.md](COMPATIBILITY.md) | Platform matrix, escape sequences, graphics protocols |
+| [KEYBINDS.md](KEYBINDS.md) | Complete keybinding reference |
+| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Performance targets + how to measure |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
+
+---
+
 ## Roadmap
 
-Active development. Next milestones:
-
-- **`window_blur`** — OS-native window blur (macOS `NSVisualEffectView` / Linux `_NET_WM_BLUR_BEHIND`)
-- **IPC daemon socket** — `synapse_ --new-tab`, `synapse_ list`, Neovim/script integration
-- **SSH profiles** — `[[ssh_profile]]` in TOML: host, user, identity file, port
-- **App icons** — `.icns` (macOS), 512px PNG (Linux/freedesktop)
-- **BiDi/RTL** — `unicode-bidi` for Hebrew/Arabic support
-
-See [docs/PENDIENTES.md](docs/PENDIENTES.md) for the full gap analysis.
+v1.0 ships native **macOS · Linux · Raspberry Pi 4/5** with window blur, IPC daemon,
+SSH/tab profiles, app icon, BiDi/RTL shaping and a complete Kitty graphics
+implementation. See [CHANGELOG.md](CHANGELOG.md) for the full history and
+[docs/PENDIENTES.md](docs/PENDIENTES.md) for remaining nice-to-haves
+(Kitty shared-memory & unicode placeholders, visual-order BiDi selection).
+Windows is not supported.
 
 ---
 

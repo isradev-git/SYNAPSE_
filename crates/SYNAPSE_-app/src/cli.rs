@@ -36,6 +36,14 @@ pub struct Cli {
     #[arg(long = "check-update")]
     pub check_update: bool,
 
+    /// Render the app icon to a PNG at the given path and exit (for packaging).
+    #[arg(long = "export-icon", value_name = "PATH")]
+    pub export_icon: Option<String>,
+
+    /// Icon size in pixels for --export-icon (default 256).
+    #[arg(long = "icon-size", default_value_t = 256)]
+    pub icon_size: u32,
+
     #[command(subcommand)]
     pub subcommand: Option<IpcSubcmd>,
 }

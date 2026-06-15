@@ -103,8 +103,9 @@ pub fn spawn_overlay_command(tx: mpsc::Sender<OverlayEvent>, title: String, shel
     thread::Builder::new()
         .name("synapse-plugin-overlay".into())
         .spawn(move || {
-            let child = Command::new("sh")
-                .arg("-c")
+            let (runner, run_flag) = crate::shell::command_runner();
+            let child = Command::new(runner)
+                .arg(run_flag)
                 .arg(&shell_cmd)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -167,8 +168,9 @@ pub fn run_replace_selection(
 ) -> Result<String, String> {
     let cmd_str = resolve_plugin_command(command, cwd, selected_text, clipboard_text);
 
-    let mut child = Command::new("sh")
-        .arg("-c")
+    let (runner, run_flag) = crate::shell::command_runner();
+    let mut child = Command::new(runner)
+        .arg(run_flag)
         .arg(&cmd_str)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
