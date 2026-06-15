@@ -117,6 +117,12 @@ Antes de los gaps, lista de lo que realmente funciona para evitar reimplementar:
 - `max_image_cache_mb` (default 64): presupuesto de RAM para imágenes Kitty/Sixel/iTerm2; LRU eviction por bytes con `ImageStore::with_max_bytes()`.
 - Warm cache capped a `MAX_WARM_ENTRIES = 2048` entradas (previene crecimiento ilimitado).
 
+### ~~P-014 · Crash reporter~~ ✅ IMPLEMENTADO
+- `write_crash_log()` en `main.rs`: hook de panic escribe `~/.cache/SYNAPSE_/crash-<ts>.log`.
+- Incluye: timestamp UNIX, mensaje de pánico, ubicación (archivo:línea), versión, backtrace forzado.
+- Ruta impresa en stderr: `Crash log: /path/to/crash-<ts>.log`.
+- Sin deps nuevas — reutiliza `session::session_cache_dir()` ya existente.
+
 ---
 
 ## 6. Assets y documentación faltante

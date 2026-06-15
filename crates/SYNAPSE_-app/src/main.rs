@@ -55,6 +55,7 @@ fn main() {
             .unwrap_or_default();
         tracing::error!("PANIC: {} at {}", payload, location);
         eprintln!("SYNAPSE_ crashed:\n{}\n\nLocation: {}", payload, location);
+        write_crash_log(&payload, &location);
     }));
 
     if let Err(e) = try_main() {
@@ -120,6 +121,33 @@ fn try_delegate_to_existing(cli: &cli::Cli) -> bool {
             true
         }
         Err(_) => false, // No existing instance — start normally.
+    }
+}
+
+fn write_crash_log(payload: &str, location: &str) {
+    use std::fmt::Write as _;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let backtrace = std::backtrace::Backtrace::force_capture();
+
+    let mut report = String::new();
+    let _ = writeln!(report, "SYNAPSE_ crash report — {ts}");
+    let _ = writeln!(report, "panic: {payload}");
+    let _ = writeln!(report, "location: {location}");
+    let _ = writeln!(report, "version: {}", env!("CARGO_PKG_VERSION"));
+    let _ = writeln!(report, "\n{backtrace}");
+
+    let cache_dir = session::session_cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/SYNAPSE_"));
+    let _ = std::fs::create_dir_all(&cache_dir);
+    let path = cache_dir.join(format!("crash-{ts}.log"));
+    if std::fs::write(&path, &report).is_ok() {
+        eprintln!("Crash log: {}", path.display());
     }
 }
 
