@@ -900,21 +900,17 @@ pub fn handle_keyboard(
                 Some(Action::Paste) => {
                     if let Some(ref mut clip) = clipboard {
                         if let Ok(text) = clip.get_text() {
+                            let safe = sanitize_paste(&text);
                             let bracketed = {
                                 let pane = active_pane_mut(panes, tab_bar);
                                 bracketed_paste_active(pane)
                             };
                             if bracketed {
                                 write_to_panes(panes, tab_bar, state.broadcasting, b"\x1b[200~");
-                                write_to_panes(
-                                    panes,
-                                    tab_bar,
-                                    state.broadcasting,
-                                    sanitize_paste(&text).as_bytes(),
-                                );
+                                write_to_panes(panes, tab_bar, state.broadcasting, safe.as_bytes());
                                 write_to_panes(panes, tab_bar, state.broadcasting, b"\x1b[201~");
                             } else {
-                                write_to_panes(panes, tab_bar, state.broadcasting, text.as_bytes());
+                                write_to_panes(panes, tab_bar, state.broadcasting, safe.as_bytes());
                             }
                         }
                     }
@@ -1254,21 +1250,17 @@ pub fn handle_keyboard(
                 if !is_repeat {
                     if let Some(ref mut clip) = clipboard {
                         if let Ok(text) = clip.get_text() {
+                            let safe = sanitize_paste(&text);
                             let bracketed = {
                                 let pane = active_pane_mut(panes, tab_bar);
                                 bracketed_paste_active(pane)
                             };
                             if bracketed {
                                 write_to_panes(panes, tab_bar, state.broadcasting, b"\x1b[200~");
-                                write_to_panes(
-                                    panes,
-                                    tab_bar,
-                                    state.broadcasting,
-                                    sanitize_paste(&text).as_bytes(),
-                                );
+                                write_to_panes(panes, tab_bar, state.broadcasting, safe.as_bytes());
                                 write_to_panes(panes, tab_bar, state.broadcasting, b"\x1b[201~");
                             } else {
-                                write_to_panes(panes, tab_bar, state.broadcasting, text.as_bytes());
+                                write_to_panes(panes, tab_bar, state.broadcasting, safe.as_bytes());
                             }
                         }
                     }
@@ -1562,14 +1554,15 @@ fn dispatch_action(
         Action::Paste => {
             if let Some(ref mut clip) = clipboard {
                 if let Ok(text) = clip.get_text() {
+                    let safe = sanitize_paste(&text);
                     let pane = active_pane_mut(panes, tab_bar);
                     let bracketed = bracketed_paste_active(pane);
                     if bracketed {
                         pane.write_to_pty(b"\x1b[200~");
-                        pane.write_to_pty(sanitize_paste(&text).as_bytes());
+                        pane.write_to_pty(safe.as_bytes());
                         pane.write_to_pty(b"\x1b[201~");
                     } else {
-                        pane.write_to_pty(text.as_bytes());
+                        pane.write_to_pty(safe.as_bytes());
                     }
                 }
             }

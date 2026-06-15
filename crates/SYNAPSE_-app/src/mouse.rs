@@ -367,10 +367,12 @@ pub fn handle_mouse_button(
                     }
                     // Only drag-extend on single click; double/triple selects word/line immediately.
                     state.selecting = click == 1;
+                    state.selection_started = false;
                 }
             }
             ElementState::Released => {
                 state.selecting = false;
+                state.selection_started = false;
                 state.dragging_divider = None;
                 state.scrollbar_drag = None;
             }
@@ -499,6 +501,7 @@ pub fn handle_cursor_moved(
     }
 
     if state.selecting {
+        state.selection_started = true;
         let x = state.cursor_x;
         let y = state.cursor_y;
         if let Some((col, row)) = cursor_to_pane_cell(x, y, tab_bar, layout, cell_w, cell_h, margin)
@@ -629,7 +632,8 @@ impl AppCore {
             }
         }
 
-        let was_selecting = self.state.selecting;
+        // Track whether a drag-selection was in progress before the free function clears it.
+        let was_drag_selecting = self.state.selecting && self.state.selection_started;
         let scrollback_lines = self.state.config.effective_scrollback();
         let (tab_bar, panes, _) = self.workspaces.active_split_mut();
         handle_mouse_button(
@@ -649,25 +653,57 @@ impl AppCore {
             self.workspaces.active_tab_bar(),
             self.state.config.freeze_background_tabs,
         );
-        // Auto-copy: copy selection to clipboard on release after any selection
-        // (multi-click word/line or click-drag).
+
+        // Auto-copy on release: multi-click word/line selection or completed drag.
         if button == winit::event::MouseButton::Left
             && button_state == winit::event::ElementState::Released
-            && (self.state.click_count >= 2 || was_selecting)
+            && (self.state.click_count >= 2 || was_drag_selecting)
         {
             let active_id = self.workspaces.active_tab_bar().active_tab().active_pane;
-            if let Some(pane) = self
-                .workspaces
-                .active_panes()
-                .iter()
-                .find(|p| p.id == active_id)
-            {
+            if let Some(pane) = self.workspaces.active_panes().iter().find(|p| p.id == active_id) {
                 if let Ok(term) = pane.term.lock() {
                     if let Some(text) = term.selection_to_string() {
                         if !text.is_empty() {
                             if let Some(cb) = self.clipboard.as_mut() {
                                 let _ = cb.set_text(text);
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Right-click paste when not in mouse-reporting mode (reporting already handled above).
+        if button == winit::event::MouseButton::Right
+            && button_state == winit::event::ElementState::Released
+        {
+            let active_id = self.workspaces.active_tab_bar().active_tab().active_pane;
+            let shift = self.state.modifiers.shift_key();
+            let (mouse_active, _) = {
+                let (_, panes, _) = self.workspaces.active_split_mut();
+                active_pane_mouse_modes(panes, active_id)
+            };
+            if !mouse_active || shift {
+                let paste_text = self
+                    .clipboard
+                    .as_mut()
+                    .and_then(|cb| cb.get_text().ok())
+                    .filter(|t| !t.is_empty());
+                if let Some(text) = paste_text {
+                    let safe = crate::keyboard::sanitize_paste(&text);
+                    let (_, panes, _) = self.workspaces.active_split_mut();
+                    if let Some(pane) = panes.iter_mut().find(|p| p.id == active_id) {
+                        let bracketed = pane
+                            .term
+                            .lock()
+                            .map(|t| t.mode().contains(TermMode::BRACKETED_PASTE))
+                            .unwrap_or(false);
+                        if bracketed {
+                            pane.write_to_pty(b"\x1b[200~");
+                            pane.write_to_pty(safe.as_bytes());
+                            pane.write_to_pty(b"\x1b[201~");
+                        } else {
+                            pane.write_to_pty(safe.as_bytes());
                         }
                     }
                 }

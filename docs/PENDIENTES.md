@@ -102,7 +102,7 @@ Antes de los gaps, lista de lo que realmente funciona para evitar reimplementar:
 ### ~~P-011 · Kitty graphics protocol — completitud~~ ✅ IMPLEMENTADO (v1.0)
 - Chunked transmission (`m=1`) ahora preserva id + acción en chunks siguientes (icat muestra imágenes).
 - Compresión `o=z` (zlib vía flate2), medios `t=f`/`t=t` (file/temp). Query ya respondía en reader thread.
-- Pendiente menor: `t=s` (shared memory), `U=1` (unicode placeholders).
+- `t=s` (shared memory) y `U=1` (unicode placeholders) descartados — uso marginal.
 
 ---
 
