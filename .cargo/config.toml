@@ -4,5 +4,22 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
+# ── x86-64 Linux: use mold for faster linking ──────────────────────────────
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+# ── Raspberry Pi 4/5 — cross-compilation from x86 host ─────────────────────
+# Cross: cargo build --release --target aarch64-unknown-linux-gnu
+# Native on Pi (best): RUSTFLAGS="-C target-cpu=native" cargo build --release
+[target.aarch64-unknown-linux-gnu]
+rustflags = [
+    "-C", "target-cpu=cortex-a72",
+    "-C", "target-feature=+neon,+crc,+fp16",
+]
+
+# Static musl binary for Pi (no dynamic libc deps)
+[target.aarch64-unknown-linux-musl]
+rustflags = [
+    "-C", "target-cpu=cortex-a72",
+    "-C", "target-feature=+neon,+crc,+fp16",
+]

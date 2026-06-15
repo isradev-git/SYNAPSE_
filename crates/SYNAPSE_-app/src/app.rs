@@ -417,7 +417,14 @@ impl AppCore {
             (window, None)
         };
         let mut renderer =
-            Renderer::new(window.clone(), &config.font_family).expect("Renderer init failed");
+            Renderer::new(
+                window.clone(),
+                &config.font_family,
+                &config.font_features,
+                config.font_weight,
+                config.low_memory_mode,
+            )
+            .expect("Renderer init failed");
 
         if let Some(path) = session::session_cache_dir().map(|d| d.join("glyph_atlas.bin")) {
             renderer.load_warm_cache(&path);
@@ -479,13 +486,13 @@ impl AppCore {
             } else {
                 session::named_session_path(name)
             };
-            try_restore_session(&path, cols, rows, config.scrollback_lines)
+            try_restore_session(&path, cols, rows, config.effective_scrollback())
         } else if config.restore_session {
             try_restore_session(
                 &session::default_session_path(),
                 cols,
                 rows,
-                config.scrollback_lines,
+                config.effective_scrollback(),
             )
         } else {
             (None, None)
@@ -541,7 +548,7 @@ impl AppCore {
                     cwd,
                     shell_override.as_deref(),
                     &shell_args_vec,
-                    config.scrollback_lines,
+                    config.effective_scrollback(),
                 )
                 .expect("Pane creation failed");
                 let first_tab = Tab::new(first_tab_id, first_pane_id);
@@ -561,7 +568,7 @@ impl AppCore {
                 None,
                 Some(&shell),
                 &["-c".to_string(), new_tab_cmd.clone()],
-                config.scrollback_lines,
+                config.effective_scrollback(),
             ) {
                 Ok(pane) => {
                     ws.panes.push(pane);
@@ -650,7 +657,9 @@ impl AppCore {
             }
         }
 
-        let mut image_store = ImageStore::new();
+        let mut image_store = ImageStore::with_max_bytes(
+            state.config.max_image_cache_mb.max(1) * 1024 * 1024,
+        );
         if let Some(ref bg_path) = state.config.background_image {
             if let Some((w, h, rgba)) = crate::image_protocol::load_background_image(
                 bg_path,
@@ -712,7 +721,7 @@ impl AppCore {
             h: pane_area.3,
         };
         let (margin, cell_w, cell_h) = (self.margin, self.cell_w, self.cell_h);
-        let scrollback_lines = self.state.config.scrollback_lines;
+        let scrollback_lines = self.state.config.effective_scrollback();
 
         // Resize panes across ALL tabs — background tabs keep correct PTY dimensions.
         let all_layouts: Vec<(PaneId, synapse_ui::PaneRect)> = self
@@ -890,7 +899,7 @@ impl AppCore {
                         .find(|p| p.id == tab.active_pane)
                         .map_or(24, |p| p.rows)
                 };
-                let scrollback = self.state.config.scrollback_lines;
+                let scrollback = self.state.config.effective_scrollback();
                 let shell = crate::shell::default_shell();
                 let (shell_path, shell_args): (String, Vec<String>) = match command {
                     Some(cmd) => (shell.clone(), vec!["-c".to_string(), cmd]),

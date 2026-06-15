@@ -293,12 +293,31 @@ impl FontFamily {
 
 pub struct TextShaping {
     families: Vec<FontFamily>,
+    extra_features: Vec<rustybuzz::Feature>,
+}
+
+/// Returns true when `bytes` is an OpenType variable font (has an `fvar` table).
+fn is_variable_font(bytes: &[u8]) -> bool {
+    ttf_parser::Face::parse(bytes, 0)
+        .map(|f| !f.variation_axes().is_empty())
+        .unwrap_or(false)
+}
+
+/// Apply the `wght` (weight) variation axis to a rustybuzz face.
+/// Uses `set_variations` (rustybuzz 0.14 API) and `rustybuzz::Variation`
+/// parsed from a string to stay in the correct ttf-parser version domain.
+/// Silently ignored for static fonts (the axis simply won't be present).
+fn apply_wght(face: &mut rustybuzz::Face<'_>, weight: u16) {
+    if let Ok(v) = format!("wght={weight}").parse::<rustybuzz::Variation>() {
+        face.set_variations(&[v]);
+    }
 }
 
 impl TextShaping {
     pub fn new() -> Self {
         Self {
             families: vec![Self::embedded_family()],
+            extra_features: Vec::new(),
         }
     }
 
@@ -307,6 +326,22 @@ impl TextShaping {
     }
 
     pub fn with_families(families: &[String]) -> Self {
+        Self::with_families_and_settings(families, &[], 400)
+    }
+
+    /// Primary constructor. `font_features` is a list of HarfBuzz feature
+    /// strings (e.g. `"ss01"`, `"zero"`, `"-liga"`). `font_weight` sets the
+    /// `wght` axis (100–900) on variable fonts; has no effect on static fonts.
+    pub fn with_families_and_settings(
+        families: &[String],
+        font_features: &[String],
+        font_weight: u16,
+    ) -> Self {
+        let extra_features: Vec<rustybuzz::Feature> = font_features
+            .iter()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+
         let mut loaded: Vec<FontFamily> = Vec::with_capacity(families.len());
 
         for (idx, family) in families.iter().enumerate() {
@@ -323,7 +358,7 @@ impl TextShaping {
             match find_font_bytes(&key) {
                 Some((reg, bold, italic)) => {
                     tracing::info!("Loaded font family '{family}' from system");
-                    loaded.push(Self::own_family(reg, bold, italic));
+                    loaded.push(Self::own_family(reg, bold, italic, font_weight));
                 }
                 None => {
                     if idx == 0 {
@@ -342,7 +377,10 @@ impl TextShaping {
             loaded.push(Self::embedded_family());
         }
 
-        Self { families: loaded }
+        Self {
+            families: loaded,
+            extra_features,
+        }
     }
 
     fn embedded_family() -> FontFamily {
@@ -364,20 +402,42 @@ impl TextShaping {
         }
     }
 
-    fn own_family(reg: Vec<u8>, bold: Vec<u8>, italic: Vec<u8>) -> FontFamily {
+    fn own_family(reg: Vec<u8>, bold: Vec<u8>, italic: Vec<u8>, weight: u16) -> FontFamily {
         let reg: &'static [u8] = Box::leak(reg.into_boxed_slice());
         let bold: &'static [u8] = Box::leak(bold.into_boxed_slice());
         let italic: &'static [u8] = Box::leak(italic.into_boxed_slice());
         let settings = fontdue::FontSettings::default();
+
+        let mut rb_regular = rustybuzz::Face::from_slice(reg, 0)
+            .expect("rustybuzz: font Regular invalid");
+        let mut rb_bold = rustybuzz::Face::from_slice(bold, 0)
+            .expect("rustybuzz: font Bold invalid");
+        let rb_italic = rustybuzz::Face::from_slice(italic, 0)
+            .expect("rustybuzz: font Italic invalid");
+
+        // Apply weight variation axis when the font supports it.
+        // `set_variation` is a no-op (returns false) on static fonts, so it is
+        // safe to call unconditionally — but we gate on is_variable_font to
+        // emit the log only once, avoiding per-font spam.
+        if is_variable_font(reg) {
+            apply_wght(&mut rb_regular, weight);
+            let bold_weight = (weight as u32 + 300).min(900) as u16;
+            apply_wght(&mut rb_bold, bold_weight);
+            tracing::info!(
+                "Variable font: wght axis applied (regular={weight}, bold={bold_weight})"
+            );
+        } else if is_variable_font(bold) {
+            let bold_weight = (weight as u32 + 300).min(900) as u16;
+            apply_wght(&mut rb_bold, bold_weight);
+        }
+
         FontFamily {
             regular: fontdue::Font::from_bytes(reg, settings).expect("font Regular bytes invalid"),
             bold: fontdue::Font::from_bytes(bold, settings).expect("font Bold bytes invalid"),
             italic: fontdue::Font::from_bytes(italic, settings).expect("font Italic bytes invalid"),
-            rb_regular: rustybuzz::Face::from_slice(reg, 0)
-                .expect("rustybuzz: font Regular invalid"),
-            rb_bold: rustybuzz::Face::from_slice(bold, 0).expect("rustybuzz: font Bold invalid"),
-            rb_italic: rustybuzz::Face::from_slice(italic, 0)
-                .expect("rustybuzz: font Italic invalid"),
+            rb_regular,
+            rb_bold,
+            rb_italic,
             font_data: reg,
         }
     }
@@ -488,10 +548,11 @@ impl TextShaping {
             buffer.set_direction(rustybuzz::Direction::LeftToRight);
         }
 
-        let features: Vec<rustybuzz::Feature> = ["calt", "liga", "clig"]
+        let mut features: Vec<rustybuzz::Feature> = ["calt", "liga", "clig"]
             .iter()
             .filter_map(|s| s.parse().ok())
             .collect();
+        features.extend_from_slice(&self.extra_features);
         let output = rustybuzz::shape(face, &features, buffer);
 
         let info = output.glyph_infos();
@@ -666,6 +727,12 @@ impl TextShaping {
 impl Default for TextShaping {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl TextShaping {
+    pub fn extra_feature_count(&self) -> usize {
+        self.extra_features.len()
     }
 }
 
@@ -849,5 +916,49 @@ mod tests {
         for g in &glyphs {
             assert_eq!(g.font_index, 0);
         }
+    }
+
+    #[test]
+    fn jetbrains_mono_is_not_variable() {
+        assert!(
+            !is_variable_font(JETBRAINS_MONO_REGULAR),
+            "JetBrains Mono Regular is a static font"
+        );
+        assert!(
+            !is_variable_font(JETBRAINS_MONO_BOLD),
+            "JetBrains Mono Bold is a static font"
+        );
+    }
+
+    #[test]
+    fn extra_features_parsed_from_valid_strings() {
+        let shaping = TextShaping::with_families_and_settings(
+            &["JetBrains Mono".to_string()],
+            &["ss01".to_string(), "zero".to_string()],
+            400,
+        );
+        assert_eq!(shaping.extra_feature_count(), 2);
+    }
+
+    #[test]
+    fn invalid_feature_strings_are_silently_ignored() {
+        let shaping = TextShaping::with_families_and_settings(
+            &["JetBrains Mono".to_string()],
+            &["!!!invalid!!!".to_string()],
+            400,
+        );
+        assert_eq!(shaping.extra_feature_count(), 0);
+    }
+
+    #[test]
+    fn no_extra_features_by_default() {
+        let shaping = TextShaping::new();
+        assert_eq!(shaping.extra_feature_count(), 0);
+    }
+
+    #[test]
+    fn with_families_has_no_extra_features() {
+        let shaping = TextShaping::with_families(&["JetBrains Mono".to_string()]);
+        assert_eq!(shaping.extra_feature_count(), 0);
     }
 }

@@ -669,7 +669,7 @@ pub fn handle_keyboard(
                         None,
                         Some(shell),
                         args,
-                        state.config.scrollback_lines,
+                        state.config.effective_scrollback(),
                     ) {
                         Ok(pane) => panes.push(pane),
                         Err(e) => {
@@ -781,7 +781,7 @@ pub fn handle_keyboard(
                                 cwd_opt,
                                 Some(shell),
                                 args,
-                                state.config.scrollback_lines,
+                                state.config.effective_scrollback(),
                             ) {
                                 Ok(new_pane) => panes.push(new_pane),
                                 Err(e) => {
@@ -812,7 +812,7 @@ pub fn handle_keyboard(
                                 cwd_opt,
                                 Some(shell),
                                 args,
-                                state.config.scrollback_lines,
+                                state.config.effective_scrollback(),
                             ) {
                                 Ok(new_pane) => panes.push(new_pane),
                                 Err(e) => {
@@ -1036,7 +1036,7 @@ pub fn handle_keyboard(
                                 cwd_opt,
                                 Some(shell),
                                 args,
-                                state.config.scrollback_lines,
+                                state.config.effective_scrollback(),
                             ) {
                                 Ok(new_pane) => panes.push(new_pane),
                                 Err(e) => {
@@ -1326,7 +1326,7 @@ fn dispatch_action(
                 None,
                 Some(shell),
                 args,
-                state.config.scrollback_lines,
+                state.config.effective_scrollback(),
             ) {
                 Ok(pane) => panes.push(pane),
                 Err(e) => {
@@ -1382,7 +1382,7 @@ fn dispatch_action(
                         cwd_opt,
                         Some(shell),
                         args,
-                        state.config.scrollback_lines,
+                        state.config.effective_scrollback(),
                     ) {
                         Ok(new_pane) => panes.push(new_pane),
                         Err(e) => {
@@ -1413,7 +1413,7 @@ fn dispatch_action(
                         cwd_opt,
                         Some(shell),
                         args,
-                        state.config.scrollback_lines,
+                        state.config.effective_scrollback(),
                     ) {
                         Ok(new_pane) => panes.push(new_pane),
                         Err(e) => {
@@ -1458,7 +1458,7 @@ fn dispatch_action(
                             cwd_opt,
                             Some(shell),
                             args,
-                            state.config.scrollback_lines,
+                            state.config.effective_scrollback(),
                         ) {
                             Ok(new_pane) => panes.push(new_pane),
                             Err(e) => tracing::warn!("Failed to spawn PTY for auto split: {}", e),
@@ -1961,7 +1961,7 @@ impl AppCore {
                     new_rows,
                     &self.state.config.shell_program,
                     &self.state.config.shell_args,
-                    self.state.config.scrollback_lines,
+                    self.state.config.effective_scrollback(),
                 ) {
                     tracing::warn!("Failed to create workspace: {e}");
                 } else {
@@ -2075,7 +2075,7 @@ impl AppCore {
                 .find(|p| p.id == pane_id)
                 .map_or((80, 24), |p| (p.cols, p.rows))
         };
-        let scrollback = self.state.config.scrollback_lines;
+        let scrollback = self.state.config.effective_scrollback();
         let env_pairs: Vec<(String, String)> = profile
             .env
             .iter()
@@ -2126,7 +2126,7 @@ impl AppCore {
                 .find(|p| p.id == pane_id)
                 .map_or((80, 24), |p| (p.cols, p.rows))
         };
-        let scrollback = self.state.config.scrollback_lines;
+        let scrollback = self.state.config.effective_scrollback();
         let ws = self.workspaces.active_ws_mut();
         let (_tab_id, pane_id) = ws.tab_bar.new_tab();
         match crate::pane_ops::create_pane_full(
@@ -2340,7 +2340,7 @@ impl AppCore {
                 cwd,
                 Some(runner),
                 &shell_args,
-                self.state.config.scrollback_lines,
+                self.state.config.effective_scrollback(),
             ) {
                 Ok(pane) => panes.push(pane),
                 Err(e) => tracing::warn!("Plugin tab spawn failed: {}", e),
@@ -2365,7 +2365,7 @@ impl AppCore {
                     cwd,
                     Some(runner),
                     &shell_args,
-                    self.state.config.scrollback_lines,
+                    self.state.config.effective_scrollback(),
                 ) {
                     Ok(pane) => panes.push(pane),
                     Err(e) => tracing::warn!("Plugin split spawn failed: {}", e),

@@ -111,6 +111,12 @@ Antes de los gaps, lista de lo que realmente funciona para evitar reimplementar:
 ### ~~P-012 · Atlas warm entre sesiones~~ ✅ IMPLEMENTADO
 - `atlas.rs`: `save_warm_cache()` / `load_and_warm()`. Path: `~/.cache/SYNAPSE_/glyph_atlas.bin`. Guarda en graceful shutdown, carga en startup.
 
+### ~~P-013 · Optimización de RAM para sistemas con poca memoria~~ ✅ IMPLEMENTADO
+- Scrollback default: 100 000 → **10 000** líneas por pane (−90% RAM de scrollback).
+- `low_memory_mode = true`: scrollback efectivo capped a 5 000, atlas GPU 1024×1024 (−12 MB VRAM), warm cache desactivado.
+- `max_image_cache_mb` (default 64): presupuesto de RAM para imágenes Kitty/Sixel/iTerm2; LRU eviction por bytes con `ImageStore::with_max_bytes()`.
+- Warm cache capped a `MAX_WARM_ENTRIES = 2048` entradas (previene crecimiento ilimitado).
+
 ---
 
 ## 6. Assets y documentación faltante

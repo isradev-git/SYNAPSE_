@@ -39,7 +39,7 @@ All keys are optional; omitted keys fall back to the defaults below.
 |-----|------|---------|-------------|
 | `shell_program` | string | `""` | Override shell (empty = `$SHELL` / system default). |
 | `shell_args` | [string] | `[]` | Extra arguments passed to the shell. |
-| `scrollback_lines` | int | `100000` | Lines of scrollback per pane. |
+| `scrollback_lines` | int | `10000` | Lines of scrollback per pane. |
 | `shell_integration` | bool | `false` | Auto-install OSC 133/7 hooks (also via `--setup`). |
 | `persistent_history` | bool | `true` | Cross-session command history for autosuggestions. |
 | `history_max_entries` | int | `10000` | Cap on stored history entries. |
@@ -78,6 +78,8 @@ All keys are optional; omitted keys fall back to the defaults below.
 | `freeze_background_tabs` | bool | `true` | Pause rendering of inactive tabs. |
 | `reduce_motion` | bool | `false` | Disable animations (accessibility). |
 | `check_updates_on_startup` | bool | `false` | Background GitHub update check (needs `self-update` feature). |
+| `low_memory_mode` | bool | `false` | Constrained-RAM mode: caps scrollback at 5 000 lines, uses 1024×1024 glyph atlas (saves ~12 MB VRAM), disables cross-session glyph warm cache. Ideal for Pi 4 / VMs with ≤2 GB RAM. |
+| `max_image_cache_mb` | int | `64` | RAM budget (MB) for protocol images (Kitty / Sixel / iTerm2). Oldest images are evicted when the budget is exceeded. |
 
 ---
 

@@ -803,7 +803,7 @@ impl AppCore {
             h: pane_area.3,
         };
         let (margin, cell_w, cell_h) = (self.margin, self.cell_w, self.cell_h);
-        let scrollback_lines = self.state.config.scrollback_lines;
+        let scrollback_lines = self.state.config.effective_scrollback();
 
         // Resize panes across ALL tabs — background tabs keep correct PTY dimensions.
         let all_layouts: Vec<(synapse_ui::PaneId, synapse_ui::PaneRect)> = self

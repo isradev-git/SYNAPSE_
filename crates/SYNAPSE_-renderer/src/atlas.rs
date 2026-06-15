@@ -6,9 +6,12 @@ use crate::text::{GlyphKey, ShapedGlyphKey};
 
 /// Default atlas size when the GPU has no stricter limit.
 pub const ATLAS_SIZE: u32 = 2048;
-
+/// Atlas size cap in low-memory mode (saves 12 MB VRAM vs 2048).
+const ATLAS_SIZE_LOW_MEM: u32 = 1024;
 /// Entries not touched in this many frames are candidates for eviction.
 const EVICTION_AGE: u64 = 300;
+/// Maximum warm-cache entries kept in CPU RAM between frames.
+const MAX_WARM_ENTRIES: usize = 2048;
 
 #[derive(Debug, Clone, Copy)]
 pub struct UvRect {
@@ -42,6 +45,8 @@ pub struct TextureAtlas {
     warm_glyphs: HashMap<GlyphKey, (Vec<u8>, u32, u32)>,
     warm_shaped: HashMap<ShapedGlyphKey, (Vec<u8>, u32, u32)>,
     warm_emoji: HashMap<u32, (Vec<u8>, u32, u32)>,
+    /// When false (low_memory_mode), warm cache storage is skipped entirely.
+    warm_enabled: bool,
 }
 
 #[derive(Debug)]
@@ -52,8 +57,9 @@ pub struct EvictionMetrics {
 }
 
 impl TextureAtlas {
-    pub fn new(device: &wgpu::Device, max_texture_size: u32) -> Self {
-        let atlas_size = max_texture_size.clamp(512, ATLAS_SIZE);
+    pub fn new(device: &wgpu::Device, max_texture_size: u32, low_memory: bool) -> Self {
+        let cap = if low_memory { ATLAS_SIZE_LOW_MEM } else { ATLAS_SIZE };
+        let atlas_size = max_texture_size.clamp(512, cap);
         let size = wgpu::Extent3d {
             width: atlas_size,
             height: atlas_size,
@@ -138,6 +144,7 @@ impl TextureAtlas {
             warm_glyphs: HashMap::new(),
             warm_shaped: HashMap::new(),
             warm_emoji: HashMap::new(),
+            warm_enabled: !low_memory,
         }
     }
 
@@ -389,14 +396,23 @@ impl TextureAtlas {
     }
 
     pub fn store_warm(&mut self, key: GlyphKey, rgba: &[u8], w: u32, h: u32) {
+        if !self.warm_enabled || self.warm_glyphs.len() >= MAX_WARM_ENTRIES {
+            return;
+        }
         self.warm_glyphs.insert(key, (rgba.to_vec(), w, h));
     }
 
     pub fn store_warm_shaped(&mut self, key: ShapedGlyphKey, rgba: &[u8], w: u32, h: u32) {
+        if !self.warm_enabled || self.warm_shaped.len() >= MAX_WARM_ENTRIES {
+            return;
+        }
         self.warm_shaped.insert(key, (rgba.to_vec(), w, h));
     }
 
     pub fn store_warm_emoji(&mut self, key: u32, rgba: &[u8], w: u32, h: u32) {
+        if !self.warm_enabled || self.warm_emoji.len() >= MAX_WARM_ENTRIES {
+            return;
+        }
         self.warm_emoji.insert(key, (rgba.to_vec(), w, h));
     }
 
@@ -851,6 +867,7 @@ mod tests {
                 warm_glyphs: HashMap::new(),
                 warm_shaped: HashMap::new(),
                 warm_emoji: HashMap::new(),
+                warm_enabled: true,
             }
         }
     }

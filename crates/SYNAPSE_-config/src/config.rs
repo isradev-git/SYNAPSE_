@@ -235,6 +235,10 @@ pub struct Config {
     pub font_family: Vec<String>,
     #[serde(default = "default_true")]
     pub font_ligatures: bool,
+    #[serde(default)]
+    pub font_features: Vec<String>,
+    #[serde(default = "default_font_weight")]
+    pub font_weight: u16,
     #[serde(default = "default_window_width")]
     pub window_width: u32,
     #[serde(default = "default_window_height")]
@@ -321,6 +325,15 @@ pub struct Config {
     pub tab_profiles: Vec<TabProfile>,
     #[serde(default)]
     pub check_updates_on_startup: bool,
+    /// Reduce memory usage for constrained systems (Pi, VMs, old hardware).
+    /// Caps effective scrollback to 5 000 lines, uses a 1024×1024 glyph atlas,
+    /// and disables the cross-session glyph warm cache.
+    #[serde(default)]
+    pub low_memory_mode: bool,
+    /// Maximum RAM budget for cached protocol images (Kitty / Sixel / iTerm2).
+    /// Oldest images are evicted when the budget is exceeded. Default: 64 MB.
+    #[serde(default = "default_max_image_cache_mb")]
+    pub max_image_cache_mb: usize,
 }
 
 fn default_window_opacity() -> f32 {
@@ -334,6 +347,9 @@ fn default_pane_badge_format() -> String {
 fn default_font_size() -> f32 {
     14.0
 }
+fn default_font_weight() -> u16 {
+    400
+}
 fn default_font_families() -> Vec<String> {
     vec!["JetBrainsMono NF".to_string(), "JetBrains Mono".to_string()]
 }
@@ -344,7 +360,10 @@ fn default_window_height() -> u32 {
     800
 }
 fn default_scrollback_lines() -> usize {
-    100_000
+    10_000
+}
+fn default_max_image_cache_mb() -> usize {
+    64
 }
 fn default_cursor_style() -> CursorStyle {
     CursorStyle::Block
@@ -368,6 +387,8 @@ impl Default for Config {
             font_size: default_font_size(),
             font_family: default_font_families(),
             font_ligatures: true,
+            font_features: Vec::new(),
+            font_weight: default_font_weight(),
             window_width: default_window_width(),
             window_height: default_window_height(),
             scrollback_lines: default_scrollback_lines(),
@@ -411,11 +432,60 @@ impl Default for Config {
             ssh_profiles: Vec::new(),
             tab_profiles: Vec::new(),
             check_updates_on_startup: false,
+            low_memory_mode: false,
+            max_image_cache_mb: default_max_image_cache_mb(),
         }
     }
 }
 
 impl Config {
+    /// Returns platform-specific defaults. Called on first launch (no config file yet).
+    ///
+    /// Detection order:
+    /// - Linux ARM: check `/sys/firmware/devicetree/base/model` for "Raspberry Pi"
+    /// - macOS: compile-time known
+    /// - Everything else: generic defaults
+    pub fn platform_defaults() -> Self {
+        let mut cfg = Self::default();
+
+        #[cfg(target_os = "macos")]
+        {
+            cfg.window_blur = true;
+            cfg.max_image_cache_mb = 128;
+        }
+
+        if is_raspberry_pi() {
+            // Tuned for VideoCore VI/VII (GLES 3.1) + SD card I/O + limited RAM.
+            cfg.scrollback_lines = 3_000;
+            cfg.low_memory_mode = true;
+            cfg.max_image_cache_mb = 32;
+            // HarfBuzz shaping is CPU-heavy on Cortex-A72/A76 — skip for plain ASCII.
+            cfg.font_ligatures = false;
+            // Timer-driven blink causes a redraw every 500 ms even at idle.
+            cfg.cursor_blink = false;
+            // Sixel and iTerm2 image decode is CPU-bound; GPU upload is also slow on Pi.
+            cfg.sixel_enabled = false;
+            cfg.iterm2_images = false;
+            // git process spawns on SD card stall the render thread for 50–200 ms.
+            cfg.status_bar_show_git = false;
+            cfg.status_bar_show_k8s = false;
+            cfg.pane_badge = false;
+            cfg.window_opacity = 1.0;
+            cfg.history_max_entries = 2_000;
+        }
+
+        cfg
+    }
+
+    /// Effective scrollback line count, capped at 5 000 when `low_memory_mode` is set.
+    pub fn effective_scrollback(&self) -> usize {
+        if self.low_memory_mode {
+            self.scrollback_lines.min(5_000)
+        } else {
+            self.scrollback_lines
+        }
+    }
+
     pub fn config_dir() -> Option<PathBuf> {
         config_dir()
     }
@@ -433,11 +503,11 @@ impl Config {
                     }
                 }
             }
-            let config = Config::default();
+            let config = Config::platform_defaults();
             let _ = config.save_to(&path);
             config
         } else {
-            Config::default()
+            Config::platform_defaults()
         }
     }
 
@@ -493,6 +563,21 @@ fn config_dir() -> Option<PathBuf> {
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         None
+    }
+}
+
+/// Returns true when running on a Raspberry Pi (any model that exposes the DTB model file).
+/// Always false on non-Linux targets.
+fn is_raspberry_pi() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/sys/firmware/devicetree/base/model")
+            .map(|s| s.contains("Raspberry Pi"))
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
     }
 }
 
@@ -573,7 +658,7 @@ mod tests {
         assert!(cfg.font_ligatures);
         assert_eq!(cfg.window_width, 1280);
         assert_eq!(cfg.window_height, 800);
-        assert_eq!(cfg.scrollback_lines, 100_000);
+        assert_eq!(cfg.scrollback_lines, 10_000);
         assert_eq!(cfg.shell_program, "");
         assert!(cfg.shell_args.is_empty());
         assert_eq!(cfg.cursor_style, CursorStyle::Block);
@@ -780,6 +865,58 @@ background_mode = "contain"
             let toml_str = format!("background_mode = \"{}\"", s);
             let cfg: Config = toml::from_str(&toml_str).unwrap();
             assert_eq!(cfg.background_mode, *expected, "mode: {}", s);
+        }
+    }
+
+    #[test]
+    fn test_platform_defaults_not_pi_on_host() {
+        // On any non-Pi host, platform_defaults should not apply Pi overrides.
+        // We can't mock is_raspberry_pi() here, but we verify the function runs
+        // and returns a valid Config.
+        let cfg = Config::platform_defaults();
+        // Basic sanity: these fields must always have valid values
+        assert!(cfg.scrollback_lines > 0);
+        assert!(cfg.max_image_cache_mb > 0);
+        assert!(cfg.history_max_entries > 0);
+    }
+
+    #[test]
+    fn test_effective_scrollback_low_memory() {
+        let cfg = Config {
+            scrollback_lines: 20_000,
+            low_memory_mode: false,
+            ..Default::default()
+        };
+        assert_eq!(cfg.effective_scrollback(), 20_000);
+
+        let cfg_lm = Config {
+            scrollback_lines: 20_000,
+            low_memory_mode: true,
+            ..Default::default()
+        };
+        assert_eq!(cfg_lm.effective_scrollback(), 5_000);
+
+        let cfg_small = Config {
+            scrollback_lines: 3_000,
+            low_memory_mode: true,
+            ..Default::default()
+        };
+        assert_eq!(cfg_small.effective_scrollback(), 3_000); // already under cap
+    }
+
+    #[test]
+    fn test_is_raspberry_pi_non_pi_host() {
+        // On a dev machine (Mac or x86 Linux) this must return false.
+        // The DTB model file doesn't exist or doesn't contain "Raspberry Pi".
+        #[cfg(not(target_os = "linux"))]
+        assert!(!is_raspberry_pi());
+        // On Linux x86 the file won't contain "Raspberry Pi"
+        #[cfg(target_os = "linux")]
+        {
+            let result = is_raspberry_pi();
+            // CI always runs on x86 — must be false there.
+            // We can't assert false unconditionally since a Pi builder would break the test.
+            let _ = result; // just ensure it compiles and doesn't panic
         }
     }
 }

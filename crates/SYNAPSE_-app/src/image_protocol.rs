@@ -3,7 +3,7 @@
 /// formats f=24 (RGB), f=32 (RGBA), f=100 (PNG); chunked transmission (m=1);
 /// zlib compression (o=z); media t=d (direct), t=f (file), t=t (temp file).
 /// Not supported: t=s (shared memory), U=1 (unicode placeholders).
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use base64::Engine;
 
@@ -160,15 +160,65 @@ pub struct ImageStore {
     pub anim_states: HashMap<u32, AnimState>,
     /// The single in-flight chunked transmit, if any (Kitty allows one at a time).
     pending_transmit: Option<PendingTransmit>,
+    /// Running total of RGBA bytes held by tracked images (excludes bg image).
+    total_bytes: usize,
+    /// RAM budget in bytes; oldest image is evicted when exceeded.
+    max_bytes: usize,
+    /// Insertion order for eviction (excludes BG_IMAGE_ID).
+    order: VecDeque<u32>,
 }
 
 impl ImageStore {
+    /// Unlimited store. Used in tests; `with_max_bytes` is preferred in production.
+    #[cfg(test)]
     pub fn new() -> Self {
+        Self::with_max_bytes(usize::MAX)
+    }
+
+    /// Store with a RAM budget. Oldest images are evicted when `max_bytes` is exceeded.
+    pub fn with_max_bytes(max_bytes: usize) -> Self {
         Self {
             images: HashMap::new(),
             placements: Vec::new(),
             anim_states: HashMap::new(),
             pending_transmit: None,
+            total_bytes: 0,
+            max_bytes,
+            order: VecDeque::new(),
+        }
+    }
+
+    fn image_bytes(img: &StoredImage) -> usize {
+        img.rgba.len() + img.frames.iter().map(|f| f.rgba.len()).sum::<usize>()
+    }
+
+    /// Insert a protocol image (Kitty/Sixel/iTerm2), track its bytes, evict if needed.
+    /// Does NOT apply to the background image (BG_IMAGE_ID).
+    fn insert_image(&mut self, id: u32, img: StoredImage) {
+        let new_bytes = Self::image_bytes(&img);
+        // Remove old byte count if this id is being replaced
+        if let Some(old) = self.images.get(&id) {
+            self.total_bytes = self.total_bytes.saturating_sub(Self::image_bytes(old));
+            self.order.retain(|&x| x != id);
+        }
+        self.images.insert(id, img);
+        self.order.push_back(id);
+        self.total_bytes += new_bytes;
+        self.evict_if_needed();
+    }
+
+    fn evict_if_needed(&mut self) {
+        while self.total_bytes > self.max_bytes {
+            let Some(id) = self.order.pop_front() else { break };
+            if let Some(img) = self.images.remove(&id) {
+                self.total_bytes = self.total_bytes.saturating_sub(Self::image_bytes(&img));
+                self.anim_states.remove(&id);
+                self.placements.retain(|p| p.image_id != id);
+                tracing::debug!(
+                    "image cache evicted id={id} (total now {} MB)",
+                    self.total_bytes / (1024 * 1024)
+                );
+            }
         }
     }
 
@@ -232,7 +282,7 @@ impl ImageStore {
         row: usize,
         pane_id: Option<synapse_ui::PaneId>,
     ) {
-        self.images.insert(
+        self.insert_image(
             id,
             StoredImage {
                 id,
@@ -279,7 +329,7 @@ impl ImageStore {
                 },
             );
         }
-        self.images.insert(
+        self.insert_image(
             id,
             StoredImage {
                 id,
@@ -442,7 +492,7 @@ impl ImageStore {
             }
         };
 
-        self.images.insert(
+        self.insert_image(
             p.id,
             StoredImage {
                 id: p.id,

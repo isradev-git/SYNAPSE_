@@ -40,7 +40,13 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: Arc<Window>, font_families: &[String]) -> Result<Self, String> {
+    pub fn new(
+        window: Arc<Window>,
+        font_families: &[String],
+        font_features: &[String],
+        font_weight: u16,
+        low_memory: bool,
+    ) -> Result<Self, String> {
         let instance_desc = wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -147,14 +153,15 @@ impl Renderer {
         surface.configure(&device, &config);
 
         let max_tex = device.limits().max_texture_dimension_2d;
-        let atlas = TextureAtlas::new(&device, max_tex);
+        let atlas = TextureAtlas::new(&device, max_tex, low_memory);
         let cell_renderer =
             CellRenderer::new(Arc::clone(&device), &atlas.bind_group_layout, config.format);
         let ui_renderer_bg = UIRenderer::new(Arc::clone(&device), config.format);
         let ui_renderer = UIRenderer::new(Arc::clone(&device), config.format);
         let image_renderer = ImageRenderer::new(Arc::clone(&device), config.format);
         let underline_renderer = UnderlineRenderer::new(Arc::clone(&device), config.format);
-        let text = TextShaping::with_families(font_families);
+        let text =
+            TextShaping::with_families_and_settings(font_families, font_features, font_weight);
 
         let postproc = PostProcRenderer::new(Arc::clone(&device), format, size.width, size.height);
 

@@ -630,7 +630,7 @@ impl AppCore {
         }
 
         let was_selecting = self.state.selecting;
-        let scrollback_lines = self.state.config.scrollback_lines;
+        let scrollback_lines = self.state.config.effective_scrollback();
         let (tab_bar, panes, _) = self.workspaces.active_split_mut();
         handle_mouse_button(
             button_state,
